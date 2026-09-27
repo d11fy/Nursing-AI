@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { MessageBubble, type ChatMessageData } from "@/components/chat/message-bubble";
 import { Suggestions } from "@/components/chat/suggestions";
 import { Composer, type PendingImage } from "@/components/chat/composer";
+import { consumeChatResponse } from "@/lib/chat/stream";
 
 let localIdCounter = 0;
 function localId() {
@@ -30,8 +31,10 @@ export function ChatView({
   const [isGenerating, setIsGenerating] = useState(false);
   const conversationIdRef = useRef(initialConversationId);
   const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   async function send(text: string) {
+    if (abortRef.current) return;
     const trimmed = text.trim();
     if (!trimmed && !pendingImage) return;
 
@@ -72,26 +75,19 @@ export function ChatView({
         return;
       }
 
-      const newConversationId = res.headers.get("X-Conversation-Id");
-      if (newConversationId && newConversationId !== conversationIdRef.current) {
-        conversationIdRef.current = newConversationId;
-        router.replace(`/dashboard/chat/${newConversationId}`);
-      }
-
-      const reader = res.body?.getReader();
-      if (!reader) return;
-      const decoder = new TextDecoder();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        setMessages((prev) =>
+      await consumeChatResponse(res, {
+        onConversationId: (id) => { conversationIdRef.current = id; },
+        onChunk: (chunk) => setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantMessage.id ? { ...m, content: m.content + chunk } : m
           )
-        );
-      }
+        ),
+        onComplete: (id) => {
+          if (id && id !== initialConversationId) {
+            router.replace(`/dashboard/chat/${id}`, { scroll: false });
+          }
+        },
+      });
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
         toast.error("صار خطأ أثناء تجهيز الإجابة، جرب مرة ثانية.");

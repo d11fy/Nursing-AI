@@ -37,6 +37,7 @@ export default async function ConversationPage({ params }: PageProps<"/dashboard
 
   return (
     <ChatView
+      key={conversation.id}
       conversationId={conversation.id}
       initialMessages={initialMessages}
       subjectId={conversation.subject_id}
