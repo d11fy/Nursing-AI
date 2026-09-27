@@ -20,6 +20,7 @@ export type Profile = {
   email: string;
   university: string | null;
   nursing_year: NursingYear;
+  academic_year_id: string | null;
   role: UserRole;
   status: UserStatus;
   created_at: string;
@@ -31,7 +32,14 @@ export type Subject = {
   name_ar: string;
   name_en: string;
   description: string | null;
+  description_ar: string | null;
+  description_en: string | null;
+  icon: string;
+  icon_theme: string | null;
   status: SubjectStatus;
+  sort_order: number;
+  updated_at: string;
+  archived_at: string | null;
   created_at: string;
 };
 
@@ -146,6 +154,7 @@ export type AdminStudentRow = {
   email: string;
   university: string | null;
   nursing_year: NursingYear;
+  academic_year_id?: string | null;
   status: UserStatus;
   created_at: string;
   questions_count: number;

@@ -11,11 +11,12 @@ import { limitedFormData } from "../lib/request-body";
 import { GET as getFile } from "../app/api/files/route";
 import { processDocument } from "../lib/knowledge";
 import { searchKnowledge } from "../lib/ai/rag";
+import { assignSubjectToYears, canStudentAccessSubject, getStudentSubjects, setStudentAcademicYear } from "../lib/subjects";
 
 const db = new PGlite();
 const executor: Executor = (sql, values) => db.query(sql, values);
 const migrationClient = { query: async (sql: string, values?: unknown[]) => {
-  if (!values && (sql.includes("create table public.app_users") || sql.includes("alter table public.document_chunks"))) { await db.exec(sql); return { rows: [] }; }
+  if (!values && (sql.includes("create table public.app_users") || sql.includes("alter table public.document_chunks") || sql.includes("create table public.academic_years"))) { await db.exec(sql); return { rows: [] }; }
   return db.query(sql, values);
 } };
 const alice: Actor = { user_id: "10000000-0000-4000-8000-000000000001", role: "student", status: "active" };
@@ -50,6 +51,23 @@ test("migration can rerun without losing users or duplicating seeds", async () =
   await migrate(migrationClient);
   assert.equal((await db.query<{ n: number }>("SELECT count(*)::int n FROM subjects")).rows[0].n, 8);
   assert.equal((await db.query<{ n: number }>("SELECT count(*)::int n FROM app_users")).rows[0].n, 3);
+  assert.equal((await db.query<{ n: number }>("SELECT count(*)::int n FROM academic_years")).rows[0].n, 4);
+});
+test("academic years filter subjects and enforce direct access server-side", async () => {
+  const years = await db.query<{ id: string; code: string }>("SELECT id,code FROM academic_years");
+  const byCode = new Map(years.rows.map(year => [year.code, year.id]));
+  await setStudentAcademicYear(alice.user_id, byCode.get("first_year")!);
+  await setStudentAcademicYear(bob.user_id, byCode.get("third_year")!);
+  const first = await getStudentSubjects(alice.user_id);
+  const third = await getStudentSubjects(bob.user_id);
+  assert.deepEqual(first.subjects.map(s => s.name_en).sort(), ["Anatomy & Physiology", "Fundamentals of Nursing"]);
+  assert.deepEqual(third.subjects.map(s => s.name_en).sort(), ["Maternity Nursing", "Pediatric Nursing"]);
+  const pediatrics = third.subjects.find(s => s.name_en === "Pediatric Nursing")!;
+  assert.equal(await canStudentAccessSubject(alice.user_id, pediatrics.id), false);
+  assert.ok((await new Query("conversations", alice, false, executor).insert({ user_id: alice.user_id, subject_id: pediatrics.id })).error);
+  await assignSubjectToYears(pediatrics.id, [byCode.get("second_year")!, byCode.get("third_year")!]);
+  await setStudentAcademicYear(alice.user_id, byCode.get("second_year")!);
+  assert.equal((await getStudentSubjects(alice.user_id)).subjects.some(s => s.id === pediatrics.id), true);
 });
 test("anonymous and suspended users cannot query data", async () => {
   assert.ok((await new Query("subjects", null, false, executor).select()).error);

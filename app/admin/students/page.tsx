@@ -1,4 +1,3 @@
-import { createClient } from "@/lib/db/server";
 import {
   Table,
   TableBody,
@@ -9,14 +8,12 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { StudentActions } from "@/components/admin/student-actions";
-import { nursingYearOptions } from "@/lib/validations/auth";
+import { getAcademicYears, getAdminStudents } from "@/lib/subjects";
+import { setStudentAcademicYearAction } from "@/app/admin/actions";
+import { Button } from "@/components/ui/button";
 
 export default async function AdminStudentsPage() {
-  const db = await createClient();
-  const { data: students } = await db.rpc("admin_list_students");
-
-  const yearLabel = (value: string) =>
-    nursingYearOptions.find((o) => o.value === value)?.label ?? value;
+  const [students, years] = await Promise.all([getAdminStudents(), getAcademicYears(false)]);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
@@ -43,7 +40,12 @@ export default async function AdminStudentsPage() {
                 <TableCell className="font-medium">{s.full_name}</TableCell>
                 <TableCell dir="ltr" className="text-left text-slate-500">{s.email}</TableCell>
                 <TableCell>{s.university ?? "—"}</TableCell>
-                <TableCell>{yearLabel(s.nursing_year)}</TableCell>
+                <TableCell><form action={setStudentAcademicYearAction} className="flex min-w-56 items-center gap-2">
+                  <input type="hidden" name="userId" value={s.user_id} />
+                  <select name="academicYearId" defaultValue={s.academic_year_id ?? ""} className="h-8 flex-1 rounded-lg border border-input bg-transparent px-2 text-sm" required>
+                    <option value="" disabled>اختر السنة</option>{years.map(year => <option key={year.id} value={year.id}>{year.name_ar}</option>)}
+                  </select><Button size="sm" variant="outline">حفظ</Button>
+                </form></TableCell>
                 <TableCell>{new Date(s.created_at).toLocaleDateString("ar-EG")}</TableCell>
                 <TableCell>{s.questions_count}</TableCell>
                 <TableCell>
@@ -62,7 +64,7 @@ export default async function AdminStudentsPage() {
           </TableBody>
         </Table>
 
-        {(!students || students.length === 0) && (
+        {students.length === 0 && (
           <div className="py-16 text-center text-slate-400">لا يوجد طلاب مسجلون بعد</div>
         )}
       </div>

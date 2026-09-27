@@ -11,8 +11,20 @@ export type DocumentUploadInput = z.infer<typeof documentUploadSchema>;
 export const subjectSchema = z.object({
   nameAr: z.string().trim().min(1, "الاسم بالعربية مطلوب"),
   nameEn: z.string().trim().min(1, "الاسم بالإنجليزية مطلوب"),
-  description: z.string().trim().optional(),
+  descriptionAr: z.string().trim().optional(),
+  descriptionEn: z.string().trim().optional(),
+  icon: z.string().trim().min(1).max(50).default("book-open"),
+  iconTheme: z.string().trim().max(50).optional(),
+  status: z.enum(["active", "inactive"]),
+  sortOrder: z.coerce.number().int().min(0).max(10000),
+  academicYearIds: z.array(z.string().uuid()).min(1, "اختر سنة دراسية واحدة على الأقل"),
 });
+
+export const academicYearSchema = z.object({
+  id: z.string().uuid(), nameAr: z.string().trim().min(1), nameEn: z.string().trim().min(1),
+  sortOrder: z.coerce.number().int().min(0).max(10000), isActive: z.enum(["true", "false"]),
+});
+export const newAcademicYearSchema = academicYearSchema.omit({ id: true }).extend({ code: z.string().trim().regex(/^[a-z0-9_]+$/).max(50) });
 
 export type SubjectInput = z.infer<typeof subjectSchema>;
 

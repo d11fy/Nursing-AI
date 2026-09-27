@@ -8,8 +8,8 @@ export type Executor = (sql: string, values: unknown[]) => Promise<{ rows: Recor
 type Result<T> = { data: T | null; error: { message: string } | null };
 
 const columns: Record<Table, string[]> = {
-  profiles: "id user_id full_name email university nursing_year role status created_at updated_at".split(" "),
-  subjects: "id name_ar name_en description status created_at".split(" "),
+  profiles: "id user_id full_name email university nursing_year academic_year_id role status created_at updated_at".split(" "),
+  subjects: "id name_ar name_en description description_ar description_en icon icon_theme status sort_order created_at updated_at archived_at".split(" "),
   conversations: "id user_id title subject_id created_at updated_at".split(" "),
   messages: "id conversation_id role content image_url tokens_input tokens_output model created_at".split(" "),
   message_feedback: "id message_id user_id is_positive reason comment created_at".split(" "),
@@ -73,10 +73,12 @@ export class Query<T extends Table> implements PromiseLike<Result<Row<T>[]>> {
         switch (this.table) {
           case "profiles":
             if (!isRead && this.operation !== "update") throw new Error("Forbidden");
-            if (this.operation === "update" && Object.keys(this.rows[0]).some((key) => !["full_name", "university", "nursing_year"].includes(key))) throw new Error("Forbidden");
+            if (this.operation === "update" && Object.keys(this.rows[0]).some((key) => !["full_name", "university"].includes(key))) throw new Error("Forbidden");
             scope = `user_id = ${uid}`; break;
           case "conversations":
-            scope = `user_id = ${uid}`;
+            scope = `user_id = ${uid} AND (subject_id IS NULL OR subject_id IN (
+              SELECT sy.subject_id FROM subject_academic_years sy JOIN academic_years y ON y.id=sy.academic_year_id AND y.is_active=true JOIN profiles p ON p.academic_year_id=sy.academic_year_id
+              JOIN subjects s ON s.id=sy.subject_id WHERE p.user_id=${uid} AND s.status='active' AND s.archived_at IS NULL))`;
             if (this.operation === "insert" && this.rows.some((r) => (r as Record<string, unknown>).user_id !== this.actor!.user_id)) throw new Error("Forbidden");
             if (this.operation === "update" && Object.keys(this.rows[0]).some((key) => !["title", "updated_at"].includes(key))) throw new Error("Forbidden");
             break;
@@ -88,12 +90,18 @@ export class Query<T extends Table> implements PromiseLike<Result<Row<T>[]>> {
             if (!isRead && this.operation !== "insert") throw new Error("Forbidden");
             scope = `user_id = ${uid} AND message_id IN (SELECT m.id FROM messages m JOIN conversations c ON c.id=m.conversation_id WHERE c.user_id=${uid})`;
             break;
-          case "subjects": case "settings":
+          case "subjects":
+            if (!isRead) throw new Error("Forbidden");
+            scope = `status='active' AND archived_at IS NULL AND id IN (
+              SELECT sy.subject_id FROM subject_academic_years sy JOIN academic_years y ON y.id=sy.academic_year_id AND y.is_active=true JOIN profiles p ON p.academic_year_id=sy.academic_year_id WHERE p.user_id=${uid})`; break;
+          case "settings":
             if (!isRead) throw new Error("Forbidden");
             scope = `${uid}::uuid IS NOT NULL`; break;
           case "documents":
             if (!isRead) throw new Error("Forbidden");
-            scope = `status = 'ready' AND ${uid}::uuid IS NOT NULL`; break;
+            scope = `status = 'ready' AND subject_id IN (
+              SELECT sy.subject_id FROM subject_academic_years sy JOIN academic_years y ON y.id=sy.academic_year_id AND y.is_active=true JOIN profiles p ON p.academic_year_id=sy.academic_year_id
+              JOIN subjects s ON s.id=sy.subject_id WHERE p.user_id=${uid} AND s.status='active' AND s.archived_at IS NULL)`; break;
           case "usage_logs":
             if (!isRead) throw new Error("Forbidden");
             scope = `user_id = ${uid}`; break;
@@ -115,6 +123,17 @@ export class Query<T extends Table> implements PromiseLike<Result<Row<T>[]>> {
               ? await this.execute("SELECT id FROM conversations WHERE id=$1 AND user_id=$2", [record.conversation_id, this.actor!.user_id])
               : await this.execute("SELECT m.id FROM messages m JOIN conversations c ON c.id=m.conversation_id WHERE m.id=$1 AND c.user_id=$2", [record.message_id, this.actor!.user_id]);
             if (!own.rows.length || (this.table === "message_feedback" && record.user_id !== this.actor!.user_id)) throw new Error("Forbidden");
+          }
+        }
+        if (!this.system && !admin && this.table === "conversations") {
+          for (const row of this.rows) {
+            const subjectId = (row as Record<string, unknown>).subject_id;
+            if (!subjectId) continue;
+            const allowed = await this.execute(
+              `SELECT 1 FROM profiles p JOIN academic_years y ON y.id=p.academic_year_id AND y.is_active=true JOIN subject_academic_years sy ON sy.academic_year_id=p.academic_year_id
+               JOIN subjects s ON s.id=sy.subject_id AND s.status='active' AND s.archived_at IS NULL
+               WHERE p.user_id=$1 AND s.id=$2`, [this.actor!.user_id, subjectId]);
+            if (!allowed.rows.length) throw new Error("Forbidden");
           }
         }
         // Insert has no WHERE; discard predicate parameters before constructing it.

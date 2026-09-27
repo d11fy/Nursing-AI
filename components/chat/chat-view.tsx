@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import Link from "next/link";
 import { MessageBubble, type ChatMessageData } from "@/components/chat/message-bubble";
 import { Suggestions } from "@/components/chat/suggestions";
 import { Composer, type PendingImage } from "@/components/chat/composer";
@@ -19,10 +20,12 @@ export function ChatView({
   conversationId: initialConversationId,
   initialMessages,
   subjectId,
+  subjectName,
 }: {
   conversationId: string | null;
   initialMessages: ChatMessageData[];
   subjectId?: string | null;
+  subjectName?: string | null;
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessageData[]>(initialMessages);
@@ -106,6 +109,7 @@ export function ChatView({
 
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col">
+      {subjectId && subjectName && <div className="border-b border-border bg-card px-4 py-2 text-sm"><span className="text-muted-foreground">المادة: </span><Link href={`/dashboard/subjects/${subjectId}`} className="font-medium text-blue-600 hover:underline">{subjectName}</Link></div>}
       <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
         {showSuggestions ? (
           <div className="flex h-full items-center justify-center">

@@ -8,6 +8,7 @@ import { sendMessageSchema } from "@/lib/validations/chat";
 import type { ChatMessageInput } from "@/lib/ai/provider";
 import type { KnowledgeChunk } from "@/lib/ai/provider";
 import { LOCAL_VISION_ERROR, OllamaError } from "@/lib/ai/providers/ollama";
+import { canStudentAccessSubject } from "@/lib/subjects";
 
 function truncateTitle(text: string, max = 60): string {
   const clean = text.trim().replace(/\s+/g, " ");
@@ -33,6 +34,9 @@ export async function POST(request: Request) {
     );
   }
   const { conversationId, content, subjectId, imagePath } = parsed.data;
+  if (subjectId && !await canStudentAccessSubject(user.id, subjectId)) {
+    return NextResponse.json({ error: "هذه المادة غير متاحة لسنتك الدراسية." }, { status: 403 });
+  }
   if (imagePath && process.env.AI_PROVIDER?.trim() === "ollama") {
     return NextResponse.json({ error: LOCAL_VISION_ERROR }, { status: 400 });
   }
@@ -68,6 +72,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "المحادثة غير موجودة" }, { status: 404 });
     }
     activeSubjectId = existing.subject_id ?? activeSubjectId;
+    if (activeSubjectId && !await canStudentAccessSubject(user.id, activeSubjectId)) {
+      return NextResponse.json({ error: "هذه المادة غير متاحة لسنتك الدراسية." }, { status: 403 });
+    }
   } else {
     const { data: created, error } = await db
       .from("conversations")

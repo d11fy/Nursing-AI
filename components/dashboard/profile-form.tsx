@@ -4,20 +4,12 @@ import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { nursingYearOptions } from "@/lib/validations/auth";
 import { updateProfileAction, type ProfileActionState } from "@/app/dashboard/actions";
 import type { Profile } from "@/types/database";
 
 const initialState: ProfileActionState = {};
 
-export function ProfileForm({ profile }: { profile: Profile }) {
+export function ProfileForm({ profile, academicYearName }: { profile: Profile; academicYearName: string | null }) {
   const [state, formAction, isPending] = useActionState(updateProfileAction, initialState);
 
   return (
@@ -39,20 +31,8 @@ export function ProfileForm({ profile }: { profile: Profile }) {
 
       <div className="space-y-1.5">
         <Label htmlFor="nursingYear">السنة الدراسية</Label>
-        <Select name="nursingYear" defaultValue={profile.nursing_year}>
-          <SelectTrigger id="nursingYear" className="w-full">
-            <SelectValue>
-              {(value: string) => nursingYearOptions.find((o) => o.value === value)?.label}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {nursingYearOptions.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Input id="nursingYear" value={academicYearName ?? "غير محددة"} disabled />
+        <p className="text-xs text-muted-foreground">يمكن للإدارة تعديل السنة الدراسية من لوحة الطلاب.</p>
       </div>
 
       {state.error && (

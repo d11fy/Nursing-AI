@@ -46,7 +46,6 @@ export async function deleteConversationAction(formData: FormData) {
 const profileSchema = z.object({
   fullName: z.string().trim().min(2),
   university: z.string().trim().min(1),
-  nursingYear: z.enum(["year1", "year2", "year3", "year4", "other"]),
 });
 
 export interface ProfileActionState {
@@ -62,7 +61,6 @@ export async function updateProfileAction(
   const parsed = profileSchema.safeParse({
     fullName: formData.get("fullName"),
     university: formData.get("university"),
-    nursingYear: formData.get("nursingYear"),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "بيانات غير صالحة" };
@@ -74,7 +72,6 @@ export async function updateProfileAction(
     .update({
       full_name: parsed.data.fullName,
       university: parsed.data.university,
-      nursing_year: parsed.data.nursingYear,
     })
     .eq("user_id", profile.user_id);
 

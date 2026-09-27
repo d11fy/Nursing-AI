@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/db/server";
 import { requireAdminProfile } from "@/lib/auth";
-import { subjectSchema, settingsSchema } from "@/lib/validations/admin";
+import { subjectSchema, settingsSchema, academicYearSchema, newAcademicYearSchema } from "@/lib/validations/admin";
+import { archiveSubject, createAcademicYear, createSubject, setStudentAcademicYear, updateAcademicYear, updateSubject } from "@/lib/subjects";
+import { z } from "zod";
 
 export async function setStudentStatusAction(formData: FormData) {
   await requireAdminProfile();
@@ -44,22 +46,80 @@ export async function createSubjectAction(
   const parsed = subjectSchema.safeParse({
     nameAr: formData.get("nameAr"),
     nameEn: formData.get("nameEn"),
-    description: formData.get("description") || undefined,
+    descriptionAr: formData.get("descriptionAr") || undefined,
+    descriptionEn: formData.get("descriptionEn") || undefined,
+    icon: formData.get("icon") || "book-open",
+    iconTheme: formData.get("iconTheme") || undefined,
+    status: formData.get("status") || "active",
+    sortOrder: formData.get("sortOrder") || 0,
+    academicYearIds: formData.getAll("academicYearIds"),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "بيانات غير صالحة" };
   }
 
-  const db = await createClient();
-  const { error } = await db.from("subjects").insert({
-    name_ar: parsed.data.nameAr,
-    name_en: parsed.data.nameEn,
-    description: parsed.data.description ?? null,
-  });
-  if (error) return { error: "تعذر إضافة المادة" };
+  try { await createSubject(parsed.data); }
+  catch { return { error: "تعذر إضافة المادة؛ تأكد أن الاسم الإنجليزي غير مستخدم" }; }
 
   revalidatePath("/admin/subjects");
   return { success: "تمت إضافة المادة" };
+}
+
+export async function updateSubjectAction(_prev: SubjectActionState, formData: FormData): Promise<SubjectActionState> {
+  await requireAdminProfile();
+  const subjectId = formData.get("subjectId");
+  const parsed = subjectSchema.safeParse({
+    nameAr: formData.get("nameAr"), nameEn: formData.get("nameEn"),
+    descriptionAr: formData.get("descriptionAr") || undefined,
+    descriptionEn: formData.get("descriptionEn") || undefined,
+    icon: formData.get("icon") || "book-open", iconTheme: formData.get("iconTheme") || undefined,
+    status: formData.get("status"), sortOrder: formData.get("sortOrder"),
+    academicYearIds: formData.getAll("academicYearIds"),
+  });
+  if (typeof subjectId !== "string" || !z.string().uuid().safeParse(subjectId).success || !parsed.success)
+    return { error: parsed.success ? "معرّف المادة غير صالح" : parsed.error.issues[0]?.message };
+  try { await updateSubject(subjectId, parsed.data); }
+  catch { return { error: "تعذر تحديث المادة" }; }
+  revalidatePath("/admin/subjects"); revalidatePath("/dashboard/subjects");
+  return { success: "تم تحديث المادة" };
+}
+
+export async function archiveSubjectAction(formData: FormData) {
+  await requireAdminProfile();
+  const parsed = z.string().uuid().safeParse(formData.get("subjectId"));
+  if (!parsed.success) return;
+  await archiveSubject(parsed.data);
+  revalidatePath("/admin/subjects"); revalidatePath("/dashboard/subjects");
+}
+
+export async function setStudentAcademicYearAction(formData: FormData) {
+  await requireAdminProfile();
+  const parsed = z.object({ userId: z.string().uuid(), academicYearId: z.string().uuid() }).safeParse({
+    userId: formData.get("userId"), academicYearId: formData.get("academicYearId"),
+  });
+  if (!parsed.success) return;
+  await setStudentAcademicYear(parsed.data.userId, parsed.data.academicYearId);
+  revalidatePath("/admin/students");
+}
+
+export async function updateAcademicYearAction(formData: FormData) {
+  await requireAdminProfile();
+  const parsed = academicYearSchema.safeParse({ id: formData.get("id"), nameAr: formData.get("nameAr"),
+    nameEn: formData.get("nameEn"), sortOrder: formData.get("sortOrder"), isActive: formData.get("isActive") });
+  if (!parsed.success) return;
+  await updateAcademicYear(parsed.data.id, { name_ar: parsed.data.nameAr, name_en: parsed.data.nameEn,
+    sort_order: parsed.data.sortOrder, is_active: parsed.data.isActive === "true" });
+  revalidatePath("/admin/academic-years"); revalidatePath("/admin/subjects");
+}
+
+export async function createAcademicYearAction(formData: FormData) {
+  await requireAdminProfile();
+  const parsed = newAcademicYearSchema.safeParse({ code: formData.get("code"), nameAr: formData.get("nameAr"),
+    nameEn: formData.get("nameEn"), sortOrder: formData.get("sortOrder"), isActive: "true" });
+  if (!parsed.success) return;
+  try { await createAcademicYear({ code: parsed.data.code, name_ar: parsed.data.nameAr, name_en: parsed.data.nameEn,
+    sort_order: parsed.data.sortOrder, is_active: true }); } catch { return; }
+  revalidatePath("/admin/academic-years"); revalidatePath("/admin/subjects");
 }
 
 export async function toggleSubjectStatusAction(formData: FormData) {

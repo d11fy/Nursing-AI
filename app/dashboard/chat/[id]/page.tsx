@@ -4,6 +4,8 @@ import { createClient } from "@/lib/db/server";
 import { getSignedChatImageUrl } from "@/lib/storage";
 import { ChatView } from "@/components/chat/chat-view";
 import type { ChatMessageData } from "@/components/chat/message-bubble";
+import { canStudentAccessSubject, getSubjectById } from "@/lib/subjects";
+import { forbidden } from "next/navigation";
 
 export default async function ConversationPage({ params }: PageProps<"/dashboard/chat/[id]">) {
   const { id } = await params;
@@ -17,6 +19,11 @@ export default async function ConversationPage({ params }: PageProps<"/dashboard
     .single();
 
   if (!conversation || conversation.user_id !== profile.user_id) notFound();
+  let subjectName: string | null = null;
+  if (conversation.subject_id) {
+    if (!await canStudentAccessSubject(profile.user_id, conversation.subject_id)) forbidden();
+    subjectName = (await getSubjectById(conversation.subject_id))?.name_ar ?? null;
+  }
 
   const { data: rows } = await db
     .from("messages")
@@ -41,6 +48,7 @@ export default async function ConversationPage({ params }: PageProps<"/dashboard
       conversationId={conversation.id}
       initialMessages={initialMessages}
       subjectId={conversation.subject_id}
+      subjectName={subjectName}
     />
   );
 }

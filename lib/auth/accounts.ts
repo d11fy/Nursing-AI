@@ -21,7 +21,11 @@ export async function registerAccount(input: RegisterInput) {
   const passwordHash = await hashPassword(input.password);
   const id = await transaction(async (client) => {
     const { rows } = await client.query("INSERT INTO app_users(email,password_hash) VALUES($1,$2) RETURNING id", [email, passwordHash]);
-    await client.query("INSERT INTO profiles(user_id,email,full_name,university,nursing_year) VALUES($1,$2,$3,$4,$5)", [rows[0].id, email, input.fullName, input.university, input.nursingYear]);
+    await client.query(`INSERT INTO profiles(user_id,email,full_name,university,nursing_year,academic_year_id)
+      VALUES($1,$2,$3,$4,$5,(SELECT y.id FROM academic_years y WHERE y.code=case $5
+        when 'year1' then 'first_year' when 'year2' then 'second_year'
+        when 'year3' then 'third_year' when 'year4' then 'fourth_year' else null end))`,
+      [rows[0].id, email, input.fullName, input.university, input.nursingYear]);
     return rows[0].id as string;
   });
   await startSession(id);
