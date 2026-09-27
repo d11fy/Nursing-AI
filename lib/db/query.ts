@@ -14,7 +14,7 @@ const columns: Record<Table, string[]> = {
   messages: "id conversation_id role content image_url tokens_input tokens_output model created_at".split(" "),
   message_feedback: "id message_id user_id is_positive reason comment created_at".split(" "),
   documents: "id title file_url file_name file_size subject_id source_type status vector_store_id file_id chunk_count error_message created_by created_at".split(" "),
-  document_chunks: "id document_id subject_id content embedding chapter page_number chunk_index created_at".split(" "),
+  document_chunks: "id document_id subject_id content embedding embedding_provider embedding_model embedding_dimensions chapter page_number chunk_index created_at".split(" "),
   usage_logs: "id user_id type model input_tokens output_tokens estimated_cost created_at".split(" "),
   settings: "key value updated_at".split(" "),
 };

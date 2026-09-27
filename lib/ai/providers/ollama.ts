@@ -1,0 +1,137 @@
+import type { AIProvider, EmbeddingResult, GenerateResult, GenerateTextParams, StreamChunk } from "../provider";
+import { NURSING_SYSTEM_PROMPT, buildKnowledgeContext } from "../system-prompt";
+import { getAIConfig } from "../config.mjs";
+
+export const LOCAL_VISION_ERROR = "تحليل الصور غير مدعوم في مزوّد Ollama المحلي حاليًا (Vision unsupported). أرسل سؤالًا نصيًا.";
+export class OllamaError extends Error {}
+type ChatResponse = { message?: { content?: string }; done?: boolean; prompt_eval_count?: number; eval_count?: number; error?: string };
+
+export class OllamaProvider implements AIProvider {
+  private readonly baseUrl: string;
+  private readonly chatModel: string;
+  private readonly embeddingModel: string;
+
+  constructor() {
+    const config = getAIConfig({ ...process.env, AI_PROVIDER: "ollama" });
+    this.baseUrl = config.baseUrl!;
+    this.chatModel = config.chatModel!;
+    this.embeddingModel = config.embeddingModel;
+  }
+
+  private async post(path: string, body: object, signal?: AbortSignal): Promise<Response> {
+    try {
+      const response = await fetch(`${this.baseUrl}${path}`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        signal: AbortSignal.any([AbortSignal.timeout(300_000), ...(signal ? [signal] : [])]),
+      });
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw new OllamaError(`Ollama HTTP ${response.status}: تعذّر تنفيذ الطلب. تأكد من تنزيل الموديل باستخدام ollama pull ومراجعة سجل Ollama.`);
+      }
+      return response;
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason;
+      if (error instanceof OllamaError) throw error;
+      throw new OllamaError("تعذّر الاتصال بـ Ollama أو انتهت المهلة. شغّل ollama serve وتحقق من OLLAMA_BASE_URL وإمكانية وصول التطبيق إليه.");
+    }
+  }
+
+  private body(params: GenerateTextParams, stream: boolean) {
+    if (params.messages.some((message) => message.imageUrl)) throw new OllamaError(LOCAL_VISION_ERROR);
+    return {
+      model: this.chatModel, stream, think: false,
+      messages: [
+        { role: "system", content: NURSING_SYSTEM_PROMPT + (params.knowledge?.length ? buildKnowledgeContext(params.knowledge) : "") },
+        ...params.messages.map(({ role, content }) => ({ role, content })),
+      ],
+    };
+  }
+
+  private parse(line: string): ChatResponse {
+    let value: ChatResponse;
+    try { value = JSON.parse(line); } catch { throw new OllamaError("Ollama returned invalid JSON / استجابة محلية غير صالحة"); }
+    if (!value || typeof value !== "object" || value.error || (value.message?.content !== undefined && typeof value.message.content !== "string")) {
+      throw new OllamaError("Ollama returned an error / فشل الموديل المحلي؛ راجع سجل Ollama والموديل المثبّت.");
+    }
+    return value;
+  }
+
+  private async readText(response: Response, signal?: AbortSignal): Promise<string> {
+    try { return await response.text(); }
+    catch {
+      if (signal?.aborted) throw signal.reason;
+      throw new OllamaError("انقطع الاتصال بـ Ollama أثناء قراءة الرد أو انتهت المهلة.");
+    }
+  }
+
+  private result(content: string, value: ChatResponse): GenerateResult {
+    return { content, model: this.chatModel, inputTokens: value.prompt_eval_count ?? 0, outputTokens: value.eval_count ?? 0 };
+  }
+
+  async generateText(params: GenerateTextParams): Promise<GenerateResult> {
+    const response = await this.post("/api/chat", this.body(params, false), params.signal);
+    const value = this.parse(await this.readText(response, params.signal));
+    if (!value.done || !value.message) throw new OllamaError("Ollama returned an incomplete response");
+    return this.result(value.message.content ?? "", value);
+  }
+
+  async *generateStream(params: GenerateTextParams): AsyncGenerator<StreamChunk, GenerateResult, unknown> {
+    const response = await this.post("/api/chat", this.body(params, true), params.signal);
+    if (!response.body) throw new OllamaError("Ollama returned an empty stream");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let pending = "";
+    let content = "";
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        pending += done ? decoder.decode() : decoder.decode(value, { stream: true });
+        const lines = pending.split("\n");
+        pending = lines.pop() ?? "";
+        if (done && pending.trim()) { lines.push(pending); pending = ""; }
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const chunk = this.parse(line);
+          const delta = chunk.message?.content ?? "";
+          if (delta) { content += delta; yield { delta }; }
+          if (chunk.done) return this.result(content, chunk);
+        }
+        if (done) throw new OllamaError("انقطع رد Ollama قبل اكتماله / Incomplete Ollama stream");
+      }
+    } catch (error) {
+      if (params.signal?.aborted) throw params.signal.reason;
+      if (error instanceof OllamaError) throw error;
+      throw new OllamaError("انقطع الاتصال بـ Ollama أو انتهت المهلة؛ تحقق من الخدمة ثم حاول مجددًا.");
+    } finally {
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
+    }
+  }
+
+  async generateVisionResponse(_params: GenerateTextParams & { imageUrl: string }): Promise<GenerateResult> {
+    void _params;
+    throw new OllamaError(LOCAL_VISION_ERROR);
+  }
+
+  async createEmbedding(text: string): Promise<EmbeddingResult> {
+    return (await this.createEmbeddings([text]))[0];
+  }
+
+  async createEmbeddings(texts: string[]): Promise<EmbeddingResult[]> {
+    if (!texts.length) return [];
+    const response = await this.post("/api/embed", { model: this.embeddingModel, input: texts, truncate: false });
+    let data;
+    try { data = JSON.parse(await this.readText(response)); }
+    catch (error) {
+      if (error instanceof OllamaError) throw error;
+      throw new OllamaError("Ollama returned invalid embedding JSON");
+    }
+    const vectors: unknown = data?.embeddings;
+    if (!Array.isArray(vectors) || vectors.length !== texts.length || vectors.some((v) => !Array.isArray(v) || !v.length || v.length !== vectors[0].length || v.some((n: unknown) => typeof n !== "number" || !Number.isFinite(n)))) {
+      throw new OllamaError("Ollama returned invalid embeddings / أبعاد أو عدد المتجهات غير صالح");
+    }
+    return vectors.map((embedding) => ({ embedding, tokens: Math.ceil((data.prompt_eval_count ?? 0) / texts.length), model: this.embeddingModel }));
+  }
+
+  calculateCost(_params: { model: string; inputTokens: number; outputTokens: number }): number { void _params; return 0; }
+}

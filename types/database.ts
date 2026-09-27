@@ -89,6 +89,9 @@ export type DocumentChunk = {
   subject_id: string | null;
   content: string;
   embedding: number[] | null;
+  embedding_provider: string | null;
+  embedding_model: string | null;
+  embedding_dimensions: number | null;
   chapter: string | null;
   page_number: number | null;
   chunk_index: number;
@@ -209,6 +212,8 @@ export type Database = {
       match_document_chunks: {
         Args: {
           query_embedding: number[];
+          query_provider: string;
+          query_model: string;
           match_subject_id: string | null;
           match_count: number;
         };

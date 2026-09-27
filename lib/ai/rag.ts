@@ -1,15 +1,25 @@
 import { createSystemClient } from "@/lib/db/server";
 import { getAIProvider } from "@/lib/ai";
 import type { KnowledgeChunk } from "@/lib/ai/provider";
+import { getAIConfig } from "./config.mjs";
 
 /** Rough token-aware chunking: splits on paragraph boundaries, then packs
  * them into ~chunkSize-character windows so embeddings stay under model
  * limits while keeping semantic units intact. */
 export function chunkText(text: string, chunkSize = 1200, overlap = 150): string[] {
+  if (chunkSize <= 0 || overlap < 0 || overlap >= chunkSize) throw new Error("Invalid chunk size/overlap");
   const paragraphs = text
     .split(/\n{2,}/)
     .map((p) => p.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .flatMap((paragraph) => {
+      const parts: string[] = [];
+      for (let start = 0; start < paragraph.length; start += chunkSize - overlap) {
+        parts.push(paragraph.slice(start, start + chunkSize));
+        if (start + chunkSize >= paragraph.length) break;
+      }
+      return parts;
+    });
 
   const chunks: string[] = [];
   let current = "";
@@ -17,8 +27,9 @@ export function chunkText(text: string, chunkSize = 1200, overlap = 150): string
   for (const paragraph of paragraphs) {
     if ((current + "\n\n" + paragraph).length > chunkSize && current) {
       chunks.push(current.trim());
-      const words = current.split(" ");
-      current = words.slice(Math.max(0, words.length - overlap / 6)).join(" ");
+      const available = Math.max(0, chunkSize - paragraph.length - 2);
+      const tailLength = Math.min(overlap, available);
+      current = tailLength ? current.slice(-tailLength) : "";
     }
     current += (current ? "\n\n" : "") + paragraph;
   }
@@ -33,11 +44,13 @@ export async function searchKnowledge(
   matchCount = 5
 ): Promise<KnowledgeChunk[]> {
   const provider = getAIProvider();
-  const { embedding } = await provider.createEmbedding(query);
+  const { embedding, model } = await provider.createEmbedding(query);
 
   const db = createSystemClient();
   const { data, error } = await db.rpc("match_document_chunks", {
     query_embedding: embedding,
+    query_provider: getAIConfig().provider,
+    query_model: model,
     match_subject_id: subjectId,
     match_count: matchCount,
   });

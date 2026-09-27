@@ -5,8 +5,9 @@ import { createSystemClient } from "@/lib/db/server";
 import { getAIProvider } from "@/lib/ai";
 import { chunkText } from "@/lib/ai/rag";
 import { getPool } from "@/lib/db/pool";
+import { getAIConfig } from "@/lib/ai/config.mjs";
 
-const EMBEDDING_BATCH_SIZE = 50;
+const EMBEDDING_BATCH_SIZE = 8;
 
 export interface ExtractedPage {
   pageNumber: number | null;
@@ -73,9 +74,10 @@ async function ingestDocument(documentId: string): Promise<void> {
     .eq("id", documentId)
     .single();
 
-  if (docError || !doc) return;
+  if (docError || !doc) throw new Error(docError?.message ?? "Document not found");
 
-  await db.from("documents").update({ status: "processing" }).eq("id", documentId);
+  const processing = await db.from("documents").update({ status: "processing" }).eq("id", documentId);
+  if (processing.error) throw new Error(processing.error.message);
 
   try {
     const buffer = await downloadKnowledgeDocument(doc.file_url);
@@ -84,15 +86,24 @@ async function ingestDocument(documentId: string): Promise<void> {
     if (pages.length === 0) throw new Error("لم يتم العثور على نص داخل الملف");
 
     // Remove any chunks from a previous processing attempt (reprocess).
-    await db.from("document_chunks").delete().eq("document_id", documentId);
+    const deleted = await db.from("document_chunks").delete().eq("document_id", documentId);
+    if (deleted.error) throw new Error(deleted.error.message);
 
     const provider = getAIProvider();
+    const providerName = getAIConfig().provider;
+    let embeddingSpace = "";
     let chunkIndex = 0;
     for (const page of pages) {
       const chunks = chunkText(page.text);
       for (let i = 0; i < chunks.length; i += EMBEDDING_BATCH_SIZE) {
         const batch = chunks.slice(i, i + EMBEDDING_BATCH_SIZE);
         const embeddings = await provider.createEmbeddings(batch);
+        if (embeddings.length !== batch.length) throw new Error("Embedding count mismatch");
+        for (const result of embeddings) {
+          const space = `${result.model}:${result.embedding.length}`;
+          if (!result.embedding.length || (embeddingSpace && embeddingSpace !== space)) throw new Error("Embedding model/dimensions changed during indexing");
+          embeddingSpace = space;
+        }
         const rows = batch.map((content, j) => ({
             document_id: documentId,
             subject_id: doc.subject_id,
@@ -100,16 +111,20 @@ async function ingestDocument(documentId: string): Promise<void> {
             page_number: page.pageNumber,
             chunk_index: chunkIndex++,
             embedding: embeddings[j].embedding,
+            embedding_provider: providerName,
+            embedding_model: embeddings[j].model,
+            embedding_dimensions: embeddings[j].embedding.length,
         }));
         const { error } = await db.from("document_chunks").insert(rows);
         if (error) throw new Error(error.message);
       }
     }
 
-    await db
+    const ready = await db
       .from("documents")
       .update({ status: "ready", chunk_count: chunkIndex, error_message: null })
       .eq("id", documentId);
+    if (ready.error) throw new Error(ready.error.message);
   } catch (err) {
     await db
       .from("documents")

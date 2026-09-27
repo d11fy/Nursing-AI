@@ -53,6 +53,11 @@ export default async function AdminKnowledgePage() {
         <UploadDocumentDialog subjects={subjects ?? []} />
       </div>
 
+      <p className="rounded-xl border border-border bg-card p-4 text-sm">
+        بعد تغيير مزوّد الذكاء الاصطناعي أو موديل التضمين، اختر «إعادة المعالجة» لكل ملف من قائمة الإجراءات.
+        المقاطع القديمة أو غير المتوافقة لا تُستخدم في البحث حتى تُعاد فهرستها.
+      </p>
+
       <div className="overflow-x-auto rounded-xl border border-border bg-card">
         <Table>
           <TableHeader>

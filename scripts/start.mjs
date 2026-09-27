@@ -1,10 +1,12 @@
 import nextEnv from "@next/env";
 import { runMigrations } from "./migrate.mjs";
+import { getAIConfig } from "../lib/ai/config.mjs";
 process.env.NODE_ENV ||= "production";
 nextEnv.loadEnvConfig(process.cwd());
-for (const name of ["DATABASE_URL", "APP_URL", "AUTH_SECRET", "OPENAI_API_KEY"]) {
+for (const name of ["DATABASE_URL", "APP_URL", "AUTH_SECRET"]) {
   if (!process.env[name]) throw new Error(`Missing required environment variable: ${name}`);
 }
+getAIConfig();
 if (process.env.AUTH_SECRET.length < 32) throw new Error("AUTH_SECRET must be at least 32 characters");
 const appUrl = new URL(process.env.APP_URL);
 if (appUrl.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(appUrl.hostname)) throw new Error("APP_URL must use HTTPS in production");

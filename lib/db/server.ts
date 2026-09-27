@@ -8,7 +8,7 @@ type Tables = Database["public"]["Tables"];
 type Functions = Database["public"]["Functions"];
 const functionArgs: Record<keyof Functions, string[]> = {
   is_admin: [], get_today_usage_count: ["p_user_id"],
-  match_document_chunks: ["query_embedding", "match_subject_id", "match_count"],
+  match_document_chunks: ["query_embedding", "match_subject_id", "match_count", "query_provider", "query_model"],
   admin_dashboard_stats: [], admin_usage_last_7_days: [], admin_list_students: [],
 };
 

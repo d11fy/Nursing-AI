@@ -6,6 +6,8 @@ import { checkDailyLimit, checkRateLimit, logUsage } from "@/lib/usage";
 import { getSignedChatImageUrl } from "@/lib/storage";
 import { sendMessageSchema } from "@/lib/validations/chat";
 import type { ChatMessageInput } from "@/lib/ai/provider";
+import type { KnowledgeChunk } from "@/lib/ai/provider";
+import { LOCAL_VISION_ERROR, OllamaError } from "@/lib/ai/providers/ollama";
 
 function truncateTitle(text: string, max = 60): string {
   const clean = text.trim().replace(/\s+/g, " ");
@@ -31,6 +33,9 @@ export async function POST(request: Request) {
     );
   }
   const { conversationId, content, subjectId, imagePath } = parsed.data;
+  if (imagePath && process.env.AI_PROVIDER?.trim() === "ollama") {
+    return NextResponse.json({ error: LOCAL_VISION_ERROR }, { status: 400 });
+  }
 
   const rateLimit = await checkRateLimit(user.id);
   if (!rateLimit.allowed) {
@@ -97,15 +102,22 @@ export async function POST(request: Request) {
     }
   }
 
+  let provider;
+  let knowledge: KnowledgeChunk[];
+  try {
+    provider = getAIProvider();
+    knowledge = await searchKnowledge(content, activeSubjectId, 5);
+  } catch (error) {
+    console.error("chat provider error", error);
+    return NextResponse.json({ error: error instanceof OllamaError ? error.message : "تعذر تجهيز مزود الذكاء الاصطناعي؛ تحقق من إعداداته واتصاله." }, { status: 503 });
+  }
+
   await db.from("messages").insert({
     conversation_id: activeConversationId,
     role: "user",
     content,
     image_url: imagePath ?? null,
   });
-
-  const provider = getAIProvider();
-  const knowledge = await searchKnowledge(content, activeSubjectId, 5);
 
   const messages: ChatMessageInput[] = [
     ...(history ?? []).map((m) => ({ role: m.role, content: m.content }) as ChatMessageInput),
@@ -189,7 +201,7 @@ export async function POST(request: Request) {
         } else {
           console.error("chat stream error", err);
           controller.enqueue(
-            encoder.encode("صار خطأ أثناء تجهيز الإجابة، جرب مرة ثانية.")
+            encoder.encode(err instanceof OllamaError ? err.message : "صار خطأ أثناء تجهيز الإجابة، جرب مرة ثانية.")
           );
         }
       } finally {
