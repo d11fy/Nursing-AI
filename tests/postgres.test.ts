@@ -69,6 +69,35 @@ test("academic years filter subjects and enforce direct access server-side", asy
   await setStudentAcademicYear(alice.user_id, byCode.get("second_year")!);
   assert.equal((await getStudentSubjects(alice.user_id)).subjects.some(s => s.id === pediatrics.id), true);
 });
+test("registration data maps every nursing year to the new academic year", async () => {
+  const mappings = [
+    ["year1", "first_year"],
+    ["year2", "second_year"],
+    ["year3", "third_year"],
+    ["year4", "fourth_year"],
+  ] as const;
+  for (const [legacyYear, academicCode] of mappings) {
+    const academicYear = (await db.query<{ id: string }>(
+      "SELECT id FROM academic_years WHERE code=$1 AND is_active=true",
+      [academicCode]
+    )).rows[0];
+    const user = (await db.query<{ id: string }>(
+      "INSERT INTO app_users(email,password_hash) VALUES($1,'unused') RETURNING id",
+      [`new-${legacyYear}@example.test`]
+    )).rows[0];
+    await db.query(
+      "INSERT INTO profiles(user_id,email,full_name,university,nursing_year,academic_year_id) VALUES($1,$2,'New Student','Test University',$3,$4)",
+      [user.id, `new-${legacyYear}@example.test`, legacyYear, academicYear.id]
+    );
+    const profile = (await db.query<{ nursing_year: string; academic_year_id: string }>(
+      "SELECT nursing_year,academic_year_id FROM profiles WHERE user_id=$1",
+      [user.id]
+    )).rows[0];
+    assert.equal(profile.nursing_year, legacyYear);
+    assert.equal(profile.academic_year_id, academicYear.id);
+  }
+  await db.query("DELETE FROM app_users WHERE email LIKE 'new-year%@example.test'");
+});
 test("anonymous and suspended users cannot query data", async () => {
   assert.ok((await new Query("subjects", null, false, executor).select()).error);
   assert.ok((await new Query("profiles", { ...alice, status: "suspended" }, false, executor).select()).error);

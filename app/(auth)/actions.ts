@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { registerAccount, loginAccount, requestPasswordReset, resetAccountPassword } from "@/lib/auth/accounts";
+import { AccountAlreadyExistsError, registerAccount, loginAccount, requestPasswordReset, resetAccountPassword } from "@/lib/auth/accounts";
 import { endSession } from "@/lib/auth/session";
 import { z } from "zod";
 import {
@@ -33,7 +33,11 @@ export async function registerAction(
 
   try {
     await registerAccount(parsed.data);
-  } catch {
+  } catch (error) {
+    if (error instanceof AccountAlreadyExistsError) {
+      return { error: "هذا البريد الإلكتروني مسجّل بالفعل؛ سجّل الدخول أو استخدم استعادة كلمة المرور" };
+    }
+    console.error("Registration failed", error);
     return { error: "تعذر إنشاء الحساب؛ تحقق من البيانات أو حاول لاحقًا" };
   }
 

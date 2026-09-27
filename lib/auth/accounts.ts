@@ -5,6 +5,21 @@ import { hashPassword, verifyPassword, newToken, tokenHash } from "./password";
 import { startSession, endSession } from "./session";
 import type { RegisterInput } from "@/lib/validations/auth";
 
+export class AccountAlreadyExistsError extends Error {
+  constructor() {
+    super("An account already exists for this email");
+    this.name = "AccountAlreadyExistsError";
+  }
+}
+
+const academicYearCodeByLegacyValue = {
+  year1: "first_year",
+  year2: "second_year",
+  year3: "third_year",
+  year4: "fourth_year",
+  other: null,
+} as const;
+
 // Database-backed throttles survive restarts and work across app replicas.
 async function allowAttempt(key: string, maximum: number) {
   const { rows } = await getPool().query(
@@ -20,12 +35,25 @@ export async function registerAccount(input: RegisterInput) {
   if (!await allowAttempt(`register:${email}`, 5) || !await allowAttempt("register:global", 100)) throw new Error("حاول مرة أخرى لاحقًا");
   const passwordHash = await hashPassword(input.password);
   const id = await transaction(async (client) => {
-    const { rows } = await client.query("INSERT INTO app_users(email,password_hash) VALUES($1,$2) RETURNING id", [email, passwordHash]);
+    const academicYearCode = academicYearCodeByLegacyValue[input.nursingYear];
+    const academicYear = academicYearCode
+      ? (await client.query<{ id: string }>(
+          "SELECT id FROM academic_years WHERE code=$1 AND is_active=true",
+          [academicYearCode]
+        )).rows[0]
+      : null;
+    if (academicYearCode && !academicYear) {
+      throw new Error(`Active academic year is missing: ${academicYearCode}`);
+    }
+
+    const { rows } = await client.query<{ id: string }>(
+      "INSERT INTO app_users(email,password_hash) VALUES($1,$2) ON CONFLICT(email) DO NOTHING RETURNING id",
+      [email, passwordHash]
+    );
+    if (!rows[0]) throw new AccountAlreadyExistsError();
     await client.query(`INSERT INTO profiles(user_id,email,full_name,university,nursing_year,academic_year_id)
-      VALUES($1,$2,$3,$4,$5,(SELECT y.id FROM academic_years y WHERE y.code=case $5
-        when 'year1' then 'first_year' when 'year2' then 'second_year'
-        when 'year3' then 'third_year' when 'year4' then 'fourth_year' else null end))`,
-      [rows[0].id, email, input.fullName, input.university, input.nursingYear]);
+      VALUES($1,$2,$3,$4,$5,$6)`,
+      [rows[0].id, email, input.fullName, input.university, input.nursingYear, academicYear?.id ?? null]);
     return rows[0].id as string;
   });
   await startSession(id);
