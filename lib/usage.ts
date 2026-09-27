@@ -6,12 +6,18 @@ export interface AppSettings {
   freeDailyLimit: number;
   rateLimitSeconds: number;
   maxImageSizeMb: number;
+  lectureMaxFileMb: number;
+  lectureLargeFileMb: number;
+  lectureRetentionDays: number;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   freeDailyLimit: 20,
   rateLimitSeconds: 3,
   maxImageSizeMb: 8,
+  lectureMaxFileMb: 50,
+  lectureLargeFileMb: 20,
+  lectureRetentionDays: 10,
 };
 
 export async function getSettings(
@@ -26,6 +32,9 @@ export async function getSettings(
       map.get("rate_limit_seconds") ?? DEFAULT_SETTINGS.rateLimitSeconds
     ),
     maxImageSizeMb: Number(map.get("max_image_size_mb") ?? DEFAULT_SETTINGS.maxImageSizeMb),
+    lectureMaxFileMb: Number(map.get("lecture_max_file_mb") ?? DEFAULT_SETTINGS.lectureMaxFileMb),
+    lectureLargeFileMb: Number(map.get("lecture_large_file_mb") ?? DEFAULT_SETTINGS.lectureLargeFileMb),
+    lectureRetentionDays: Number(map.get("lecture_retention_days") ?? DEFAULT_SETTINGS.lectureRetentionDays),
   };
 }
 
@@ -91,6 +100,7 @@ export async function logUsage(params: {
   inputTokens: number;
   outputTokens: number;
   estimatedCost: number;
+  lectureId?: string | null;
 }) {
   const db = createSystemClient();
   const { error } = await db.from("usage_logs").insert({
@@ -100,6 +110,7 @@ export async function logUsage(params: {
     input_tokens: params.inputTokens,
     output_tokens: params.outputTokens,
     estimated_cost: params.estimatedCost,
+    lecture_id: params.lectureId ?? null,
   });
   if (error) console.error("logUsage error", error);
 }

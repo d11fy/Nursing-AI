@@ -9,6 +9,7 @@ type Functions = Database["public"]["Functions"];
 const functionArgs: Record<keyof Functions, string[]> = {
   is_admin: [], get_today_usage_count: ["p_user_id"],
   match_document_chunks: ["query_embedding", "match_subject_id", "match_count", "query_provider", "query_model"],
+  match_lecture_chunks: ["query_embedding", "match_lecture_id", "match_user_id", "match_count", "query_provider", "query_model"],
   admin_dashboard_stats: [], admin_usage_last_7_days: [], admin_list_students: [],
 };
 
@@ -24,6 +25,7 @@ export class DatabaseClient {
       if (!this.system && (!this.actor || this.actor.status !== "active")) throw new Error("Unauthorized");
       if (name.startsWith("admin_") && this.actor?.role !== "admin") throw new Error("Forbidden");
       if (name === "get_today_usage_count" && !this.system && this.actor?.role !== "admin" && (args as { p_user_id: string }).p_user_id !== this.actor?.user_id) throw new Error("Forbidden");
+      if (name === "match_lecture_chunks" && !this.system && this.actor?.role !== "admin" && (args as { match_user_id: string }).match_user_id !== this.actor?.user_id) throw new Error("Forbidden");
       const keys = functionArgs[name];
       const values = keys.map((key) => (args as Record<string, unknown>)?.[key]);
       const rows = await transaction(async (client) => {

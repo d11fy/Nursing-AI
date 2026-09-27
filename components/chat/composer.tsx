@@ -10,6 +10,14 @@ import { Textarea } from "@/components/ui/textarea";
 export interface PendingImage {
   path: string;
   previewUrl: string;
+  name: string;
+  size: number;
+}
+
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+
+function formatFileSize(bytes: number) {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} ميجابايت`;
 }
 
 export function Composer({
@@ -20,6 +28,7 @@ export function Composer({
   isGenerating,
   pendingImage,
   onImageChange,
+  maxImageSizeMb = 8,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -28,11 +37,20 @@ export function Composer({
   isGenerating: boolean;
   pendingImage: PendingImage | null;
   onImageChange: (image: PendingImage | null) => void;
+  maxImageSizeMb?: number;
 }) {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleFileSelect(file: File) {
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+      toast.error("نوع الملف غير مدعوم");
+      return;
+    }
+    if (file.size > maxImageSizeMb * 1024 * 1024) {
+      toast.error(`حجم الصورة أكبر من الحد المسموح. الحد الأقصى ${maxImageSizeMb}MB.`);
+      return;
+    }
     setUploading(true);
     try {
       const formData = new FormData();
@@ -40,7 +58,7 @@ export function Composer({
       const res = await fetch("/api/upload", { method: "POST", body: formData });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "تعذر رفع الصورة");
-      onImageChange({ path: data.path, previewUrl: data.url });
+      onImageChange({ path: data.path, previewUrl: data.url, name: file.name, size: file.size });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "تعذر رفع الصورة");
     } finally {
@@ -58,17 +76,23 @@ export function Composer({
   return (
     <div className="border-t border-border bg-white p-3 sm:p-4 dark:bg-slate-900">
       {pendingImage && (
-        <div className="relative mb-2 inline-block">
-          <div className="relative size-20 overflow-hidden rounded-lg border border-border">
-            <Image src={pendingImage.previewUrl} alt="معاينة" fill className="object-cover" unoptimized />
+        <div className="mb-2 flex items-center gap-3">
+          <div className="relative inline-block shrink-0">
+            <div className="relative size-20 overflow-hidden rounded-lg border border-border">
+              <Image src={pendingImage.previewUrl} alt="معاينة" fill className="object-cover" unoptimized />
+            </div>
+            <button
+              onClick={() => onImageChange(null)}
+              className="absolute -left-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-slate-900 text-white"
+              aria-label="إزالة الصورة"
+            >
+              <X className="size-3" />
+            </button>
           </div>
-          <button
-            onClick={() => onImageChange(null)}
-            className="absolute -left-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-slate-900 text-white"
-            aria-label="إزالة الصورة"
-          >
-            <X className="size-3" />
-          </button>
+          <div className="min-w-0 text-xs text-muted-foreground">
+            <p className="truncate font-medium text-foreground">{pendingImage.name}</p>
+            <p>{formatFileSize(pendingImage.size)}</p>
+          </div>
         </div>
       )}
 

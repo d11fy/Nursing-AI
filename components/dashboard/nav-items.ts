@@ -10,6 +10,8 @@ import {
   BarChart3,
   Settings,
   CalendarRange,
+  FileText,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -31,6 +33,8 @@ export const adminNavItems: NavItem[] = [
   { href: "/admin", label: "لوحة التحكم", icon: LayoutDashboard },
   { href: "/admin/students", label: "الطلاب", icon: GraduationCap },
   { href: "/admin/knowledge", label: "قاعدة المعرفة", icon: Database },
+  { href: "/admin/knowledge/contributions", label: "مراجعة المساهمات", icon: ShieldCheck },
+  { href: "/admin/lectures", label: "محاضرات الطلاب", icon: FileText },
   { href: "/admin/subjects", label: "المواد", icon: BookOpen },
   { href: "/admin/academic-years", label: "السنوات الدراسية", icon: CalendarRange },
   { href: "/admin/usage", label: "الاستخدام", icon: BarChart3 },

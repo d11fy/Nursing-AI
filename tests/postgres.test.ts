@@ -12,11 +12,14 @@ import { GET as getFile } from "../app/api/files/route";
 import { processDocument } from "../lib/knowledge";
 import { searchKnowledge } from "../lib/ai/rag";
 import { assignSubjectToYears, canStudentAccessSubject, getStudentSubjects, setStudentAcademicYear } from "../lib/subjects";
+import { runLectureCleanupSweep } from "../lib/lectures/retention";
+import { submitContributionIfRequested } from "../lib/lectures/contribution";
+import { classifyLectureContent } from "../lib/ai/classification";
 
 const db = new PGlite();
 const executor: Executor = (sql, values) => db.query(sql, values);
 const migrationClient = { query: async (sql: string, values?: unknown[]) => {
-  if (!values && (sql.includes("create table public.app_users") || sql.includes("alter table public.document_chunks") || sql.includes("create table public.academic_years"))) { await db.exec(sql); return { rows: [] }; }
+  if (!values && (sql.includes("create table public.app_users") || sql.includes("alter table public.document_chunks") || sql.includes("create table public.academic_years") || sql.includes("create table public.lectures"))) { await db.exec(sql); return { rows: [] }; }
   return db.query(sql, values);
 } };
 const alice: Actor = { user_id: "10000000-0000-4000-8000-000000000001", role: "student", status: "active" };
@@ -267,4 +270,116 @@ test("streamed multipart body is limited even without Content-Length", async () 
   assert.equal((await limitedFormData(request, 4096)).get("file") instanceof File, true);
   const oversized = new Request("http://localhost/upload", { method: "POST", body: "oversized body" });
   await assert.rejects(limitedFormData(oversized, 2));
+});
+
+test("lectures are scoped to their owner and insert requires subject access", async () => {
+  const years = await db.query<{ id: string; code: string }>("SELECT id,code FROM academic_years");
+  const firstYear = years.rows.find((y) => y.code === "first_year")!.id;
+  await setStudentAcademicYear(alice.user_id, firstYear);
+  await setStudentAcademicYear(bob.user_id, firstYear);
+  const subject = (await db.query<{ id: string }>("SELECT id FROM subjects WHERE name_en='Anatomy & Physiology'")).rows[0];
+  const pediatrics = (await db.query<{ id: string }>("SELECT id FROM subjects WHERE name_en='Pediatric Nursing'")).rows[0];
+
+  const created = await new Query("lectures", alice, false, executor).insert({
+    user_id: alice.user_id, subject_id: subject.id, title: "Test Lecture",
+    file_name: "test.pdf", original_file_name: "test.pdf", storage_path: `${alice.user_id}/lecture`,
+    mime_type: "application/pdf", file_size_bytes: 1000, file_hash: "abc123", status: "uploaded",
+  }).single();
+  assert.equal(created.error, null);
+  const lectureId = created.data!.id;
+
+  assert.deepEqual((await new Query("lectures", bob, false, executor).select().eq("id", lectureId)).data, []);
+  assert.equal((await new Query("lectures", alice, false, executor).select().eq("id", lectureId).single()).data?.title, "Test Lecture");
+  assert.ok((await new Query("lectures", bob, false, executor).insert({
+    user_id: bob.user_id, subject_id: pediatrics.id, title: "x", file_name: "x.pdf", original_file_name: "x.pdf",
+    storage_path: "a/b", mime_type: "application/pdf", file_size_bytes: 1, file_hash: "h", status: "uploaded",
+  })).error);
+  // A student may never insert a lecture row owned by someone else.
+  assert.ok((await new Query("lectures", bob, false, executor).insert({
+    user_id: alice.user_id, subject_id: subject.id, title: "hijack", file_name: "x.pdf", original_file_name: "x.pdf",
+    storage_path: "a/b", mime_type: "application/pdf", file_size_bytes: 1, file_hash: "h2", status: "uploaded",
+  })).error);
+});
+
+test("match_lecture_chunks refuses a caller whose identity does not match match_user_id", async () => {
+  assert.ok((await new DatabaseClient(bob).rpc("match_lecture_chunks", {
+    query_embedding: [1, 0], match_lecture_id: "00000000-0000-4000-8000-000000000000",
+    match_user_id: alice.user_id, match_count: 5, query_provider: "openai", query_model: "text-embedding-3-small",
+  })).error);
+});
+
+test("lecture cleanup sweep deletes only the original file once it expires", async () => {
+  const subject = (await db.query<{ id: string }>("SELECT id FROM subjects WHERE name_en='Anatomy & Physiology'")).rows[0];
+  const lecture = await new Query("lectures", alice, false, executor).insert({
+    user_id: alice.user_id, subject_id: subject.id, title: "Big Lecture",
+    file_name: "big.pdf", original_file_name: "big.pdf", storage_path: `${alice.user_id}/big`,
+    mime_type: "application/pdf", file_size_bytes: 30 * 1024 * 1024, file_hash: "bighash",
+    status: "ready", delete_after: new Date(Date.now() - 1000).toISOString(),
+  }).single();
+  const lectureId = lecture.data!.id;
+  await db.query(
+    "INSERT INTO stored_files(path,bucket,owner_id,mime_type,content) VALUES($1,'lecture-files',$2,'application/pdf',$3)",
+    [`${alice.user_id}/big`, alice.user_id, Buffer.from("fake pdf bytes")]
+  );
+  await db.query(
+    "INSERT INTO generated_study_content(lecture_id,user_id,content_type,content_json) VALUES($1,$2,'summary','{}')",
+    [lectureId, alice.user_id]
+  );
+
+  await runLectureCleanupSweep();
+
+  assert.equal((await db.query("SELECT 1 FROM stored_files WHERE path=$1", [`${alice.user_id}/big`])).rows.length, 0);
+  const row = (await db.query<{ deleted_at: string | null }>("SELECT deleted_at FROM lectures WHERE id=$1", [lectureId])).rows[0];
+  assert.notEqual(row.deleted_at, null);
+  assert.equal((await db.query("SELECT 1 FROM generated_study_content WHERE lecture_id=$1", [lectureId])).rows.length, 1);
+  assert.equal((await db.query<{ status: string }>("SELECT status FROM file_cleanup_logs WHERE lecture_id=$1", [lectureId])).rows[0].status, "success");
+
+  // A second sweep is a no-op — deleted_at is already set, so it is never picked up again.
+  await runLectureCleanupSweep();
+  assert.equal((await db.query("SELECT * FROM file_cleanup_logs WHERE lecture_id=$1", [lectureId])).rows.length, 1);
+});
+
+test("classifyLectureContent flags personal data without ever calling the AI provider", async (t) => {
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => { throw new Error("must not call the AI provider when PII is detected"); });
+  try {
+    const result = await classifyLectureContent("للتواصل، راسلني على student@example.com أو اتصل 0791234567");
+    assert.equal(result.classification, "uncertain");
+    assert.equal(result.privacyFlagged, true);
+    assert.equal(fetchMock.mock.callCount(), 0);
+  } finally {
+    fetchMock.mock.restore();
+  }
+});
+
+test("a non-nursing contribution is auto-rejected and never reaches the shared knowledge base", async (t) => {
+  const subject = (await db.query<{ id: string }>("SELECT id FROM subjects WHERE name_en='Anatomy & Physiology'")).rows[0];
+  const lecture = await new Query("lectures", alice, false, executor).insert({
+    user_id: alice.user_id, subject_id: subject.id, title: "Cooking Notes",
+    file_name: "cooking.txt", original_file_name: "cooking.txt", storage_path: `${alice.user_id}/cooking`,
+    mime_type: "text/plain", file_size_bytes: 10, file_hash: "cookhash", status: "ready",
+    contribution_consent_at: new Date().toISOString(), contribution_ownership_confirmed_at: new Date().toISOString(),
+  }).single();
+  const lectureId = lecture.data!.id;
+  await db.query(
+    "INSERT INTO lecture_chunks(lecture_id,user_id,subject_id,content,chunk_index) VALUES($1,$2,$3,$4,0)",
+    [lectureId, alice.user_id, subject.id, "How to bake a chocolate cake: mix flour, sugar and eggs."]
+  );
+
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => Response.json({
+    message: { content: JSON.stringify({ classification: "NOT_NURSING", confidence: 0.9, contains_personal_data: false }) },
+    done: true,
+  }));
+  try {
+    await submitContributionIfRequested(lectureId);
+  } finally {
+    fetchMock.mock.restore();
+  }
+
+  const contribution = (await db.query<{ id: string; status: string; classification: string }>(
+    "SELECT id,status,classification FROM knowledge_contributions WHERE lecture_id=$1", [lectureId]
+  )).rows[0];
+  assert.equal(contribution.status, "rejected");
+  assert.equal(contribution.classification, "not_nursing");
+  assert.equal((await db.query<{ contribution_status: string }>("SELECT contribution_status FROM lectures WHERE id=$1", [lectureId])).rows[0].contribution_status, "rejected");
+  assert.equal((await db.query("SELECT 1 FROM documents WHERE contribution_id=$1", [contribution.id])).rows.length, 0);
 });

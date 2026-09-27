@@ -7,6 +7,7 @@ export const sendMessageSchema = z.object({
   conversationId: z.string().uuid().optional(),
   content: z.string().trim().min(1, "الرجاء كتابة سؤال"),
   subjectId: z.string().uuid().optional().nullable(),
+  lectureId: z.string().uuid().optional().nullable(),
   imagePath: z.string().min(1).optional().nullable(),
 });
 

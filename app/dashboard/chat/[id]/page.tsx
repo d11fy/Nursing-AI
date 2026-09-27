@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { requireProfile } from "@/lib/auth";
 import { createClient } from "@/lib/db/server";
 import { getSignedChatImageUrl } from "@/lib/storage";
+import { getSettings } from "@/lib/usage";
 import { ChatView } from "@/components/chat/chat-view";
 import type { ChatMessageData } from "@/components/chat/message-bubble";
 import { canStudentAccessSubject, getSubjectById } from "@/lib/subjects";
@@ -42,6 +43,8 @@ export default async function ConversationPage({ params }: PageProps<"/dashboard
       }))
   );
 
+  const { maxImageSizeMb } = await getSettings(db);
+
   return (
     <ChatView
       key={conversation.id}
@@ -49,6 +52,7 @@ export default async function ConversationPage({ params }: PageProps<"/dashboard
       initialMessages={initialMessages}
       subjectId={conversation.subject_id}
       subjectName={subjectName}
+      maxImageSizeMb={maxImageSizeMb}
     />
   );
 }

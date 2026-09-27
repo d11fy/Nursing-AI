@@ -39,6 +39,18 @@ export async function getSignedChatImageUrl(db: DatabaseClient, path: string) {
   url.searchParams.set("signature", signature(path, expires));
   return url.toString();
 }
+/**
+ * Inlines the image as a data: URI instead of a fetchable URL. The AI
+ * provider (e.g. OpenAI) runs on servers that cannot reach a same-origin
+ * signed URL in local/private deployments, so vision requests must carry
+ * the bytes directly rather than a link back to this app.
+ */
+export async function getChatImageDataUri(db: DatabaseClient, path: string) {
+  if (!db.actor || db.actor.status !== "active") throw new Error("غير مصرح");
+  const { rows } = await getPool().query("SELECT owner_id,mime_type,content FROM stored_files WHERE path=$1 AND bucket='chat-images'", [path]);
+  if (!rows[0] || (rows[0].owner_id !== db.actor.user_id && db.actor.role !== "admin")) throw new Error("تعذر تحميل الصورة");
+  return `data:${rows[0].mime_type};base64,${Buffer.from(rows[0].content).toString("base64")}`;
+}
 export async function uploadKnowledgeDocument(db: DatabaseClient, file: File) {
   if (db.actor?.role !== "admin") throw new Error("غير مصرح");
   const path = `knowledge/${randomUUID()}`;
@@ -53,4 +65,30 @@ export async function downloadKnowledgeDocument(path: string): Promise<Buffer> {
 export async function removeKnowledgeDocument(db: DatabaseClient, path: string) {
   if (db.actor?.role !== "admin" || db.actor.status !== "active") throw new Error("غير مصرح");
   await getPool().query("DELETE FROM stored_files WHERE path=$1 AND bucket='knowledge-documents'", [path]);
+}
+
+const LECTURE_TYPES = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "text/plain",
+  "image/jpeg", "image/jpg", "image/png", "image/webp",
+]);
+export function isAcceptedLectureType(mimeType: string) {
+  return LECTURE_TYPES.has(mimeType);
+}
+export async function uploadLectureFile(db: DatabaseClient, userId: string, file: File, maxBytes: number) {
+  if (db.actor?.user_id !== userId || !LECTURE_TYPES.has(file.type)) throw new Error("نوع الملف غير مدعوم");
+  const path = `${userId}/${randomUUID()}`;
+  await store(db, "lecture-files", path, file, maxBytes);
+  return { path };
+}
+export async function downloadLectureFile(path: string): Promise<{ content: Buffer; mimeType: string }> {
+  const { rows } = await getPool().query("SELECT content,mime_type FROM stored_files WHERE path=$1 AND bucket='lecture-files'", [path]);
+  if (!rows[0]) throw new Error("تعذر تحميل الملف");
+  return { content: rows[0].content, mimeType: rows[0].mime_type };
+}
+/** Used only by the retention cleanup sweep — not exposed to any request path. */
+export async function deleteLectureFile(path: string): Promise<void> {
+  await getPool().query("DELETE FROM stored_files WHERE path=$1 AND bucket='lecture-files'", [path]);
 }

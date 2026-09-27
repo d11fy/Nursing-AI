@@ -10,13 +10,18 @@ type Result<T> = { data: T | null; error: { message: string } | null };
 const columns: Record<Table, string[]> = {
   profiles: "id user_id full_name email university nursing_year academic_year_id role status created_at updated_at".split(" "),
   subjects: "id name_ar name_en description description_ar description_en icon icon_theme status sort_order created_at updated_at archived_at".split(" "),
-  conversations: "id user_id title subject_id created_at updated_at".split(" "),
+  conversations: "id user_id title subject_id lecture_id created_at updated_at".split(" "),
   messages: "id conversation_id role content image_url tokens_input tokens_output model created_at".split(" "),
   message_feedback: "id message_id user_id is_positive reason comment created_at".split(" "),
-  documents: "id title file_url file_name file_size subject_id source_type status vector_store_id file_id chunk_count error_message created_by created_at".split(" "),
+  documents: "id title file_url file_name file_size subject_id source_type status vector_store_id file_id chunk_count error_message created_by contribution_id created_at".split(" "),
   document_chunks: "id document_id subject_id content embedding embedding_provider embedding_model embedding_dimensions chapter page_number chunk_index created_at".split(" "),
-  usage_logs: "id user_id type model input_tokens output_tokens estimated_cost created_at".split(" "),
+  usage_logs: "id user_id type model input_tokens output_tokens estimated_cost lecture_id created_at".split(" "),
   settings: "key value updated_at".split(" "),
+  lectures: "id user_id subject_id title file_name original_file_name storage_path mime_type file_size_bytes file_hash status error_message uploaded_at processing_started_at processing_completed_at delete_after deleted_at contribution_status contribution_consent_at contribution_ownership_confirmed_at created_at updated_at".split(" "),
+  lecture_chunks: "id lecture_id user_id subject_id content page_number chunk_index embedding embedding_provider embedding_model embedding_dimensions created_at".split(" "),
+  generated_study_content: "id lecture_id user_id content_type content_json model input_tokens output_tokens created_at updated_at".split(" "),
+  file_cleanup_logs: "id lecture_id storage_path attempted_at status error_message".split(" "),
+  knowledge_contributions: "id lecture_id user_id subject_id classification classification_confidence privacy_flagged status reviewed_by reviewed_at approved_document_id created_at".split(" "),
 };
 
 // Server-only data access: every non-system query gets an ownership predicate,
@@ -105,6 +110,11 @@ export class Query<T extends Table> implements PromiseLike<Result<Row<T>[]>> {
           case "usage_logs":
             if (!isRead) throw new Error("Forbidden");
             scope = `user_id = ${uid}`; break;
+          case "lectures":
+            if (!isRead && this.operation !== "insert") throw new Error("Forbidden");
+            scope = `user_id = ${uid}`;
+            if (this.operation === "insert" && this.rows.some((r) => (r as Record<string, unknown>).user_id !== this.actor!.user_id)) throw new Error("Forbidden");
+            break;
           default: throw new Error("Forbidden");
         }
       }
@@ -127,8 +137,23 @@ export class Query<T extends Table> implements PromiseLike<Result<Row<T>[]>> {
         }
         if (!this.system && !admin && this.table === "conversations") {
           for (const row of this.rows) {
+            const record = row as Record<string, unknown>;
+            if (record.subject_id) {
+              const allowed = await this.execute(
+                `SELECT 1 FROM profiles p JOIN academic_years y ON y.id=p.academic_year_id AND y.is_active=true JOIN subject_academic_years sy ON sy.academic_year_id=p.academic_year_id
+                 JOIN subjects s ON s.id=sy.subject_id AND s.status='active' AND s.archived_at IS NULL
+                 WHERE p.user_id=$1 AND s.id=$2`, [this.actor!.user_id, record.subject_id]);
+              if (!allowed.rows.length) throw new Error("Forbidden");
+            }
+            if (record.lecture_id) {
+              const owns = await this.execute("SELECT 1 FROM lectures WHERE id=$1 AND user_id=$2", [record.lecture_id, this.actor!.user_id]);
+              if (!owns.rows.length) throw new Error("Forbidden");
+            }
+          }
+        }
+        if (!this.system && !admin && this.table === "lectures") {
+          for (const row of this.rows) {
             const subjectId = (row as Record<string, unknown>).subject_id;
-            if (!subjectId) continue;
             const allowed = await this.execute(
               `SELECT 1 FROM profiles p JOIN academic_years y ON y.id=p.academic_year_id AND y.is_active=true JOIN subject_academic_years sy ON sy.academic_year_id=p.academic_year_id
                JOIN subjects s ON s.id=sy.subject_id AND s.status='active' AND s.archived_at IS NULL
