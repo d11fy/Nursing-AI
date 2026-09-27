@@ -33,8 +33,10 @@ export function StudyContentPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "تعذر إنشاء المحتوى");
+      // A gateway/proxy error (e.g. the request timed out) returns an HTML/text
+      // body, not JSON — fall back to a clean message instead of crashing on parse.
+      const data = await res.json().catch(() => ({}) as { content?: unknown; error?: string });
+      if (!res.ok) throw new Error(data.error || "تعذر إنشاء المحتوى، حاول مرة أخرى");
       setContent(data.content);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "تعذر إنشاء المحتوى");

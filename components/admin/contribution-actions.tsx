@@ -22,12 +22,12 @@ export function ContributionActions({ contributionId }: { contributionId: string
   function act(action: "approve" | "reject") {
     startTransition(async () => {
       const res = await fetch(`/api/admin/knowledge/contributions/${contributionId}/${action}`, { method: "POST" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}) as { error?: string });
       if (res.ok) {
         toast.success(action === "approve" ? "تمت الموافقة وإضافة المحتوى للمعرفة المشتركة" : "تم رفض المساهمة");
         router.refresh();
       } else {
-        toast.error(data.error || "تعذر تنفيذ العملية");
+        toast.error(data.error || "تعذر تنفيذ العملية، حاول مرة أخرى");
       }
     });
   }

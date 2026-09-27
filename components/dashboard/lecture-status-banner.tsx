@@ -48,7 +48,7 @@ export function LectureStatusBanner({
     setRetrying(true);
     try {
       const res = await fetch(`/api/lectures/${lectureId}/retry`, { method: "POST" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}) as { error?: string });
       if (!res.ok) throw new Error(data.error || "تعذر إعادة المحاولة");
       setStatus("uploaded");
       toast.success("جارٍ إعادة المعالجة");
