@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/db/server";
 import { getAIProvider } from "@/lib/ai";
 import { searchKnowledge } from "@/lib/ai/rag";
 import { checkDailyLimit, checkRateLimit, logUsage } from "@/lib/usage";
@@ -13,10 +13,10 @@ function truncateTitle(text: string, max = 60): string {
 }
 
 export async function POST(request: Request) {
-  const supabase = await createClient();
+  const db = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await db.auth.getUser();
 
   if (!user) {
     return NextResponse.json({ error: "يجب تسجيل الدخول" }, { status: 401 });
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const dailyLimit = await checkDailyLimit(supabase, user.id);
+  const dailyLimit = await checkDailyLimit(db, user.id);
   if (!dailyLimit.allowed) {
     return NextResponse.json(
       { error: "وصلت للحد اليومي للتجربة. يمكنك العودة غدًا." },
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
   let activeSubjectId = subjectId ?? null;
 
   if (activeConversationId) {
-    const { data: existing } = await supabase
+    const { data: existing } = await db
       .from("conversations")
       .select("id, subject_id, user_id")
       .eq("id", activeConversationId)
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
     }
     activeSubjectId = existing.subject_id ?? activeSubjectId;
   } else {
-    const { data: created, error } = await supabase
+    const { data: created, error } = await db
       .from("conversations")
       .insert({
         user_id: user.id,
@@ -81,7 +81,7 @@ export async function POST(request: Request) {
   }
 
   // Load recent history for context (before inserting the new user message).
-  const { data: history } = await supabase
+  const { data: history } = await db
     .from("messages")
     .select("role, content")
     .eq("conversation_id", activeConversationId)
@@ -91,13 +91,13 @@ export async function POST(request: Request) {
   let signedImageUrl: string | null = null;
   if (imagePath) {
     try {
-      signedImageUrl = await getSignedChatImageUrl(supabase, imagePath);
+      signedImageUrl = await getSignedChatImageUrl(db, imagePath);
     } catch {
       return NextResponse.json({ error: "تعذر تحميل الصورة" }, { status: 400 });
     }
   }
 
-  await supabase.from("messages").insert({
+  await db.from("messages").insert({
     conversation_id: activeConversationId,
     role: "user",
     content,
@@ -154,7 +154,7 @@ export async function POST(request: Request) {
 
         const cost = provider.calculateCost({ model, inputTokens, outputTokens });
 
-        await supabase.from("messages").insert({
+        await db.from("messages").insert({
           conversation_id: conversationIdForClient,
           role: "assistant",
           content: fullContent,
@@ -163,7 +163,7 @@ export async function POST(request: Request) {
           model,
         });
 
-        await supabase
+        await db
           .from("conversations")
           .update({ updated_at: new Date().toISOString() })
           .eq("id", conversationIdForClient);
@@ -180,7 +180,7 @@ export async function POST(request: Request) {
         if (fullContent) {
           // Partial content was streamed (e.g. client stopped generation) —
           // save what we have instead of losing the exchange.
-          await supabase.from("messages").insert({
+          await db.from("messages").insert({
             conversation_id: conversationIdForClient,
             role: "assistant",
             content: fullContent,

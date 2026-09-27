@@ -15,6 +15,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "بيانات غير صالحة" }, { status: 400 });
   }
 
-  await processDocument(parsed.data.documentId);
+  try {
+    await processDocument(parsed.data.documentId);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "تعذر بدء المعالجة" }, { status: 409 });
+  }
   return NextResponse.json({ ok: true });
 }

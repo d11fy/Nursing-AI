@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/db/server";
 import {
   Table,
   TableBody,
@@ -12,8 +12,8 @@ import { StudentActions } from "@/components/admin/student-actions";
 import { nursingYearOptions } from "@/lib/validations/auth";
 
 export default async function AdminStudentsPage() {
-  const supabase = await createClient();
-  const { data: students } = await supabase.rpc("admin_list_students");
+  const db = await createClient();
+  const { data: students } = await db.rpc("admin_list_students");
 
   const yearLabel = (value: string) =>
     nursingYearOptions.find((o) => o.value === value)?.label ?? value;

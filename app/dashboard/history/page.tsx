@@ -1,15 +1,15 @@
 import Link from "next/link";
 import { MessageSquarePlus } from "lucide-react";
 import { requireProfile } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/db/server";
 import { ConversationRow } from "@/components/dashboard/conversation-row";
 import { Button } from "@/components/ui/button";
 
 export default async function HistoryPage() {
   const profile = await requireProfile();
-  const supabase = await createClient();
+  const db = await createClient();
 
-  const { data: conversations } = await supabase
+  const { data: conversations } = await db
     .from("conversations")
     .select("id, title, updated_at")
     .eq("user_id", profile.user_id)

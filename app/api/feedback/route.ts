@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/db/server";
 import { feedbackSchema } from "@/lib/validations/chat";
 
 export async function POST(request: Request) {
-  const supabase = await createClient();
+  const db = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await db.auth.getUser();
 
   if (!user) {
     return NextResponse.json({ error: "يجب تسجيل الدخول" }, { status: 401 });
@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "بيانات غير صالحة" }, { status: 400 });
   }
 
-  const { error } = await supabase.from("message_feedback").insert({
+  const { error } = await db.from("message_feedback").insert({
     message_id: parsed.data.messageId,
     user_id: user.id,
     is_positive: parsed.data.isPositive,

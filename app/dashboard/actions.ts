@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/db/server";
 import { requireProfile } from "@/lib/auth";
 import { z } from "zod";
 
@@ -18,8 +18,8 @@ export async function renameConversationAction(formData: FormData) {
   });
   if (!parsed.success) return;
 
-  const supabase = await createClient();
-  await supabase
+  const db = await createClient();
+  await db
     .from("conversations")
     .update({ title: parsed.data.title })
     .eq("id", parsed.data.conversationId)
@@ -33,8 +33,8 @@ export async function deleteConversationAction(formData: FormData) {
   const conversationId = formData.get("conversationId");
   if (typeof conversationId !== "string") return;
 
-  const supabase = await createClient();
-  await supabase
+  const db = await createClient();
+  await db
     .from("conversations")
     .delete()
     .eq("id", conversationId)
@@ -68,8 +68,8 @@ export async function updateProfileAction(
     return { error: parsed.error.issues[0]?.message ?? "بيانات غير صالحة" };
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase
+  const db = await createClient();
+  const { error } = await db
     .from("profiles")
     .update({
       full_name: parsed.data.fullName,

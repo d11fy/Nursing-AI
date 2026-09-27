@@ -1,7 +1,9 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { registerAccount, loginAccount, requestPasswordReset, resetAccountPassword } from "@/lib/auth/accounts";
+import { endSession } from "@/lib/auth/session";
+import { z } from "zod";
 import {
   forgotPasswordSchema,
   loginSchema,
@@ -29,26 +31,10 @@ export async function registerAction(
     return { error: parsed.error.issues[0]?.message ?? "بيانات غير صالحة" };
   }
 
-  const { fullName, email, password, university, nursingYear } = parsed.data;
-  const supabase = await createClient();
-
-  const { error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        full_name: fullName,
-        university,
-        nursing_year: nursingYear,
-      },
-    },
-  });
-
-  if (error) {
-    if (error.message.includes("already registered")) {
-      return { error: "هذا البريد الإلكتروني مسجل مسبقًا" };
-    }
-    return { error: "تعذر إنشاء الحساب، حاول مرة أخرى" };
+  try {
+    await registerAccount(parsed.data);
+  } catch {
+    return { error: "تعذر إنشاء الحساب؛ تحقق من البيانات أو حاول لاحقًا" };
   }
 
   redirect("/dashboard");
@@ -67,15 +53,12 @@ export async function loginAction(
     return { error: parsed.error.issues[0]?.message ?? "بيانات غير صالحة" };
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword(parsed.data);
-
-  if (error) {
-    return { error: "البريد الإلكتروني أو كلمة المرور غير صحيحة" };
+  if (!await loginAccount(parsed.data.email, parsed.data.password)) {
+    return { error: "تعذر تسجيل الدخول؛ تحقق من البيانات أو حاول لاحقًا" };
   }
 
   const redirectTo = formData.get("redirectTo");
-  redirect(typeof redirectTo === "string" && redirectTo ? redirectTo : "/dashboard");
+  redirect(typeof redirectTo === "string" && /^\/(?![\/\\])/.test(redirectTo) && !/[\\\r\n]/.test(redirectTo) ? redirectTo : "/dashboard");
 }
 
 export async function forgotPasswordAction(
@@ -88,19 +71,24 @@ export async function forgotPasswordAction(
     return { error: parsed.error.issues[0]?.message ?? "بريد إلكتروني غير صالح" };
   }
 
-  const supabase = await createClient();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-
-  await supabase.auth.resetPasswordForEmail(parsed.data.email, {
-    redirectTo: `${appUrl}/dashboard/profile`,
-  });
+  try {
+    await requestPasswordReset(parsed.data.email);
+  } catch {
+    return { error: "تعذر إرسال رابط الاستعادة؛ تواصل مع الإدارة أو حاول لاحقًا" };
+  }
 
   // Always return success — never reveal whether an email exists.
   return { success: "إذا كان البريد الإلكتروني مسجلاً لدينا، ستصلك رسالة لإعادة تعيين كلمة المرور." };
 }
 
 export async function logoutAction() {
-  const supabase = await createClient();
-  await supabase.auth.signOut();
+  await endSession();
   redirect("/login");
+}
+
+export async function resetPasswordAction(_prev: AuthActionState, formData: FormData): Promise<AuthActionState> {
+  const parsed = z.object({ token: z.string().regex(/^[a-f0-9]{64}$/), password: z.string().min(8).max(128) }).safeParse({ token: formData.get("token"), password: formData.get("password") });
+  if (!parsed.success) return { error: "الرابط غير صالح أو كلمة المرور قصيرة (8 أحرف على الأقل)" };
+  if (!await resetAccountPassword(parsed.data.token, parsed.data.password)) return { error: "الرابط منتهي أو مستخدم؛ اطلب رابطًا جديدًا" };
+  return { success: "تم تغيير كلمة المرور. يمكنك تسجيل الدخول الآن." };
 }

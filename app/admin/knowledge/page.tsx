@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/db/server";
 import {
   Table,
   TableBody,
@@ -33,15 +33,15 @@ function formatSize(bytes: number | null) {
 }
 
 export default async function AdminKnowledgePage() {
-  const supabase = await createClient();
+  const db = await createClient();
 
   const [{ data: documents }, { data: subjects }, { data: allSubjects }] = await Promise.all([
-    supabase
+    db
       .from("documents")
       .select("id, title, file_name, file_size, chunk_count, status, created_at, subject_id")
       .order("created_at", { ascending: false }),
-    supabase.from("subjects").select("id, name_ar").eq("status", "active"),
-    supabase.from("subjects").select("id, name_ar"),
+    db.from("subjects").select("id, name_ar").eq("status", "active"),
+    db.from("subjects").select("id, name_ar"),
   ]);
 
   const subjectNameById = new Map((allSubjects ?? []).map((s) => [s.id, s.name_ar]));

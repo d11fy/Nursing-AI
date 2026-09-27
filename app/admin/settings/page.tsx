@@ -1,11 +1,11 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/db/server";
 import { getSettings } from "@/lib/usage";
 import { SettingsForm } from "@/components/admin/settings-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default async function AdminSettingsPage() {
-  const supabase = await createClient();
-  const settings = await getSettings(supabase);
+  const db = await createClient();
+  const settings = await getSettings(db);
 
   return (
     <div className="mx-auto max-w-xl space-y-6 p-4 sm:p-6">

@@ -11,14 +11,14 @@ export const nursingYearOptions = [
 export const registerSchema = z.object({
   fullName: z.string().trim().min(2, "الاسم الكامل مطلوب"),
   email: z.string().trim().email("بريد إلكتروني غير صالح"),
-  password: z.string().min(8, "كلمة المرور يجب أن تكون 8 أحرف على الأقل"),
+  password: z.string().max(128).min(8, "كلمة المرور يجب أن تكون 8 أحرف على الأقل"),
   university: z.string().trim().min(1, "اسم الجامعة مطلوب"),
   nursingYear: z.enum(["year1", "year2", "year3", "year4", "other"]),
 });
 
 export const loginSchema = z.object({
   email: z.string().trim().email("بريد إلكتروني غير صالح"),
-  password: z.string().min(1, "كلمة المرور مطلوبة"),
+  password: z.string().max(128).min(1, "كلمة المرور مطلوبة"),
 });
 
 export const forgotPasswordSchema = z.object({

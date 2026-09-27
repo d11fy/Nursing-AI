@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { MessageSquare, History, BookOpen } from "lucide-react";
 import { requireProfile } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/db/server";
 import { checkDailyLimit } from "@/lib/usage";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
@@ -15,10 +15,10 @@ import {
 
 export default async function DashboardHomePage() {
   const profile = await requireProfile();
-  const supabase = await createClient();
-  const { used, limit } = await checkDailyLimit(supabase, profile.user_id);
+  const db = await createClient();
+  const { used, limit } = await checkDailyLimit(db, profile.user_id);
 
-  const { data: recentConversations } = await supabase
+  const { data: recentConversations } = await db
     .from("conversations")
     .select("id, title, updated_at")
     .eq("user_id", profile.user_id)

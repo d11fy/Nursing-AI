@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { BookOpen } from "lucide-react";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/db/server";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
 export default async function SubjectsPage() {
-  const supabase = await createClient();
-  const { data: subjects } = await supabase
+  const db = await createClient();
+  const { data: subjects } = await db
     .from("subjects")
     .select("id, name_ar, name_en, description")
     .eq("status", "active")

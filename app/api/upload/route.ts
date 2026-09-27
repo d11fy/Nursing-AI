@@ -1,20 +1,26 @@
+import { limitedFormData } from "@/lib/request-body";
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/db/server";
 import { uploadChatImage } from "@/lib/storage";
 import { getSettings } from "@/lib/usage";
 import { ACCEPTED_IMAGE_TYPES } from "@/lib/validations/chat";
 
 export async function POST(request: Request) {
-  const supabase = await createClient();
+  const db = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await db.auth.getUser();
 
   if (!user) {
     return NextResponse.json({ error: "يجب تسجيل الدخول" }, { status: 401 });
   }
 
-  const formData = await request.formData();
+  let formData: FormData;
+  try {
+    formData = await limitedFormData(request, 9 * 1024 * 1024);
+  } catch {
+    return NextResponse.json({ error: "حجم الملف كبير جدًا أو الطلب غير صالح" }, { status: 413 });
+  }
   const file = formData.get("file");
 
   if (!(file instanceof File)) {
@@ -25,14 +31,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "نوع الملف غير مدعوم" }, { status: 400 });
   }
 
-  const settings = await getSettings(supabase);
+  const settings = await getSettings(db);
   const maxBytes = settings.maxImageSizeMb * 1024 * 1024;
   if (file.size > maxBytes) {
     return NextResponse.json({ error: "حجم الصورة كبير جدًا" }, { status: 400 });
   }
 
   try {
-    const { path, signedUrl } = await uploadChatImage(supabase, user.id, file);
+    const { path, signedUrl } = await uploadChatImage(db, user.id, file);
     return NextResponse.json({ path, url: signedUrl });
   } catch {
     return NextResponse.json(

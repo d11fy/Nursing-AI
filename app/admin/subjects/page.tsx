@@ -1,11 +1,11 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/db/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CreateSubjectForm } from "@/components/admin/create-subject-form";
 import { SubjectStatusToggle } from "@/components/admin/subject-status-toggle";
 
 export default async function AdminSubjectsPage() {
-  const supabase = await createClient();
-  const { data: subjects } = await supabase
+  const db = await createClient();
+  const { data: subjects } = await db
     .from("subjects")
     .select("id, name_ar, name_en, description, status")
     .order("created_at", { ascending: true });

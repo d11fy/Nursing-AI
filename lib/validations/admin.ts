@@ -19,7 +19,7 @@ export type SubjectInput = z.infer<typeof subjectSchema>;
 export const settingsSchema = z.object({
   freeDailyLimit: z.coerce.number().int().min(1).max(1000),
   rateLimitSeconds: z.coerce.number().int().min(0).max(60),
-  maxImageSizeMb: z.coerce.number().int().min(1).max(50),
+  maxImageSizeMb: z.coerce.number().int().min(1).max(8),
 });
 
 export type SettingsInput = z.infer<typeof settingsSchema>;

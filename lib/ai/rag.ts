@@ -1,4 +1,4 @@
-import { createServiceRoleClient } from "@/lib/supabase/server";
+import { createSystemClient } from "@/lib/db/server";
 import { getAIProvider } from "@/lib/ai";
 import type { KnowledgeChunk } from "@/lib/ai/provider";
 
@@ -35,8 +35,8 @@ export async function searchKnowledge(
   const provider = getAIProvider();
   const { embedding } = await provider.createEmbedding(query);
 
-  const supabase = createServiceRoleClient();
-  const { data, error } = await supabase.rpc("match_document_chunks", {
+  const db = createSystemClient();
+  const { data, error } = await db.rpc("match_document_chunks", {
     query_embedding: embedding,
     match_subject_id: subjectId,
     match_count: matchCount,

@@ -1,5 +1,6 @@
+import { removeKnowledgeDocument } from "@/lib/storage";
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/db/server";
 import { getAdminProfileOrNull } from "@/lib/auth";
 
 export async function DELETE(
@@ -10,19 +11,19 @@ export async function DELETE(
   if (!admin) return NextResponse.json({ error: "غير مصرح" }, { status: 403 });
 
   const { id } = await params;
-  const supabase = await createClient();
+  const db = await createClient();
 
-  const { data: doc } = await supabase
+  const { data: doc } = await db
     .from("documents")
     .select("file_url")
     .eq("id", id)
     .single();
 
   if (doc?.file_url) {
-    await supabase.storage.from("knowledge-documents").remove([doc.file_url]);
+    await removeKnowledgeDocument(db, doc.file_url);
   }
 
-  const { error } = await supabase.from("documents").delete().eq("id", id);
+  const { error } = await db.from("documents").delete().eq("id", id);
   if (error) {
     return NextResponse.json({ error: "تعذر حذف الملف" }, { status: 500 });
   }

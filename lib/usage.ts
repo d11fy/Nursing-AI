@@ -1,6 +1,6 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { createServiceRoleClient } from "@/lib/supabase/server";
-import type { Database, UsageType } from "@/types/database";
+import type { DatabaseClient } from "@/lib/db/server";
+import { createSystemClient } from "@/lib/db/server";
+import type { UsageType } from "@/types/database";
 
 export interface AppSettings {
   freeDailyLimit: number;
@@ -15,9 +15,9 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 export async function getSettings(
-  supabase: SupabaseClient<Database>
+  db: DatabaseClient
 ): Promise<AppSettings> {
-  const { data } = await supabase.from("settings").select("key, value");
+  const { data } = await db.from("settings").select("key, value");
   const map = new Map((data ?? []).map((row) => [row.key, row.value]));
 
   return {
@@ -32,25 +32,25 @@ export async function getSettings(
 /** Daily usage is derived from `usage_logs` rows created since midnight —
  * no cron reset job to keep in sync, the count is always accurate. */
 export async function getTodayUsageCount(
-  supabase: SupabaseClient<Database>,
+  db: DatabaseClient,
   userId: string
 ): Promise<number> {
-  const { data, error } = await supabase.rpc("get_today_usage_count", {
+  const { data, error } = await db.rpc("get_today_usage_count", {
     p_user_id: userId,
   });
   if (error) {
     console.error("getTodayUsageCount error", error);
-    return 0;
+    throw new Error("تعذر التحقق من حد الاستخدام");
   }
   return data ?? 0;
 }
 
 export async function checkDailyLimit(
-  supabase: SupabaseClient<Database>,
+  db: DatabaseClient,
   userId: string
 ): Promise<{ allowed: boolean; used: number; limit: number }> {
-  const settings = await getSettings(supabase);
-  const used = await getTodayUsageCount(supabase, userId);
+  const settings = await getSettings(db);
+  const used = await getTodayUsageCount(db, userId);
   return { allowed: used < settings.freeDailyLimit, used, limit: settings.freeDailyLimit };
 }
 
@@ -59,10 +59,10 @@ export async function checkDailyLimit(
 export async function checkRateLimit(
   userId: string
 ): Promise<{ allowed: boolean; retryAfterSeconds: number }> {
-  const supabase = createServiceRoleClient();
-  const settings = await getSettings(supabase);
+  const db = createSystemClient();
+  const settings = await getSettings(db);
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("usage_logs")
     .select("created_at")
     .eq("user_id", userId)
@@ -70,7 +70,8 @@ export async function checkRateLimit(
     .limit(1)
     .maybeSingle();
 
-  if (error || !data) return { allowed: true, retryAfterSeconds: 0 };
+  if (error) throw new Error("تعذر التحقق من حد الاستخدام");
+  if (!data) return { allowed: true, retryAfterSeconds: 0 };
 
   const elapsedMs = Date.now() - new Date(data.created_at).getTime();
   const requiredMs = settings.rateLimitSeconds * 1000;
@@ -91,8 +92,8 @@ export async function logUsage(params: {
   outputTokens: number;
   estimatedCost: number;
 }) {
-  const supabase = createServiceRoleClient();
-  const { error } = await supabase.from("usage_logs").insert({
+  const db = createSystemClient();
+  const { error } = await db.from("usage_logs").insert({
     user_id: params.userId,
     type: params.type,
     model: params.model,

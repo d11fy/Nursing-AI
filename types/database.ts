@@ -151,8 +151,7 @@ export type AdminStudentRow = {
 
 type NoRelationships = { Relationships: [] };
 
-// Minimal typed surface for the Supabase client (hand-written until
-// `supabase gen types typescript` is run against a real project).
+// Typed PostgreSQL tables and application functions.
 export type Database = {
   public: {
     Tables: {
@@ -202,7 +201,7 @@ export type Database = {
         Update: Partial<Setting>;
       } & NoRelationships;
     };
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- matches Supabase's generated-types shape
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- empty schema namespace
     Views: {};
     Functions: {
       is_admin: { Args: Record<string, never>; Returns: boolean };
@@ -219,9 +218,9 @@ export type Database = {
       admin_usage_last_7_days: { Args: Record<string, never>; Returns: AdminUsageDay[] };
       admin_list_students: { Args: Record<string, never>; Returns: AdminStudentRow[] };
     };
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- matches Supabase's generated-types shape
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- empty schema namespace
     Enums: {};
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- matches Supabase's generated-types shape
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- empty schema namespace
     CompositeTypes: {};
   };
 };

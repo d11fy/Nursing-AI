@@ -1,15 +1,15 @@
 import { Users, UserCheck, MessagesSquare, CalendarDays, ImageIcon, DollarSign } from "lucide-react";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/db/server";
 import { StatCard } from "@/components/admin/stat-card";
 import { UsageChart } from "@/components/admin/usage-chart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default async function AdminDashboardPage() {
-  const supabase = await createClient();
+  const db = await createClient();
 
   const [{ data: statsRows }, { data: usageRows }] = await Promise.all([
-    supabase.rpc("admin_dashboard_stats"),
-    supabase.rpc("admin_usage_last_7_days"),
+    db.rpc("admin_dashboard_stats"),
+    db.rpc("admin_usage_last_7_days"),
   ]);
 
   const stats = statsRows?.[0] ?? {

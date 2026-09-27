@@ -1,5 +1,6 @@
+import { limitedFormData } from "@/lib/request-body";
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/db/server";
 import { getAdminProfileOrNull } from "@/lib/auth";
 import { uploadKnowledgeDocument } from "@/lib/storage";
 import { processDocument } from "@/lib/knowledge";
@@ -11,9 +12,14 @@ export async function POST(request: Request) {
   const admin = await getAdminProfileOrNull();
   if (!admin) return NextResponse.json({ error: "غير مصرح" }, { status: 403 });
 
-  const supabase = await createClient();
+  const db = await createClient();
 
-  const formData = await request.formData();
+  let formData: FormData;
+  try {
+    formData = await limitedFormData(request, 11 * 1024 * 1024);
+  } catch {
+    return NextResponse.json({ error: "حجم الملف كبير جدًا أو الطلب غير صالح" }, { status: 413 });
+  }
   const file = formData.get("file");
 
   if (!(file instanceof File)) {
@@ -38,9 +44,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { path } = await uploadKnowledgeDocument(supabase, file);
+    const { path } = await uploadKnowledgeDocument(db, file);
 
-    const { data: document, error } = await supabase
+    const { data: document, error } = await db
       .from("documents")
       .insert({
         title: parsed.data.title,
@@ -50,6 +56,7 @@ export async function POST(request: Request) {
         subject_id: parsed.data.subjectId,
         source_type: parsed.data.sourceType,
         status: "uploading",
+        created_by: admin.user_id,
       })
       .select("id")
       .single();

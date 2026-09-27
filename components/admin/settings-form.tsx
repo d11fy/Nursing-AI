@@ -45,6 +45,7 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
           name="maxImageSizeMb"
           type="number"
           min={1}
+          max={8}
           defaultValue={settings.maxImageSizeMb}
           required
         />

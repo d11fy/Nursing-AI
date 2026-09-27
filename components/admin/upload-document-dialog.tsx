@@ -109,7 +109,7 @@ export function UploadDocumentDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="file">الملف (PDF, TXT, DOCX)</Label>
+            <Label htmlFor="file">الملف (PDF, TXT, DOCX — حتى 10 ميجابايت)</Label>
             <Input id="file" name="file" type="file" accept=".pdf,.txt,.docx" required />
           </div>
 

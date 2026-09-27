@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/db/server";
 import { requireAdminProfile } from "@/lib/auth";
 import { subjectSchema, settingsSchema } from "@/lib/validations/admin";
 
@@ -11,8 +11,8 @@ export async function setStudentStatusAction(formData: FormData) {
   const status = formData.get("status");
   if (typeof userId !== "string" || (status !== "active" && status !== "suspended")) return;
 
-  const supabase = await createClient();
-  await supabase.from("profiles").update({ status }).eq("user_id", userId);
+  const db = await createClient();
+  await db.from("profiles").update({ status }).eq("user_id", userId);
   revalidatePath("/admin/students");
 }
 
@@ -21,8 +21,8 @@ export async function resetDailyLimitAction(formData: FormData) {
   const userId = formData.get("userId");
   if (typeof userId !== "string") return;
 
-  const supabase = await createClient();
-  await supabase
+  const db = await createClient();
+  await db
     .from("usage_logs")
     .delete()
     .eq("user_id", userId)
@@ -50,8 +50,8 @@ export async function createSubjectAction(
     return { error: parsed.error.issues[0]?.message ?? "بيانات غير صالحة" };
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.from("subjects").insert({
+  const db = await createClient();
+  const { error } = await db.from("subjects").insert({
     name_ar: parsed.data.nameAr,
     name_en: parsed.data.nameEn,
     description: parsed.data.description ?? null,
@@ -68,8 +68,8 @@ export async function toggleSubjectStatusAction(formData: FormData) {
   const status = formData.get("status");
   if (typeof subjectId !== "string" || (status !== "active" && status !== "inactive")) return;
 
-  const supabase = await createClient();
-  await supabase.from("subjects").update({ status }).eq("id", subjectId);
+  const db = await createClient();
+  await db.from("subjects").update({ status }).eq("id", subjectId);
   revalidatePath("/admin/subjects");
 }
 
@@ -92,7 +92,7 @@ export async function updateSettingsAction(
     return { error: parsed.error.issues[0]?.message ?? "قيم غير صالحة" };
   }
 
-  const supabase = await createClient();
+  const db = await createClient();
   const entries: [string, number][] = [
     ["free_daily_limit", parsed.data.freeDailyLimit],
     ["rate_limit_seconds", parsed.data.rateLimitSeconds],
@@ -100,7 +100,7 @@ export async function updateSettingsAction(
   ];
 
   for (const [key, value] of entries) {
-    await supabase.from("settings").update({ value }).eq("key", key);
+    await db.from("settings").update({ value }).eq("key", key);
   }
 
   revalidatePath("/admin/settings");
