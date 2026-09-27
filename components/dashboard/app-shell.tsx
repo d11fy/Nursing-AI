@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { SidebarNav } from "@/components/dashboard/sidebar-nav";
-import type { NavItem } from "@/components/dashboard/nav-items";
+import { adminNavItems, studentNavItems } from "@/components/dashboard/nav-items";
 import { logoutAction } from "@/app/(auth)/actions";
 
 function initials(name: string) {
@@ -28,17 +28,18 @@ function initials(name: string) {
 }
 
 export function AppShell({
-  navItems,
+  area,
   homeHref,
   fullName,
   children,
 }: {
-  navItems: NavItem[];
+  area: "student" | "admin";
   homeHref: string;
   fullName: string;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const navItems = area === "admin" ? adminNavItems : studentNavItems;
 
   return (
     <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
