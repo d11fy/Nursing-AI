@@ -136,6 +136,25 @@ supabase/
 
 ## 11. Deployment
 
+### Building on a shared VPS
+
+`npm run build` uses Webpack with Next.js memory optimizations and one
+page-generation worker. PDF/DOCX parsers stay external to the server bundle.
+TypeScript checks remain enabled. `npm run build:turbo` is available for machines
+with more resources. These settings reduce build concurrency; they do not cap
+total build memory or guarantee that a crowded 4 GB VPS can build safely.
+
+In Dokploy, use `npm run build` as the build command and `npm run start` as the
+start command, with container port `3000`. Do not run `npm run dev` in production.
+If the VPS still runs out of memory, build the deployment image on another
+machine/CI and deploy that image, or provide more memory for the build.
+
+The public Supabase URL and anon key must be configured **before building**;
+Next.js embeds `NEXT_PUBLIC_*` values in browser assets. Server-only keys must
+also be available at runtime. A self-hosted Supabase installation needs its own
+reachable API gateway URL, not a `placeholder.supabase.co` URL or its Studio URL.
+The schema migration and seed still need to be applied to that database.
+
 Any Next.js host works (Vercel, a Node server, Docker). Set the same environment variables
 from `.env.example` in your host's dashboard. No build-time secrets are required beyond
 `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` (both public by design).
