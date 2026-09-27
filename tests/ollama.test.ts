@@ -23,6 +23,7 @@ test("chat sends context, think false, and reports usage", async (t) => {
     assert.equal(body.model, "qwen2.5:3b");
     assert.equal(body.stream, false);
     assert.equal(body.think, false);
+    assert.deepEqual(body.options, { temperature: 0.2 });
     assert.ok(body.messages[0].content.includes("Knowledge test"));
     assert.deepEqual(body.messages[1], { role: "user", content: "hello" });
     return Response.json({ message: { content: "reply" }, done: true, prompt_eval_count: 10, eval_count: 4 });

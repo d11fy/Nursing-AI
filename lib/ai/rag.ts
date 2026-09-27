@@ -2,6 +2,7 @@ import { createSystemClient } from "@/lib/db/server";
 import { getAIProvider } from "@/lib/ai";
 import type { KnowledgeChunk } from "@/lib/ai/provider";
 import { getAIConfig } from "./config.mjs";
+import { getPool } from "@/lib/db/pool";
 
 /** Rough token-aware chunking: splits on paragraph boundaries, then packs
  * them into ~chunkSize-character windows so embeddings stay under model
@@ -43,13 +44,22 @@ export async function searchKnowledge(
   subjectId: string | null,
   matchCount = 5
 ): Promise<KnowledgeChunk[]> {
+  const config = getAIConfig();
+  // Avoid loading the embedding model for an empty or incompatible knowledge base.
+  const eligible = await getPool().query(
+    `SELECT 1 FROM document_chunks dc JOIN documents d ON d.id = dc.document_id
+     WHERE d.status = 'ready' AND dc.embedding_provider = $1 AND dc.embedding_model = $2
+       AND ($3::uuid IS NULL OR dc.subject_id = $3) LIMIT 1`,
+    [config.provider, config.embeddingModel, subjectId]
+  );
+  if (!eligible.rows.length) return [];
   const provider = getAIProvider();
   const { embedding, model } = await provider.createEmbedding(query);
 
   const db = createSystemClient();
   const { data, error } = await db.rpc("match_document_chunks", {
     query_embedding: embedding,
-    query_provider: getAIConfig().provider,
+    query_provider: config.provider,
     query_model: model,
     match_subject_id: subjectId,
     match_count: matchCount,

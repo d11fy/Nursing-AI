@@ -1,5 +1,5 @@
 import type { AIProvider, EmbeddingResult, GenerateResult, GenerateTextParams, StreamChunk } from "../provider";
-import { NURSING_SYSTEM_PROMPT, buildKnowledgeContext } from "../system-prompt";
+import { OLLAMA_NURSING_SYSTEM_PROMPT, buildKnowledgeContext } from "../system-prompt";
 import { getAIConfig } from "../config.mjs";
 
 export const LOCAL_VISION_ERROR = "تحليل الصور غير مدعوم في مزوّد Ollama المحلي حاليًا (Vision unsupported). أرسل سؤالًا نصيًا.";
@@ -39,9 +39,10 @@ export class OllamaProvider implements AIProvider {
   private body(params: GenerateTextParams, stream: boolean) {
     if (params.messages.some((message) => message.imageUrl)) throw new OllamaError(LOCAL_VISION_ERROR);
     return {
-      model: this.chatModel, stream, think: false,
+      model: this.chatModel, stream, think: false, keep_alive: "10m",
+      options: { temperature: 0.2 },
       messages: [
-        { role: "system", content: NURSING_SYSTEM_PROMPT + (params.knowledge?.length ? buildKnowledgeContext(params.knowledge) : "") },
+        { role: "system", content: OLLAMA_NURSING_SYSTEM_PROMPT + (params.knowledge?.length ? buildKnowledgeContext(params.knowledge) : "") },
         ...params.messages.map(({ role, content }) => ({ role, content })),
       ],
     };

@@ -52,6 +52,7 @@ npm run admin:promote -- your-email@example.com
 
 ```bash
 ollama pull qwen2.5:3b
+ollama pull qwen3:4b-instruct
 ollama pull nomic-embed-text
 ollama serve
 ```
@@ -64,7 +65,7 @@ ollama serve
 APP_URL=http://localhost:3000
 AI_PROVIDER=ollama
 OLLAMA_BASE_URL=http://127.0.0.1:11434
-OLLAMA_CHAT_MODEL=qwen2.5:3b
+OLLAMA_CHAT_MODEL=qwen3:4b-instruct
 OLLAMA_EMBEDDING_MODEL=nomic-embed-text
 ```
 

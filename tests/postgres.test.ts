@@ -153,6 +153,7 @@ test("reindex uses stored files and Ollama; RAG retrieves the new space and hide
     await assert.rejects(processDocument(doc.data!.id), /ollama serve/);
     assert.equal((await db.query<{ status: string }>("SELECT status FROM documents WHERE id=$1", [doc.data!.id])).rows[0].status, "failed");
     assert.equal((await db.query("SELECT * FROM stored_files WHERE path='knowledge/reindex'")).rows.length, 1);
+    assert.deepEqual(await searchKnowledge("question", subject), []);
   } finally {
     for (const key of ["AI_PROVIDER", "OLLAMA_EMBEDDING_MODEL"]) {
       if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key];
