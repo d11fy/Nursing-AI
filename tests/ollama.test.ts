@@ -6,14 +6,17 @@ import { chunkText } from "../lib/ai/rag";
 
 process.env.OLLAMA_BASE_URL = "http://127.0.0.1:11434";
 process.env.OLLAMA_CHAT_MODEL = "qwen2.5:3b";
+process.env.OLLAMA_VISION_MODEL = "qwen3-vl:4b-instruct";
 process.env.OLLAMA_EMBEDDING_MODEL = "nomic-embed-text";
 
 test("Ollama configuration works without OpenAI, validates URL and model", () => {
   assert.equal(getAIConfig({ AI_PROVIDER: "ollama" }).embeddingModel, "nomic-embed-text");
+  assert.equal(getAIConfig({ AI_PROVIDER: "ollama" }).visionModel, "qwen3-vl:4b-instruct");
   assert.throws(() => getAIConfig({ AI_PROVIDER: "unknown" }), /AI_PROVIDER/);
   assert.throws(() => getAIConfig({ AI_PROVIDER: "openai" }), /OPENAI_API_KEY/);
   assert.throws(() => getAIConfig({ AI_PROVIDER: "ollama", OLLAMA_BASE_URL: "localhost:11434" }), /OLLAMA_BASE_URL/);
   assert.throws(() => getAIConfig({ AI_PROVIDER: "ollama", OLLAMA_CHAT_MODEL: " " }), /OLLAMA_CHAT_MODEL/);
+  assert.throws(() => getAIConfig({ AI_PROVIDER: "ollama", OLLAMA_VISION_MODEL: " " }), /OLLAMA_VISION_MODEL/);
 });
 
 test("chat sends context, think false, and reports usage", async (t) => {
@@ -81,13 +84,30 @@ test("invalid embedding lengths/counts are rejected", async (t) => {
   }
 });
 
-test("offline errors are actionable and Vision never calls a service", async (t) => {
+test("vision sends base64 images to the configured local model", async (t) => {
+  t.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+    assert.ok(url.endsWith("/api/chat"));
+    const body = JSON.parse(String(init.body));
+    assert.equal(body.model, "qwen3-vl:4b-instruct");
+    assert.equal(body.stream, false);
+    assert.equal(body.think, false);
+    assert.deepEqual(body.messages[1], { role: "user", content: "اشرح الصورة", images: ["aGVsbG8="] });
+    return Response.json({ message: { content: "تحليل الصورة" }, done: true, prompt_eval_count: 12, eval_count: 3 });
+  });
+  const result = await new OllamaProvider().generateVisionResponse({
+    messages: [{ role: "user", content: "اشرح الصورة" }],
+    imageUrl: "data:image/png;base64,aGVsbG8=",
+  });
+  assert.deepEqual(result, { content: "تحليل الصورة", inputTokens: 12, outputTokens: 3, model: "qwen3-vl:4b-instruct" });
+});
+
+test("offline errors are actionable and invalid vision data is rejected locally", async (t) => {
   const mock = t.mock.method(globalThis, "fetch", async () => { throw new TypeError("fetch failed"); });
   const provider = new OllamaProvider();
-  await assert.rejects(provider.generateVisionResponse({ messages: [], imageUrl: "https://example.test/a.png" }), /Vision unsupported/);
+  await assert.rejects(provider.generateVisionResponse({ messages: [], imageUrl: "https://example.test/a.png" }), /Unsupported image data/);
   assert.equal(mock.mock.callCount(), 0);
   await assert.rejects(provider.createEmbedding("hello"), /ollama serve/);
-  await assert.rejects(provider.generateText({ messages: [{ role: "user", content: "a", imageUrl: "test" }] }), /Vision unsupported/);
+  await assert.rejects(provider.generateText({ messages: [{ role: "user", content: "a", imageUrl: "test" }] }), /generateVisionResponse/);
 });
 
 test("HTTP model errors suggest pulling models; caller abort is preserved", async (t) => {

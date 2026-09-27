@@ -8,7 +8,7 @@ import { getChatImageDataUri } from "@/lib/storage";
 import { sendMessageSchema } from "@/lib/validations/chat";
 import type { ChatMessageInput } from "@/lib/ai/provider";
 import type { KnowledgeChunk } from "@/lib/ai/provider";
-import { LOCAL_VISION_ERROR, OllamaError } from "@/lib/ai/providers/ollama";
+import { OllamaError } from "@/lib/ai/providers/ollama";
 import { canStudentAccessSubject } from "@/lib/subjects";
 
 function truncateTitle(text: string, max = 60): string {
@@ -38,10 +38,6 @@ export async function POST(request: Request) {
   if (subjectId && !await canStudentAccessSubject(user.id, subjectId)) {
     return NextResponse.json({ error: "هذه المادة غير متاحة لسنتك الدراسية." }, { status: 403 });
   }
-  if (imagePath && process.env.AI_PROVIDER?.trim() === "ollama") {
-    return NextResponse.json({ error: LOCAL_VISION_ERROR }, { status: 400 });
-  }
-
   let lectureTitle: string | null = null;
   if (lectureId) {
     const { data: lecture } = await db.from("lectures").select("id, title, status").eq("id", lectureId).single();

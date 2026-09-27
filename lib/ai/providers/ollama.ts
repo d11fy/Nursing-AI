@@ -2,19 +2,20 @@ import type { AIProvider, EmbeddingResult, GenerateResult, GenerateTextParams, S
 import { OLLAMA_NURSING_SYSTEM_PROMPT, buildKnowledgeContext } from "../system-prompt";
 import { getAIConfig } from "../config.mjs";
 
-export const LOCAL_VISION_ERROR = "تحليل الصور غير مدعوم في مزوّد Ollama المحلي حاليًا (Vision unsupported). أرسل سؤالًا نصيًا.";
 export class OllamaError extends Error {}
 type ChatResponse = { message?: { content?: string }; done?: boolean; prompt_eval_count?: number; eval_count?: number; error?: string };
 
 export class OllamaProvider implements AIProvider {
   private readonly baseUrl: string;
   private readonly chatModel: string;
+  private readonly visionModel: string;
   private readonly embeddingModel: string;
 
   constructor() {
     const config = getAIConfig({ ...process.env, AI_PROVIDER: "ollama" });
     this.baseUrl = config.baseUrl!;
     this.chatModel = config.chatModel!;
+    this.visionModel = config.visionModel!;
     this.embeddingModel = config.embeddingModel;
   }
 
@@ -37,13 +38,41 @@ export class OllamaProvider implements AIProvider {
   }
 
   private body(params: GenerateTextParams, stream: boolean) {
-    if (params.messages.some((message) => message.imageUrl)) throw new OllamaError(LOCAL_VISION_ERROR);
+    if (params.messages.some((message) => message.imageUrl)) {
+      throw new OllamaError("استخدم مسار تحليل الصور مع هذا الطلب / Vision input requires generateVisionResponse");
+    }
     return {
       model: this.chatModel, stream, think: false, keep_alive: "10m",
       options: { temperature: 0.2 },
       messages: [
         { role: "system", content: OLLAMA_NURSING_SYSTEM_PROMPT + (params.knowledge?.length ? buildKnowledgeContext(params.knowledge) : "") },
         ...params.messages.map(({ role, content }) => ({ role, content })),
+      ],
+    };
+  }
+
+  private imageBase64(imageUrl: string): string {
+    const match = /^data:image\/(?:jpeg|jpg|png|webp);base64,([a-z0-9+/=]+)$/i.exec(imageUrl);
+    if (!match?.[1]) throw new OllamaError("صيغة الصورة غير مدعومة؛ استخدم JPEG أو PNG أو WebP / Unsupported image data");
+    return match[1];
+  }
+
+  private visionBody(params: GenerateTextParams & { imageUrl: string }) {
+    const image = this.imageBase64(params.imageUrl);
+    const lastUserIndex = params.messages.findLastIndex((message) => message.role === "user");
+    const messages = params.messages.map(({ role, content }, index) =>
+      index === lastUserIndex ? { role, content, images: [image] } : { role, content }
+    );
+    if (lastUserIndex < 0) messages.push({ role: "user", content: "حلّل الصورة المرفقة.", images: [image] });
+    return {
+      model: this.visionModel,
+      stream: false,
+      think: false,
+      keep_alive: "10m",
+      options: { temperature: 0.2 },
+      messages: [
+        { role: "system", content: OLLAMA_NURSING_SYSTEM_PROMPT + (params.knowledge?.length ? buildKnowledgeContext(params.knowledge) : "") },
+        ...messages,
       ],
     };
   }
@@ -65,8 +94,8 @@ export class OllamaProvider implements AIProvider {
     }
   }
 
-  private result(content: string, value: ChatResponse): GenerateResult {
-    return { content, model: this.chatModel, inputTokens: value.prompt_eval_count ?? 0, outputTokens: value.eval_count ?? 0 };
+  private result(content: string, value: ChatResponse, model = this.chatModel): GenerateResult {
+    return { content, model, inputTokens: value.prompt_eval_count ?? 0, outputTokens: value.eval_count ?? 0 };
   }
 
   async generateText(params: GenerateTextParams): Promise<GenerateResult> {
@@ -109,9 +138,11 @@ export class OllamaProvider implements AIProvider {
     }
   }
 
-  async generateVisionResponse(_params: GenerateTextParams & { imageUrl: string }): Promise<GenerateResult> {
-    void _params;
-    throw new OllamaError(LOCAL_VISION_ERROR);
+  async generateVisionResponse(params: GenerateTextParams & { imageUrl: string }): Promise<GenerateResult> {
+    const response = await this.post("/api/chat", this.visionBody(params), params.signal);
+    const value = this.parse(await this.readText(response, params.signal));
+    if (!value.done || !value.message) throw new OllamaError("Ollama vision returned an incomplete response");
+    return this.result(value.message.content ?? "", value, this.visionModel);
   }
 
   async createEmbedding(text: string): Promise<EmbeddingResult> {
