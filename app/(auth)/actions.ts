@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { AccountAlreadyExistsError, registerAccount, loginAccount, requestPasswordReset, resetAccountPassword } from "@/lib/auth/accounts";
 import { endSession } from "@/lib/auth/session";
+import { completeGoogleRegistration } from "@/lib/auth/google";
 import { z } from "zod";
 import {
   forgotPasswordSchema,
@@ -95,4 +96,22 @@ export async function resetPasswordAction(_prev: AuthActionState, formData: Form
   if (!parsed.success) return { error: "الرابط غير صالح أو كلمة المرور قصيرة (8 أحرف على الأقل)" };
   if (!await resetAccountPassword(parsed.data.token, parsed.data.password)) return { error: "الرابط منتهي أو مستخدم؛ اطلب رابطًا جديدًا" };
   return { success: "تم تغيير كلمة المرور. يمكنك تسجيل الدخول الآن." };
+}
+
+export async function completeGoogleRegistrationAction(
+  _prev: AuthActionState,
+  formData: FormData
+): Promise<AuthActionState> {
+  const parsed = z.object({
+    university: z.string().trim().min(1, "اسم الجامعة مطلوب"),
+    nursingYear: z.enum(["year1", "year2", "year3", "year4", "other"]),
+  }).safeParse({ university: formData.get("university"), nursingYear: formData.get("nursingYear") });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "بيانات غير صالحة" };
+  try {
+    await completeGoogleRegistration(parsed.data);
+  } catch (error) {
+    console.error("Google registration completion failed", error);
+    return { error: "انتهت جلسة Google أو تعذر إنشاء الحساب؛ ابدأ تسجيل الدخول مجددًا" };
+  }
+  redirect("/dashboard");
 }

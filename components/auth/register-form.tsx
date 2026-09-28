@@ -14,10 +14,11 @@ import {
 } from "@/components/ui/select";
 import { nursingYearOptions } from "@/lib/validations/auth";
 import { registerAction, type AuthActionState } from "@/app/(auth)/actions";
+import { AuthDivider, GoogleButton } from "@/components/auth/google-button";
 
 const initialState: AuthActionState = {};
 
-export function RegisterForm() {
+export function RegisterForm({ googleEnabled }: { googleEnabled: boolean }) {
   const [state, formAction, isPending] = useActionState(registerAction, initialState);
 
   return (
@@ -25,7 +26,9 @@ export function RegisterForm() {
       <h1 className="text-xl font-bold text-slate-900 dark:text-white">إنشاء حساب جديد</h1>
       <p className="mt-1 text-sm text-slate-500">انضم لمنصة Nursing AI وابدأ رحلتك الدراسية</p>
 
-      <form action={formAction} className="mt-6 space-y-4">
+      {googleEnabled && <div className="mt-6"><GoogleButton /><AuthDivider /></div>}
+
+      <form action={formAction} className={googleEnabled ? "space-y-4" : "mt-6 space-y-4"}>
         <div className="space-y-1.5">
           <Label htmlFor="fullName">الاسم الكامل</Label>
           <Input id="fullName" name="fullName" required />

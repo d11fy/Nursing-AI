@@ -7,13 +7,22 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { loginAction, type AuthActionState } from "@/app/(auth)/actions";
+import { AuthDivider, GoogleButton } from "@/components/auth/google-button";
 
 const initialState: AuthActionState = {};
 
-export function LoginForm() {
+const googleErrors: Record<string, string> = {
+  google_config: "تسجيل الدخول باستخدام Google غير مفعّل بعد.",
+  google_cancelled: "تم إلغاء تسجيل الدخول باستخدام Google.",
+  google_failed: "تعذر التحقق من حساب Google؛ حاول مرة أخرى.",
+  google_expired: "انتهت جلسة Google؛ ابدأ تسجيل الدخول مجددًا.",
+};
+
+export function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
   const [state, formAction, isPending] = useActionState(loginAction, initialState);
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get("redirect") ?? "";
+  const googleError = googleErrors[searchParams.get("error") ?? ""];
 
   return (
     <div>
@@ -22,7 +31,10 @@ export function LoginForm() {
         أهلًا بعودتك، سجّل الدخول لمتابعة دراستك
       </p>
 
-      <form action={formAction} className="mt-6 space-y-4">
+      {googleEnabled && <div className="mt-6"><GoogleButton redirectTo={redirectTo} /><AuthDivider /></div>}
+      {googleError && <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/40">{googleError}</p>}
+
+      <form action={formAction} className={googleEnabled ? "space-y-4" : "mt-6 space-y-4"}>
         <input type="hidden" name="redirectTo" value={redirectTo} />
 
         <div className="space-y-1.5">

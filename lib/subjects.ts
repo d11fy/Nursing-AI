@@ -10,12 +10,13 @@ export type SubjectWithYears = {
   id: string; name_ar: string; name_en: string; description_ar: string | null;
   description_en: string | null; icon: string; icon_theme: string | null;
   status: "active" | "inactive"; sort_order: number; archived_at: string | null;
+  course_code?: string | null; course_type?: string | null; semester?: number | null;
   academic_years: AcademicYear[]; lecture_count?: number; student_count?: number;
 };
 
 const subjectSelect = `
  select s.id,s.name_ar,s.name_en,s.description_ar,s.description_en,s.icon,s.icon_theme,
-   s.status,s.sort_order,s.archived_at,
+   s.status,s.sort_order,s.archived_at,s.course_code,s.course_type,s.semester,
    coalesce(json_agg(json_build_object('id',y.id,'name_ar',y.name_ar,'name_en',y.name_en,
      'code',y.code,'sort_order',y.sort_order,'is_active',y.is_active) order by y.sort_order)
      filter(where y.id is not null),'[]') as academic_years

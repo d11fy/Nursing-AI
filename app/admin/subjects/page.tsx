@@ -31,8 +31,24 @@ export default async function AdminSubjectsPage({ searchParams }: PageProps<"/ad
     <div className="overflow-hidden rounded-xl border border-border bg-card">
       <Table><TableHeader><TableRow><TableHead>المادة</TableHead><TableHead>English</TableHead><TableHead>السنة / السنوات</TableHead><TableHead>المحاضرات</TableHead><TableHead>الطلاب</TableHead><TableHead>الحالة</TableHead><TableHead>الترتيب</TableHead><TableHead /></TableRow></TableHeader>
       <TableBody>{subjects.map(subject => <TableRow key={subject.id}>
-        <TableCell className="font-medium">{subject.name_ar}</TableCell><TableCell dir="ltr">{subject.name_en}</TableCell>
-        <TableCell><div className="flex flex-wrap gap-1">{subject.academic_years.map(y => <Badge key={y.id} variant="outline">{y.name_ar}</Badge>)}</div></TableCell>
+        <TableCell className="font-medium">
+          <div className="flex items-center gap-2">
+            <span>{subject.name_ar}</span>
+            {subject.course_code && <Badge variant="outline" className="font-mono text-xs">{subject.course_code}</Badge>}
+            {subject.course_type && <Badge variant="secondary" className="text-xs">{subject.course_type}</Badge>}
+          </div>
+        </TableCell>
+        <TableCell dir="ltr">{subject.name_en}</TableCell>
+        <TableCell>
+          <div className="flex flex-wrap gap-1 items-center">
+            {subject.academic_years.map(y => <Badge key={y.id} variant="outline">{y.name_ar}</Badge>)}
+            {subject.semester && (
+              <Badge variant="outline" className="text-xs text-muted-foreground">
+                {subject.semester === 1 ? "الفصل 1" : "الفصل 2"}
+              </Badge>
+            )}
+          </div>
+        </TableCell>
         <TableCell>{subject.lecture_count ?? 0}</TableCell><TableCell>{subject.student_count ?? 0}</TableCell>
         <TableCell><Badge variant={subject.status === "active" ? "secondary" : "outline"}>{subject.status === "active" ? "Active" : "Hidden"}</Badge></TableCell>
         <TableCell>{subject.sort_order}</TableCell><TableCell><SubjectActions subject={subject} years={years.filter(y => y.is_active)} /></TableCell>
