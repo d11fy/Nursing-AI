@@ -92,14 +92,17 @@ test("vision sends base64 images to the configured local model", async (t) => {
     assert.equal(body.stream, false);
     assert.equal(body.think, false);
     assert.equal(body.options.num_ctx, 2048);
-    assert.equal(body.options.num_predict, 350);
+    assert.equal(body.options.num_predict, 260);
+    assert.equal(body.options.repeat_penalty, 1.18);
+    assert.equal(body.options.repeat_last_n, 256);
+    assert.match(body.messages[0].content, /لا تكرر/);
     assert.deepEqual(body.messages[1], { role: "user", content: "اشرح الصورة", images: ["aGVsbG8="] });
     return Response.json({ message: { content: "تحليل الصورة" }, done: true, prompt_eval_count: 12, eval_count: 3 });
   });
   const result = await new OllamaProvider().generateVisionResponse({
     messages: [{ role: "user", content: "اشرح الصورة" }],
     imageUrl: "data:image/png;base64,aGVsbG8=",
-    maxOutputTokens: 350,
+    maxOutputTokens: 260,
   });
   assert.deepEqual(result, { content: "تحليل الصورة", inputTokens: 12, outputTokens: 3, model: "qwen3-vl:2b-instruct" });
 });

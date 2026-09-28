@@ -169,7 +169,7 @@ export async function POST(request: Request) {
             knowledge,
             imageUrl: imageDataUri,
             signal: request.signal,
-            maxOutputTokens: 350,
+            maxOutputTokens: 260,
           };
           if (provider.generateVisionStream) {
             const generator = provider.generateVisionStream(visionParams);

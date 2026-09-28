@@ -2,6 +2,14 @@ import type { AIProvider, EmbeddingResult, GenerateResult, GenerateTextParams, S
 import { OLLAMA_NURSING_SYSTEM_PROMPT, buildKnowledgeContext } from "../system-prompt";
 import { getAIConfig } from "../config.mjs";
 
+const OLLAMA_VISION_SYSTEM_PROMPT = `أنت مساعد تعليمي لطلاب التمريض. حلّل الصورة المرفقة بدقة واكتب بالعربية الواضحة.
+- ابدأ بوصف مختصر لما يظهر فعلًا في الصورة.
+- أجب في 4 إلى 6 نقاط قصيرة وبحد أقصى 140 كلمة، واشرح وظيفة الأجزاء الظاهرة وعلاقتها بالسؤال فقط.
+- اذكر أسماء الأجزاء التي تراها بوضوح فقط. لا تحوّل كلمة غير مقروءة إلى مصطلح طبي، وقل إن التسمية غير واضحة عند الحاجة.
+- لا تسرد كل التسميات دون شرح، وراجع صحة الاتجاهات والوظائف قبل إنهاء الإجابة.
+- لا تكرر الكلمة أو الجملة أو قائمة التسميات. إذا اكتمل الشرح فتوقف فورًا.
+- لا تضع تشخيصًا أو معلومة طبية لا تدعمها الصورة.`;
+
 export class OllamaError extends Error {}
 type ChatResponse = { message?: { content?: string }; done?: boolean; prompt_eval_count?: number; eval_count?: number; error?: string };
 
@@ -70,12 +78,16 @@ export class OllamaProvider implements AIProvider {
       think: false,
       keep_alive: "10m",
       options: {
-        temperature: 0.2,
+        temperature: 0.1,
+        top_k: 20,
+        top_p: 0.8,
+        repeat_penalty: 1.18,
+        repeat_last_n: 256,
         num_ctx: 2048,
         num_predict: params.maxOutputTokens ?? 400,
       },
       messages: [
-        { role: "system", content: OLLAMA_NURSING_SYSTEM_PROMPT + (params.knowledge?.length ? buildKnowledgeContext(params.knowledge) : "") },
+        { role: "system", content: OLLAMA_VISION_SYSTEM_PROMPT + (params.knowledge?.length ? buildKnowledgeContext(params.knowledge) : "") },
         ...messages,
       ],
     };
