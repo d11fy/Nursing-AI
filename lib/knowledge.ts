@@ -7,7 +7,7 @@ import { chunkText } from "@/lib/ai/rag";
 import { getPool } from "@/lib/db/pool";
 import { getAIConfig } from "@/lib/ai/config.mjs";
 
-const EMBEDDING_BATCH_SIZE = 8;
+const EMBEDDING_BATCH_SIZE = 32;
 
 export interface ExtractedPage {
   pageNumber: number | null;

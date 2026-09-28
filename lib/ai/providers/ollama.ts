@@ -69,7 +69,11 @@ export class OllamaProvider implements AIProvider {
       stream,
       think: false,
       keep_alive: "10m",
-      options: { temperature: 0.2, num_ctx: 4096 },
+      options: {
+        temperature: 0.2,
+        num_ctx: 2048,
+        num_predict: params.maxOutputTokens ?? 400,
+      },
       messages: [
         { role: "system", content: OLLAMA_NURSING_SYSTEM_PROMPT + (params.knowledge?.length ? buildKnowledgeContext(params.knowledge) : "") },
         ...messages,

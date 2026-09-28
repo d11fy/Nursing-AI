@@ -12,7 +12,7 @@ import { logEvent } from "@/lib/log";
 import { submitContributionIfRequested } from "@/lib/lectures/contribution";
 import { toVisionDataUri } from "@/lib/vision-image";
 
-const EMBEDDING_BATCH_SIZE = 8;
+const EMBEDDING_BATCH_SIZE = 32;
 // Distinct advisory lock key from lib/knowledge.ts's document pipeline (73194026)
 // so admin document ingestion and student lecture ingestion never block each other.
 const LECTURE_LOCK_KEY = 73194027;
@@ -41,6 +41,7 @@ async function extractImagePages(buffer: Buffer): Promise<ExtractedPage[]> {
       content: "استخرج النص والمحتوى التعليمي الكامل من هذه الصورة (محاضرة تمريضية) بدقة وبالكامل، بدون تلخيص أو حذف تفاصيل.",
     }],
     imageUrl: dataUri,
+    maxOutputTokens: 1200,
   });
   const text = result.content.trim();
   return text ? [{ pageNumber: null, text }] : [];

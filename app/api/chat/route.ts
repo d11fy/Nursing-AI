@@ -127,9 +127,13 @@ export async function POST(request: Request) {
   let knowledge: KnowledgeChunk[];
   try {
     provider = getAIProvider();
-    knowledge = activeLectureId && lectureTitle
-      ? await searchLectureKnowledge(content, activeLectureId, user.id, lectureTitle, 5)
-      : await searchKnowledge(content, activeSubjectId, 5);
+    // The image already contains the source material. Avoid loading the
+    // embedding model immediately before the vision model on small GPUs.
+    knowledge = imageDataUri
+      ? []
+      : activeLectureId && lectureTitle
+        ? await searchLectureKnowledge(content, activeLectureId, user.id, lectureTitle, 5)
+        : await searchKnowledge(content, activeSubjectId, 5);
   } catch (error) {
     console.error("chat provider error", error);
     return NextResponse.json({ error: error instanceof OllamaError ? error.message : "تعذر تجهيز مزود الذكاء الاصطناعي؛ تحقق من إعداداته واتصاله." }, { status: 503 });
@@ -142,8 +146,9 @@ export async function POST(request: Request) {
     image_url: imagePath ?? null,
   });
 
+  const relevantHistory = imageDataUri ? (history ?? []).slice(-6) : (history ?? []);
   const messages: ChatMessageInput[] = [
-    ...(history ?? []).map((m) => ({ role: m.role, content: m.content }) as ChatMessageInput),
+    ...relevantHistory.map((m) => ({ role: m.role, content: m.content }) as ChatMessageInput),
     { role: "user", content, imageUrl: imageDataUri },
   ];
 
@@ -159,7 +164,13 @@ export async function POST(request: Request) {
 
       try {
         if (imageDataUri) {
-          const visionParams = { messages, knowledge, imageUrl: imageDataUri, signal: request.signal };
+          const visionParams = {
+            messages,
+            knowledge,
+            imageUrl: imageDataUri,
+            signal: request.signal,
+            maxOutputTokens: 350,
+          };
           if (provider.generateVisionStream) {
             const generator = provider.generateVisionStream(visionParams);
             let next = await generator.next();

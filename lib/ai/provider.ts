@@ -15,6 +15,7 @@ export interface GenerateTextParams {
   messages: ChatMessageInput[];
   knowledge?: KnowledgeChunk[];
   signal?: AbortSignal;
+  maxOutputTokens?: number;
 }
 
 export interface GenerateResult {
