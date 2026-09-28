@@ -61,7 +61,10 @@ function buildSystemPrompt(params: GenerateTextParams): string {
   const knowledge = params.knowledge?.length
     ? buildKnowledgeContext(params.knowledge)
     : "";
-  return NURSING_SYSTEM_PROMPT + knowledge;
+  const personalization = params.personalizationContext
+    ? `\n\nStudent personalization context (not an academic source):\n${params.personalizationContext}`
+    : "";
+  return NURSING_SYSTEM_PROMPT + personalization + knowledge;
 }
 
 const DEFAULT_FALLBACK_MODEL = "gpt-4o-mini";

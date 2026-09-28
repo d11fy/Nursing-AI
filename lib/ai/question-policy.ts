@@ -1,0 +1,5 @@
+export type QuestionScope = "NURSING_IN_SCOPE"|"NURSING_OUT_OF_CURRICULUM"|"NON_NURSING"|"AMBIGUOUS";
+const nursing = /تمريض|تمريضي|nurs|heart|cardiac|blood|ضغط|دواء|دواء|مرض|تشخيص|علامات|أعراض|pharmac|anatom|physio|clinical|patient|المريض|محاضرة|lecture|مرضى/i;
+const nonNursing = /برمجة|كود|بايثون|python|javascript|كرة|football|سياسة|politic|تسوق|shopping|سعر|recipe|طبخ|ترجمة عامة/i;
+export function classifyQuestion(text:string, hasStudyContext:boolean, hasImage:boolean):QuestionScope { const q=text.trim(); if(nonNursing.test(q)) return "NON_NURSING"; if(!hasImage && !hasStudyContext && (q.length<8 || q.split(/\s+/).length<=3)) return "AMBIGUOUS"; if(nursing.test(q)||hasStudyContext||hasImage) return "NURSING_IN_SCOPE"; return "NURSING_OUT_OF_CURRICULUM"; }
+export const scopeResponse = { NON_NURSING:"أنا مخصص فقط لمساعدتك في دراسة مواد التمريض الموجودة في المنهج.", AMBIGUOUS:"هل يمكنك توضيح السؤال؟ اذكر الموضوع أو المادة/المحاضرة التي تقصدها.", NURSING_OUT_OF_CURRICULUM:"الموضوع تمريضي، لكني لم أجد له محتوى معتمدًا ضمن المنهج المرفوع حاليًا.", NO_SOURCE:"لم أجد معلومات كافية عن هذا الموضوع ضمن المنهج والمصادر المرفوعة حاليًا." } as const;

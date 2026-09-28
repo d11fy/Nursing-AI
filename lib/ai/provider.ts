@@ -14,6 +14,7 @@ export interface KnowledgeChunk {
 export interface GenerateTextParams {
   messages: ChatMessageInput[];
   knowledge?: KnowledgeChunk[];
+  personalizationContext?: string;
   signal?: AbortSignal;
   maxOutputTokens?: number;
 }

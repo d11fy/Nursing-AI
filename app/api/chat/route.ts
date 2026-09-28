@@ -9,6 +9,8 @@ import { sendMessageSchema } from "@/lib/validations/chat";
 import type { ChatMessageInput } from "@/lib/ai/provider";
 import type { KnowledgeChunk } from "@/lib/ai/provider";
 import { canStudentAccessSubject } from "@/lib/subjects";
+import { getStudentContext, recordChatLearning, recordUnanswered, updateConversationMemory } from "@/lib/student-memory";
+import { classifyQuestion, scopeResponse } from "@/lib/ai/question-policy";
 
 function truncateTitle(text: string, max = 60): string {
   const clean = text.trim().replace(/\s+/g, " ");
@@ -112,6 +114,8 @@ export async function POST(request: Request) {
     .eq("conversation_id", activeConversationId)
     .order("created_at", { ascending: true })
     .limit(20);
+  const studentContext = await getStudentContext(user.id, activeConversationId, activeSubjectId, activeLectureId);
+  const scope = classifyQuestion(content, Boolean(activeSubjectId || activeLectureId), Boolean(imagePath));
 
   let imageDataUri: string | null = null;
   if (imagePath) {
@@ -145,6 +149,20 @@ export async function POST(request: Request) {
     image_url: imagePath ?? null,
   });
 
+  if (!imageDataUri && scope !== "NURSING_IN_SCOPE") {
+    const reason = scope === "NON_NURSING" ? "NON_NURSING" : scope === "NURSING_OUT_OF_CURRICULUM" ? "OUTSIDE_CURRICULUM" : "LOW_CONFIDENCE";
+    const answer = scopeResponse[scope];
+    await recordUnanswered(user.id, activeSubjectId, activeLectureId, content, reason);
+    await db.from("messages").insert({ conversation_id: activeConversationId, role: "assistant", content: answer, model: "policy" });
+    return new Response(answer, { headers: { "Content-Type": "text/plain; charset=utf-8", "X-Conversation-Id": activeConversationId, "Cache-Control": "no-store" } });
+  }
+  if (!imageDataUri && knowledge.length === 0) {
+    const answer = scopeResponse.NO_SOURCE;
+    await recordUnanswered(user.id, activeSubjectId, activeLectureId, content, "NO_SOURCE");
+    await db.from("messages").insert({ conversation_id: activeConversationId, role: "assistant", content: answer, model: "policy" });
+    return new Response(answer, { headers: { "Content-Type": "text/plain; charset=utf-8", "X-Conversation-Id": activeConversationId, "Cache-Control": "no-store" } });
+  }
+
   const relevantHistory = imageDataUri ? (history ?? []).slice(-6) : (history ?? []);
   const messages: ChatMessageInput[] = [
     ...relevantHistory.map((m) => ({ role: m.role, content: m.content }) as ChatMessageInput),
@@ -166,6 +184,7 @@ export async function POST(request: Request) {
           const visionParams = {
             messages,
             knowledge,
+            personalizationContext: studentContext.text,
             imageUrl: imageDataUri,
             signal: request.signal,
             maxOutputTokens: 2048,
@@ -193,6 +212,7 @@ export async function POST(request: Request) {
           const generator = provider.generateStream({
             messages,
             knowledge,
+            personalizationContext: studentContext.text,
             signal: request.signal,
           });
           let next = await generator.next();
@@ -230,6 +250,8 @@ export async function POST(request: Request) {
           outputTokens,
           estimatedCost: cost,
         });
+        await recordChatLearning(user.id, activeSubjectId, activeLectureId, content);
+        await updateConversationMemory(user.id, conversationIdForClient, activeSubjectId, activeLectureId, history ?? [], content);
       } catch (err) {
         if (fullContent) {
           // Partial content was streamed (e.g. client stopped generation) —

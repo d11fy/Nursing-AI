@@ -2,6 +2,7 @@ import { requireProfile } from "@/lib/auth";
 import { ProfileForm } from "@/components/dashboard/profile-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAcademicYears } from "@/lib/subjects";
+import { StudyPreferences } from "@/components/dashboard/study-preferences";
 
 export default async function ProfilePage() {
   const profile = await requireProfile();
@@ -19,6 +20,7 @@ export default async function ProfilePage() {
           <ProfileForm profile={profile} academicYearName={academicYearName} />
         </CardContent>
       </Card>
+      <Card><CardHeader><CardTitle className="text-base">تخصيص تجربة الدراسة</CardTitle></CardHeader><CardContent><StudyPreferences /></CardContent></Card>
     </div>
   );
 }
