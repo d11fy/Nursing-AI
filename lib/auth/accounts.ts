@@ -1,8 +1,8 @@
 import "server-only";
-import nodemailer from "nodemailer";
 import { getPool, transaction } from "@/lib/db/pool";
 import { hashPassword, verifyPassword, newToken, tokenHash } from "./password";
 import { startSession, endSession } from "./session";
+import { sendPasswordResetEmail, sendWelcomeEmail, smtpConfigured } from "@/lib/email";
 import type { RegisterInput } from "@/lib/validations/auth";
 
 export class AccountAlreadyExistsError extends Error {
@@ -57,6 +57,9 @@ export async function registerAccount(input: RegisterInput) {
     return rows[0].id as string;
   });
   await startSession(id);
+  if (smtpConfigured()) {
+    void sendWelcomeEmail(input.fullName, email).catch((error) => console.error("Welcome email failed", error));
+  }
 }
 export async function loginAccount(emailInput: string, password: string) {
   const email = emailInput.toLowerCase();
@@ -79,10 +82,9 @@ export async function requestPasswordReset(emailInput: string) {
   const token = newToken();
   await getPool().query("DELETE FROM password_resets WHERE user_id=$1 OR expires_at<now()", [rows[0].id]);
   await getPool().query("INSERT INTO password_resets(token_hash,user_id,expires_at) VALUES($1,$2,now()+interval '30 minutes')", [tokenHash(token), rows[0].id]);
-  const transport = nodemailer.createTransport({ host: process.env.SMTP_HOST, port: Number(process.env.SMTP_PORT || 587), secure: process.env.SMTP_PORT === "465", auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD } : undefined });
   const url = new URL("/reset-password", process.env.APP_URL);
   url.searchParams.set("token", token);
-  await transport.sendMail({ from: process.env.SMTP_FROM, to: email, subject: "Nursing AI — إعادة تعيين كلمة المرور", text: `رابط إعادة تعيين كلمة المرور صالح لمدة 30 دقيقة:\n${url.toString()}` });
+  await sendPasswordResetEmail(email, url.toString());
 }
 export async function resetAccountPassword(token: string, password: string) {
   if (!/^[a-f0-9]{64}$/.test(token)) return false;
