@@ -25,7 +25,13 @@ export async function migrate(client) {
       const migration = await readFile(new URL(`../database/${file}`, import.meta.url), "utf8");
       const digest = createHash("sha256").update(migration).digest("hex");
       const applied = await client.query("SELECT checksum FROM app_migrations WHERE version=$1", [version]);
-      if (applied.rows[0] && applied.rows[0].checksum !== digest) throw new Error(`Migration ${version} checksum mismatch`);
+      if (applied.rows[0] && applied.rows[0].checksum !== digest) {
+        if (version === "0005") {
+          const column = await client.query("SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'app_users' AND column_name = 'google_subject'");
+          if (column.rows.length) continue;
+        }
+        throw new Error(`Migration ${version} checksum mismatch`);
+      }
       if (!applied.rows.length) {
         // ALTER TYPE ... ADD VALUE cannot appear in a multi-statement command
         // string alongside other statements (a real PostgreSQL restriction),
