@@ -50,29 +50,25 @@ npm run knowledge:reindex
 ## استعادة كلمة المرور
 
 أضف SMTP_HOST وSMTP_PORT وSMTP_USER وSMTP_PASSWORD وSMTP_FROM في Environment لتفعيل رسائل الاستعادة.
-# Local Ollama Setup
+# OpenAI Setup
 
-لتشغيل المساعد محليًا بدون OpenAI، ثبّت Ollama ثم نزّل النماذج:
-
-```bash
-ollama pull qwen2.5:3b
-ollama pull nomic-embed-text
-```
+يستخدم المشروع OpenAI للمحادثة العادية، الصور، تحليل الملفات، والـembeddings.
 
 أضف إلى ملف البيئة:
 
 ```ini
-AI_PROVIDER=ollama
-OLLAMA_BASE_URL=http://127.0.0.1:11434
-OLLAMA_CHAT_MODEL=qwen2.5:3b
-OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+AI_PROVIDER=openai
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_CHAT_MODEL=gpt-5.4-mini
+OPENAI_VISION_MODEL=gpt-5.4-mini
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 ```
 
-شغّل Ollama (`ollama serve`) ثم طبّق migrations وشغّل المشروع:
+ثم طبّق migrations وشغّل المشروع:
 
 ```bash
 npm run db:migrate
 npm run dev
 ```
 
-يستخدم النظام Ollama للمحادثة والـembeddings، وتبقى OpenAI متاحة بإرجاع `AI_PROVIDER=openai`.
+يستخدم النظام OpenAI لكل عمليات الذكاء الاصطناعي في الموقع.
