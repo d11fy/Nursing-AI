@@ -16,7 +16,7 @@ test("upgrade preserves legacy data, excludes unlabelled vectors, and is repeata
     const vector = Array(1536).fill(0.5);
     await db.query("INSERT INTO document_chunks(document_id,content,embedding,chunk_index) VALUES($1,'legacy content',$2,0)", [doc.rows[0].id, vector]);
     const client = { query: async (sql: string, values?: unknown[]) => {
-      if (sql.includes("alter table public.document_chunks") || sql.includes("create table public.academic_years") || sql.includes("create table public.lectures")) { await db.exec(sql); return { rows: [] }; }
+      if (sql.includes("alter table public.document_chunks") || sql.includes("create table public.academic_years") || sql.includes("create table public.lectures") || sql.includes("alter table public.app_users")) { await db.exec(sql); return { rows: [] }; }
       return db.query(sql, values);
     } };
     await migrate(client);
@@ -24,7 +24,7 @@ test("upgrade preserves legacy data, excludes unlabelled vectors, and is repeata
     assert.equal((await db.query("SELECT * FROM document_chunks")).rows.length, 1);
     assert.equal((await db.query("SELECT * FROM documents")).rows.length, 1);
     assert.equal((await db.query("SELECT * FROM match_document_chunks($1,null,5,'openai','text-embedding-3-small')", [vector])).rows.length, 0);
-    assert.equal((await db.query("SELECT * FROM app_migrations")).rows.length, 4);
+    assert.equal((await db.query("SELECT * FROM app_migrations")).rows.length, 5);
     await assert.rejects(db.query("SELECT * FROM match_document_chunks($1,null,5)", [vector]), /does not exist/);
   } finally { await db.close(); }
 });

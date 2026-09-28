@@ -435,8 +435,13 @@ export function UploadDocumentDialog({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ uploadId }),
         });
-        const compData = await compRes.json();
-        if (!compRes.ok) {
+        let compData: { error?: string; documentId?: string } = {};
+        try {
+          compData = await compRes.json();
+        } catch {
+          throw new Error("استجابة غير صالحة من الخادم أثناء تجميع أجزاء الملف");
+        }
+        if (!compRes.ok || !compData.documentId) {
           throw new Error(compData.error || "فشل إنهاء وتجميع أجزاء الملف");
         }
         documentId = compData.documentId;
@@ -454,7 +459,7 @@ export function UploadDocumentDialog({
       updateItem(item.id, {
         status: "processing",
         speedMBs: 0,
-        etaText: "جارٍ تحليل المحتوى وتوليد التضمينات...",
+        etaText: "تم الرفع بنجاح ✓ جارٍ استخراج المحتوى وتوليد التضمينات...",
       });
 
       try {
@@ -463,17 +468,72 @@ export function UploadDocumentDialog({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ documentId }),
         });
-        const procData = await procRes.json();
+
         if (!procRes.ok) {
-          throw new Error(procData.error || "فشلت معالجة الملف في نظام الذكاء الاصطناعي");
+          let errorMsg = "فشلت معالجة الملف في نظام الذكاء الاصطناعي";
+          try {
+            const errData = await procRes.json();
+            if (errData.error) errorMsg = errData.error;
+          } catch {
+            if (procRes.status === 502) errorMsg = "انقطاع مؤقت في الاتصال بالخادم (502 Bad Gateway)";
+          }
+          throw new Error(errorMsg);
         }
 
-        updateItem(item.id, {
-          status: "completed",
-          etaText: "جاهز ومفهرس للتدريب",
-        });
-        toast.success(`تم رفع وتدريب: ${item.file.name}`);
-        router.refresh();
+        // Poll document processing status until ready or failed
+        let isDone = false;
+        let attempts = 0;
+        const maxAttempts = 180; // 180 * 2s = 6 minutes max
+
+        while (!isDone && attempts < maxAttempts) {
+          await new Promise((r) => setTimeout(r, 2000));
+          attempts++;
+
+          // Check if cancelled
+          const check = queueRef.current.find((q) => q.id === item.id);
+          if (check?.status === "cancelled") return;
+
+          try {
+            const pollRes = await fetch(
+              `/api/admin/knowledge/process?documentId=${encodeURIComponent(documentId)}`
+            );
+            if (pollRes.ok) {
+              const pollData = await pollRes.json();
+              if (pollData.status === "ready") {
+                isDone = true;
+                updateItem(item.id, {
+                  status: "completed",
+                  etaText: `جاهز ومفهرس (${pollData.chunk_count || 0} مقطع)`,
+                });
+                toast.success(`تم رفع وتدريب: ${item.file.name}`);
+                router.refresh();
+                return;
+              } else if (pollData.status === "failed") {
+                isDone = true;
+                throw new Error(pollData.error_message || "فشلت معالجة وتدريب الملف");
+              } else {
+                updateItem(item.id, {
+                  status: "processing",
+                  etaText: "جارٍ استخراج النصوص وتوليد التضمينات بالذكاء الاصطناعي...",
+                });
+              }
+            }
+          } catch (pollErr) {
+            if (pollErr instanceof Error && pollErr.message.includes("فشلت")) {
+              throw pollErr;
+            }
+            console.warn("Poll status check:", pollErr);
+          }
+        }
+
+        if (!isDone) {
+          updateItem(item.id, {
+            status: "completed",
+            etaText: "اكتمل الرفع، والمستند قيد الفهرسة في الخلفية",
+          });
+          toast.info(`المعالجة مستمرة في الخلفية لملف: ${item.file.name}`);
+          router.refresh();
+        }
       } catch (err) {
         console.error("Processing error:", err);
         updateItem(item.id, {
