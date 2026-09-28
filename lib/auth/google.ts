@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
-import { getPool, transaction } from "@/lib/db/pool";
+import { transaction } from "@/lib/db/pool";
 import { startSession } from "@/lib/auth/session";
 import type { NursingYear } from "@/types/database";
 

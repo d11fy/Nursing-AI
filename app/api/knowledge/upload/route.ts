@@ -1,4 +1,3 @@
-import { limitedFormData } from "@/lib/request-body";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/db/server";
 import { getAdminProfileOrNull } from "@/lib/auth";
@@ -16,9 +15,9 @@ export async function POST(request: Request) {
 
   let formData: FormData;
   try {
-    formData = await limitedFormData(request, 11 * 1024 * 1024);
+    formData = await request.formData();
   } catch {
-    return NextResponse.json({ error: "حجم الملف كبير جدًا أو الطلب غير صالح" }, { status: 413 });
+    return NextResponse.json({ error: "الطلب غير صالح أو تعذر قراءة الملف" }, { status: 400 });
   }
   const file = formData.get("file");
 

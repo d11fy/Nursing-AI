@@ -19,7 +19,7 @@ import { classifyLectureContent } from "../lib/ai/classification";
 const db = new PGlite();
 const executor: Executor = (sql, values) => db.query(sql, values);
 const migrationClient = { query: async (sql: string, values?: unknown[]) => {
-  if (!values && (sql.includes("create table public.app_users") || sql.includes("alter table public.document_chunks") || sql.includes("create table public.academic_years") || sql.includes("create table public.lectures"))) { await db.exec(sql); return { rows: [] }; }
+  if (!values && (sql.includes(";") || sql.includes("--"))) { await db.exec(sql); return { rows: [] }; }
   return db.query(sql, values);
 } };
 const alice: Actor = { user_id: "10000000-0000-4000-8000-000000000001", role: "student", status: "active" };

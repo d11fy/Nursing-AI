@@ -17,7 +17,9 @@ export function validFileSignature(path: string, expires: string, supplied: stri
 }
 async function store(db: DatabaseClient, bucket: string, path: string, file: File, maximum: number) {
   if (!db.actor || db.actor.status !== "active") throw new Error("غير مصرح");
-  if (!file.size || file.size > maximum) throw new Error(`حجم الملف يجب ألا يتجاوز ${maximum / 1024 / 1024} ميجابايت`);
+  if (!file.size || (maximum !== Infinity && file.size > maximum)) {
+    throw new Error(`حجم الملف يجب ألا يتجاوز ${maximum / 1024 / 1024} ميجابايت`);
+  }
   await getPool().query("INSERT INTO stored_files(path,bucket,owner_id,mime_type,content) VALUES($1,$2,$3,$4,$5)",
     [path, bucket, db.actor.user_id, file.type || "application/octet-stream", Buffer.from(await file.arrayBuffer())]);
 }
@@ -55,17 +57,53 @@ export async function getChatImageDataUri(db: DatabaseClient, path: string) {
 export async function uploadKnowledgeDocument(db: DatabaseClient, file: File) {
   if (db.actor?.role !== "admin") throw new Error("غير مصرح");
   const path = `knowledge/${randomUUID()}`;
-  await store(db, "knowledge-documents", path, file, MAX_DOCUMENT_BYTES);
+  await store(db, "knowledge-documents", path, file, Infinity);
   return { path };
 }
 export async function downloadKnowledgeDocument(path: string): Promise<Buffer> {
-  const { rows } = await getPool().query("SELECT content FROM stored_files WHERE path=$1 AND bucket='knowledge-documents'", [path]);
+  const pool = getPool();
+  const { rows: chunks } = await pool.query(
+    "SELECT chunk_data FROM knowledge_document_chunks WHERE path=$1 ORDER BY chunk_index ASC",
+    [path]
+  );
+  if (chunks.length > 0) {
+    return Buffer.concat(chunks.map((c) => Buffer.from(c.chunk_data)));
+  }
+
+  const { rows } = await pool.query("SELECT content FROM stored_files WHERE path=$1 AND bucket='knowledge-documents'", [path]);
   if (!rows[0]) throw new Error("تعذر تحميل الملف");
-  return rows[0].content;
+  return Buffer.from(rows[0].content);
 }
 export async function removeKnowledgeDocument(db: DatabaseClient, path: string) {
   if (db.actor?.role !== "admin" || db.actor.status !== "active") throw new Error("غير مصرح");
-  await getPool().query("DELETE FROM stored_files WHERE path=$1 AND bucket='knowledge-documents'", [path]);
+  const pool = getPool();
+  await pool.query("DELETE FROM knowledge_document_chunks WHERE path=$1", [path]);
+  await pool.query("DELETE FROM stored_files WHERE path=$1 AND bucket='knowledge-documents'", [path]);
+}
+
+export async function saveKnowledgeChunk(path: string, chunkIndex: number, chunkBuffer: Buffer): Promise<void> {
+  const pool = getPool();
+  await pool.query(
+    `INSERT INTO knowledge_document_chunks (path, chunk_index, size_bytes, chunk_data)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (path, chunk_index) DO UPDATE
+     SET size_bytes = EXCLUDED.size_bytes, chunk_data = EXCLUDED.chunk_data`,
+    [path, chunkIndex, chunkBuffer.length, chunkBuffer]
+  );
+}
+
+export async function deleteKnowledgeChunks(path: string): Promise<void> {
+  const pool = getPool();
+  await pool.query("DELETE FROM knowledge_document_chunks WHERE path=$1", [path]);
+}
+
+export async function getUploadedChunksList(path: string): Promise<number[]> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    "SELECT chunk_index FROM knowledge_document_chunks WHERE path=$1 ORDER BY chunk_index ASC",
+    [path]
+  );
+  return rows.map((r) => r.chunk_index);
 }
 
 const LECTURE_TYPES = new Set([
