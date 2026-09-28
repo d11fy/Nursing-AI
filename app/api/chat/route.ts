@@ -168,7 +168,7 @@ export async function POST(request: Request) {
             knowledge,
             imageUrl: imageDataUri,
             signal: request.signal,
-            maxOutputTokens: 260,
+            maxOutputTokens: 2048,
           };
           if (provider.generateVisionStream) {
             const generator = provider.generateVisionStream(visionParams);
@@ -242,9 +242,19 @@ export async function POST(request: Request) {
           });
         } else {
           console.error("chat stream error", err);
-          controller.enqueue(
-            encoder.encode("خدمة الذكاء الاصطناعي غير متاحة مؤقتًا، حاول مرة أخرى بعد قليل.")
-          );
+          let userMsg = "خدمة الذكاء الاصطناعي غير متاحة مؤقتًا، حاول مرة أخرى بعد قليل.";
+          if (err && typeof err === "object") {
+            const status = (err as { status?: number; statusCode?: number }).status || (err as { status?: number; statusCode?: number }).statusCode;
+            const message = String((err as { message?: string }).message || "");
+            if (status === 401 || message.includes("API key") || message.includes("Incorrect API key")) {
+              userMsg = "تعذر الاتصال بالذكاء الاصطناعي: مفتاح OpenAI API غير صالح أو غير محدد في السيرفر (OPENAI_API_KEY). يرجى تزويد مفتاح صالح.";
+            } else if (status === 429 || message.includes("quota") || message.includes("rate limit") || message.includes("exceeded")) {
+              userMsg = "تعذر الاتصال بالذكاء الاصطناعي: تم تجاوز حد الاستخدام أو نفاد الرصيد في حساب OpenAI.";
+            } else if (status === 404 || message.includes("model_not_found")) {
+              userMsg = "تعذر الاتصال بالذكاء الاصطناعي: النموذج المطلوب غير متوفر في حساب OpenAI.";
+            }
+          }
+          controller.enqueue(encoder.encode(userMsg));
         }
       } finally {
         controller.close();

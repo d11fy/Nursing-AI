@@ -64,6 +64,19 @@ function buildSystemPrompt(params: GenerateTextParams): string {
   return NURSING_SYSTEM_PROMPT + knowledge;
 }
 
+const DEFAULT_FALLBACK_MODEL = "gpt-4o-mini";
+
+function isModelNotFoundError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const anyErr = err as { status?: number; code?: string; message?: string };
+  return (
+    anyErr.status === 404 ||
+    anyErr.code === "model_not_found" ||
+    (typeof anyErr.message === "string" &&
+      (anyErr.message.includes("does not exist") || anyErr.message.includes("model_not_found")))
+  );
+}
+
 export class OpenAIProvider implements AIProvider {
   private client: OpenAI;
 
@@ -72,15 +85,34 @@ export class OpenAIProvider implements AIProvider {
   }
 
   async generateText(params: GenerateTextParams): Promise<GenerateResult> {
-    const model = getChatModel();
-    const completion = await this.client.chat.completions.create(
-      {
-        model,
-        messages: toOpenAIMessages(buildSystemPrompt(params), params.messages),
-        max_tokens: params.maxOutputTokens,
-      },
-      { signal: params.signal }
-    );
+    let model = getChatModel();
+    let completion;
+
+    try {
+      completion = await this.client.chat.completions.create(
+        {
+          model,
+          messages: toOpenAIMessages(buildSystemPrompt(params), params.messages),
+          max_tokens: params.maxOutputTokens,
+        },
+        { signal: params.signal }
+      );
+    } catch (err) {
+      if (isModelNotFoundError(err) && model !== DEFAULT_FALLBACK_MODEL) {
+        console.warn(`[OpenAI] Model "${model}" not found. Falling back to "${DEFAULT_FALLBACK_MODEL}".`);
+        model = DEFAULT_FALLBACK_MODEL;
+        completion = await this.client.chat.completions.create(
+          {
+            model,
+            messages: toOpenAIMessages(buildSystemPrompt(params), params.messages),
+            max_tokens: params.maxOutputTokens,
+          },
+          { signal: params.signal }
+        );
+      } else {
+        throw err;
+      }
+    }
 
     return {
       content: completion.choices[0]?.message?.content ?? "",
@@ -93,17 +125,38 @@ export class OpenAIProvider implements AIProvider {
   async *generateStream(
     params: GenerateTextParams
   ): AsyncGenerator<StreamChunk, GenerateResult, unknown> {
-    const model = getChatModel();
-    const stream = await this.client.chat.completions.create(
-      {
-        model,
-        messages: toOpenAIMessages(buildSystemPrompt(params), params.messages),
-        stream: true,
-        stream_options: { include_usage: true },
-        max_tokens: params.maxOutputTokens,
-      },
-      { signal: params.signal }
-    );
+    let model = getChatModel();
+    let stream;
+
+    try {
+      stream = await this.client.chat.completions.create(
+        {
+          model,
+          messages: toOpenAIMessages(buildSystemPrompt(params), params.messages),
+          stream: true,
+          stream_options: { include_usage: true },
+          max_tokens: params.maxOutputTokens,
+        },
+        { signal: params.signal }
+      );
+    } catch (err) {
+      if (isModelNotFoundError(err) && model !== DEFAULT_FALLBACK_MODEL) {
+        console.warn(`[OpenAI] Model "${model}" not found. Falling back to "${DEFAULT_FALLBACK_MODEL}".`);
+        model = DEFAULT_FALLBACK_MODEL;
+        stream = await this.client.chat.completions.create(
+          {
+            model,
+            messages: toOpenAIMessages(buildSystemPrompt(params), params.messages),
+            stream: true,
+            stream_options: { include_usage: true },
+            max_tokens: params.maxOutputTokens,
+          },
+          { signal: params.signal }
+        );
+      } else {
+        throw err;
+      }
+    }
 
     let content = "";
     let inputTokens = 0;
@@ -127,22 +180,39 @@ export class OpenAIProvider implements AIProvider {
   async generateVisionResponse(
     params: GenerateTextParams & { imageUrl: string }
   ): Promise<GenerateResult> {
-    const model = getChatModel();
+    let model = getChatModel();
     const messagesWithImage: ChatMessageInput[] = params.messages.map((m, i, arr) =>
       i === arr.length - 1 && m.role === "user"
         ? { ...m, imageUrl: params.imageUrl }
         : m
     );
 
-    // Default to auto detail to keep costs economical
-    const completion = await this.client.chat.completions.create(
-      {
-        model,
-        messages: toOpenAIMessages(buildSystemPrompt(params), messagesWithImage, "auto"),
-        max_tokens: params.maxOutputTokens ?? 600,
-      },
-      { signal: params.signal }
-    );
+    let completion;
+    try {
+      completion = await this.client.chat.completions.create(
+        {
+          model,
+          messages: toOpenAIMessages(buildSystemPrompt(params), messagesWithImage, "auto"),
+          max_tokens: params.maxOutputTokens ?? 2048,
+        },
+        { signal: params.signal }
+      );
+    } catch (err) {
+      if (isModelNotFoundError(err) && model !== DEFAULT_FALLBACK_MODEL) {
+        console.warn(`[OpenAI Vision] Model "${model}" not found. Falling back to "${DEFAULT_FALLBACK_MODEL}".`);
+        model = DEFAULT_FALLBACK_MODEL;
+        completion = await this.client.chat.completions.create(
+          {
+            model,
+            messages: toOpenAIMessages(buildSystemPrompt(params), messagesWithImage, "auto"),
+            max_tokens: params.maxOutputTokens ?? 2048,
+          },
+          { signal: params.signal }
+        );
+      } else {
+        throw err;
+      }
+    }
 
     return {
       content: completion.choices[0]?.message?.content ?? "",
@@ -155,23 +225,43 @@ export class OpenAIProvider implements AIProvider {
   async *generateVisionStream(
     params: GenerateTextParams & { imageUrl: string }
   ): AsyncGenerator<StreamChunk, GenerateResult, unknown> {
-    const model = getChatModel();
+    let model = getChatModel();
     const messagesWithImage: ChatMessageInput[] = params.messages.map((m, i, arr) =>
       i === arr.length - 1 && m.role === "user"
         ? { ...m, imageUrl: params.imageUrl }
         : m
     );
 
-    const stream = await this.client.chat.completions.create(
-      {
-        model,
-        messages: toOpenAIMessages(buildSystemPrompt(params), messagesWithImage, "auto"),
-        stream: true,
-        stream_options: { include_usage: true },
-        max_tokens: params.maxOutputTokens ?? 600,
-      },
-      { signal: params.signal }
-    );
+    let stream;
+    try {
+      stream = await this.client.chat.completions.create(
+        {
+          model,
+          messages: toOpenAIMessages(buildSystemPrompt(params), messagesWithImage, "auto"),
+          stream: true,
+          stream_options: { include_usage: true },
+          max_tokens: params.maxOutputTokens ?? 2048,
+        },
+        { signal: params.signal }
+      );
+    } catch (err) {
+      if (isModelNotFoundError(err) && model !== DEFAULT_FALLBACK_MODEL) {
+        console.warn(`[OpenAI Vision Stream] Model "${model}" not found. Falling back to "${DEFAULT_FALLBACK_MODEL}".`);
+        model = DEFAULT_FALLBACK_MODEL;
+        stream = await this.client.chat.completions.create(
+          {
+            model,
+            messages: toOpenAIMessages(buildSystemPrompt(params), messagesWithImage, "auto"),
+            stream: true,
+            stream_options: { include_usage: true },
+            max_tokens: params.maxOutputTokens ?? 2048,
+          },
+          { signal: params.signal }
+        );
+      } else {
+        throw err;
+      }
+    }
 
     let content = "";
     let inputTokens = 0;

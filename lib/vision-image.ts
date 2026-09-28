@@ -1,12 +1,11 @@
 import "server-only";
 import sharp from "sharp";
 
-// Qwen3-VL's image token count grows quickly with resolution. On the target
-// 4 GB GPU, 640px keeps slide text readable while cutting cold-start vision
-// latency from roughly a minute to seconds.
-const MAX_VISION_EDGE = 640;
+// Support high resolution so course tables, medical charts, and small Arabic text
+// remain crisp and readable for OpenAI Vision models.
+const MAX_VISION_EDGE = 1536;
 
-/** Keep enough detail for slides and notes while avoiding multi-megapixel vision inputs. */
+/** Keep high detail for slides and notes while maintaining efficient payload size. */
 export async function toVisionDataUri(content: Buffer): Promise<string> {
   const optimized = await sharp(content, { failOn: "error" })
     .rotate()
@@ -16,7 +15,7 @@ export async function toVisionDataUri(content: Buffer): Promise<string> {
       fit: "inside",
       withoutEnlargement: true,
     })
-    .webp({ quality: 78, effort: 3 })
+    .webp({ quality: 85, effort: 3 })
     .toBuffer();
 
   return `data:image/webp;base64,${optimized.toString("base64")}`;
