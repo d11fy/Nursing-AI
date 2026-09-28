@@ -20,7 +20,7 @@ export async function migrate(client) {
       await client.query(seed);
       await client.query("INSERT INTO app_migrations(version,checksum) VALUES('0001',$1)", [checksum]);
     }
-    for (const file of ["0002_embedding_spaces.sql", "0003_academic_year_subjects.sql", "0004_lectures.sql", "0005_google_oauth.sql", "0006_nursing_curriculum_update.sql"]) {
+    for (const file of ["0002_embedding_spaces.sql", "0003_academic_year_subjects.sql", "0004_lectures.sql", "0005_google_oauth.sql", "0006_nursing_curriculum_update.sql", "0007_openai_transition.sql"]) {
       const version = file.split("_")[0];
       const migration = await readFile(new URL(`../database/${file}`, import.meta.url), "utf8");
       const digest = createHash("sha256").update(migration).digest("hex");

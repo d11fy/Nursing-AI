@@ -8,7 +8,6 @@ import { getChatImageDataUri } from "@/lib/storage";
 import { sendMessageSchema } from "@/lib/validations/chat";
 import type { ChatMessageInput } from "@/lib/ai/provider";
 import type { KnowledgeChunk } from "@/lib/ai/provider";
-import { OllamaError } from "@/lib/ai/providers/ollama";
 import { canStudentAccessSubject } from "@/lib/subjects";
 
 function truncateTitle(text: string, max = 60): string {
@@ -136,7 +135,7 @@ export async function POST(request: Request) {
         : await searchKnowledge(content, activeSubjectId, 5);
   } catch (error) {
     console.error("chat provider error", error);
-    return NextResponse.json({ error: error instanceof OllamaError ? error.message : "تعذر تجهيز مزود الذكاء الاصطناعي؛ تحقق من إعداداته واتصاله." }, { status: 503 });
+    return NextResponse.json({ error: "خدمة الذكاء الاصطناعي غير متاحة مؤقتًا، حاول مرة أخرى بعد قليل." }, { status: 503 });
   }
 
   await db.from("messages").insert({
@@ -244,7 +243,7 @@ export async function POST(request: Request) {
         } else {
           console.error("chat stream error", err);
           controller.enqueue(
-            encoder.encode(err instanceof OllamaError ? err.message : "صار خطأ أثناء تجهيز الإجابة، جرب مرة ثانية.")
+            encoder.encode("خدمة الذكاء الاصطناعي غير متاحة مؤقتًا، حاول مرة أخرى بعد قليل.")
           );
         }
       } finally {

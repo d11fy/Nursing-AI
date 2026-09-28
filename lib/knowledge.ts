@@ -1,5 +1,6 @@
 import { PDFParse } from "pdf-parse";
 import mammoth from "mammoth";
+import JSZip from "jszip";
 import { downloadKnowledgeDocument } from "@/lib/storage";
 import { createSystemClient } from "@/lib/db/server";
 import { getAIProvider } from "@/lib/ai";
@@ -32,24 +33,63 @@ export async function extractPagesFromFile(
     }
   }
 
-  if (ext === "docx") {
+  if (ext === "docx" || ext === "doc") {
     const { value } = await mammoth.extractRawText({ buffer });
     return [{ pageNumber: null, text: value.trim() }];
   }
 
-  if (ext === "txt") {
+  if (ext === "pptx" || ext === "ppt") {
+    try {
+      const zip = await JSZip.loadAsync(buffer);
+      const slideFiles = Object.keys(zip.files)
+        .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+        .sort((a, b) => Number(a.match(/slide(\d+)\.xml/)![1]) - Number(b.match(/slide(\d+)\.xml/)![1]));
+
+      const pages: ExtractedPage[] = [];
+      for (let i = 0; i < slideFiles.length; i++) {
+        const xml = await zip.files[slideFiles[i]].async("text");
+        const text = [...xml.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((m) => m[1]).join(" ").trim();
+        if (text) pages.push({ pageNumber: i + 1, text });
+      }
+      if (pages.length) return pages;
+    } catch {
+      // Fallback if not standard pptx xml structure
+    }
+  }
+
+  if (["txt", "md", "csv", "json"].includes(ext || "")) {
     return [{ pageNumber: null, text: buffer.toString("utf-8").trim() }];
   }
 
-  throw new Error("نوع الملف غير مدعوم");
+  if (["xls", "xlsx"].includes(ext || "")) {
+    // Basic text extraction from spreadsheet xml structures
+    try {
+      const zip = await JSZip.loadAsync(buffer);
+      const sheetFiles = Object.keys(zip.files).filter((name) => /^xl\/sharedStrings\.xml$/.test(name) || /^xl\/worksheets\/sheet\d+\.xml$/.test(name));
+      const chunks: string[] = [];
+      for (const name of sheetFiles) {
+        const xml = await zip.files[name].async("text");
+        const strings = [...xml.matchAll(/<t[^>]*>([^<]*)<\/t>/g)].map((m) => m[1]).join(" ").trim();
+        if (strings) chunks.push(strings);
+      }
+      if (chunks.length) return [{ pageNumber: null, text: chunks.join("\n") }];
+    } catch {
+      // Fallback
+    }
+  }
+
+  // General text fallback
+  const textFallback = buffer.toString("utf-8").trim();
+  if (textFallback && !textFallback.includes("\u0000")) {
+    return [{ pageNumber: null, text: textFallback }];
+  }
+
+  throw new Error(`نوع الملف ${ext || "المجهول"} غير مدعوم أو لا يمكن استخراج النص منه`);
 }
 
 /**
  * Full RAG ingestion pipeline for one document: download -> extract ->
- * chunk -> embed -> store. Runs synchronously inside the upload/reprocess
- * request (no background job queue in the MVP), so it updates the
- * document's status as it goes for the admin UI to reflect progress on
- * the next page load.
+ * chunk -> embed -> store.
  */
 export async function processDocument(documentId: string): Promise<void> {
   const lock = await getPool().connect();
