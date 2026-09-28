@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Upload,
@@ -13,6 +13,8 @@ import {
   Trash2,
   Ban,
   Sparkles,
+  Search,
+  BookOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -74,7 +76,7 @@ interface FileQueueItem {
 }
 
 function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
+  if (!bytes || bytes <= 0) return "0 B";
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -114,9 +116,16 @@ export function UploadDocumentDialog({
   const [isProcessingQueue, setIsProcessingQueue] = useState(false);
   const [defaultSubjectId, setDefaultSubjectId] = useState<string>(subjects[0]?.id ?? "");
   const [defaultSourceType, setDefaultSourceType] = useState<SourceType>("reference");
+  const [subjectSearch, setSubjectSearch] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Keep a ref to the active queue so asynchronous callbacks always read current state
+  // Filter subjects for the 56 courses in Nursing Faculty
+  const filteredSubjects = useMemo(() => {
+    if (!subjectSearch.trim()) return subjects;
+    const term = subjectSearch.trim().toLowerCase();
+    return subjects.filter((s) => s.name_ar.toLowerCase().includes(term));
+  }, [subjects, subjectSearch]);
+
   const queueRef = useRef<FileQueueItem[]>([]);
   useEffect(() => {
     queueRef.current = queue;
@@ -172,7 +181,6 @@ export function UploadDocumentDialog({
     const item = queueRef.current.find((q) => q.id === id);
     if (!item) return;
 
-    // Abort active XHR request
     if (item.xhr) {
       try {
         item.xhr.abort();
@@ -195,7 +203,6 @@ export function UploadDocumentDialog({
       errorMessage: "تم إلغاء الرفع بناءً على طلبك",
     });
 
-    // Notify backend to purge any chunks stored so no corrupted file remains
     if (item.uploadId) {
       try {
         await fetch("/api/admin/knowledge/upload/cancel", {
@@ -211,7 +218,6 @@ export function UploadDocumentDialog({
     toast.info(`تم إلغاء رفع: ${item.file.name}`);
   }
 
-  // Upload an individual chunk with progress tracking using XMLHttpRequest
   const uploadChunkXHR = useCallback(
     (
       uploadId: string,
@@ -241,7 +247,7 @@ export function UploadDocumentDialog({
               const res = JSON.parse(xhr.responseText);
               if (res.error) errorMsg = res.error;
             } catch {
-              // fallback to statusText
+              // fallback
             }
             reject(new Error(errorMsg));
           }
@@ -258,7 +264,6 @@ export function UploadDocumentDialog({
         xhr.open("POST", "/api/admin/knowledge/upload/chunk");
         xhr.send(formData);
 
-        // Store xhr instance for cancellation
         setQueue((prev) =>
           prev.map((it) => (it.uploadId === uploadId ? { ...it, xhr } : it))
         );
@@ -277,6 +282,14 @@ export function UploadDocumentDialog({
         return;
       }
 
+      if (!item.file.size || item.file.size <= 0) {
+        updateItem(item.id, {
+          status: "failed",
+          errorMessage: "حجم الملف على جهازك 0 بايت (ملف فارغ). يرجى التأكد من الملف واختيار الملف المكتمل.",
+        });
+        return;
+      }
+
       updateItem(item.id, {
         status: "uploading",
         percent: 0,
@@ -287,7 +300,7 @@ export function UploadDocumentDialog({
       let uploadId = item.uploadId;
       let existingChunks: Set<number> = new Set();
 
-      // Step 1: Initialize Upload Session or resume existing
+      // Step 1: Initialize Upload Session
       try {
         if (!uploadId) {
           const initRes = await fetch("/api/admin/knowledge/upload/init", {
@@ -310,7 +323,6 @@ export function UploadDocumentDialog({
           uploadId = initData.uploadId;
           updateItem(item.id, { uploadId });
         } else {
-          // Check already uploaded chunks for resumable upload
           const statusRes = await fetch(
             `/api/admin/knowledge/upload/status?uploadId=${encodeURIComponent(uploadId)}`
           );
@@ -330,7 +342,7 @@ export function UploadDocumentDialog({
         return;
       }
 
-      // Step 2: Upload Chunks sequentially with progress and retry
+      // Step 2: Upload Chunks sequentially
       const fileSize = item.file.size;
       const totalChunks = item.totalChunks;
       let totalBytesUploadedBefore = 0;
@@ -344,16 +356,10 @@ export function UploadDocumentDialog({
       let lastSpeedBytes = totalBytesUploadedBefore;
 
       for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-        // Check if user cancelled while looping
         const currentItem = queueRef.current.find((q) => q.id === item.id);
-        if (currentItem?.status === "cancelled") {
-          return;
-        }
+        if (currentItem?.status === "cancelled") return;
 
-        // Skip chunk if already uploaded (resumed)
-        if (existingChunks.has(chunkIndex)) {
-          continue;
-        }
+        if (existingChunks.has(chunkIndex)) continue;
 
         const startByte = chunkIndex * CHUNK_SIZE;
         const endByte = Math.min(startByte + CHUNK_SIZE, fileSize);
@@ -378,7 +384,7 @@ export function UploadDocumentDialog({
 
                 if (timeDiffSec >= 0.5) {
                   const bytesDiff = totalLoaded - lastSpeedBytes;
-                  const currentSpeed = bytesDiff / timeDiffSec; // B/s
+                  const currentSpeed = bytesDiff / timeDiffSec;
                   speedMBs = Math.max(0.1, currentSpeed / (1024 * 1024));
 
                   const remainingBytes = Math.max(0, fileSize - totalLoaded);
@@ -401,7 +407,6 @@ export function UploadDocumentDialog({
             );
             chunkUploaded = true;
           } catch (err) {
-            // Check if cancelled
             const check = queueRef.current.find((q) => q.id === item.id);
             if (check?.status === "cancelled") return;
 
@@ -415,13 +420,12 @@ export function UploadDocumentDialog({
               });
               return;
             }
-            // Wait 1 second before retry
             await new Promise((r) => setTimeout(r, 1000));
           }
         }
       }
 
-      // Step 3: Complete upload
+      // Step 3: Complete upload assembly
       updateItem(item.id, {
         uploadedBytes: fileSize,
         percent: 100,
@@ -454,8 +458,7 @@ export function UploadDocumentDialog({
         return;
       }
 
-      // Step 4: Processing Phase (RAG embedding and indexing)
-      // Clearly separated phase: "تم رفع الملف بنجاح، جاري تحليل وتجهيز المحتوى للتدريب..."
+      // Step 4: Background processing phase with polling
       updateItem(item.id, {
         status: "processing",
         speedMBs: 0,
@@ -480,16 +483,15 @@ export function UploadDocumentDialog({
           throw new Error(errorMsg);
         }
 
-        // Poll document processing status until ready or failed
+        // Poll document status until ready or failed
         let isDone = false;
         let attempts = 0;
-        const maxAttempts = 180; // 180 * 2s = 6 minutes max
+        const maxAttempts = 180; // up to 6 minutes
 
         while (!isDone && attempts < maxAttempts) {
           await new Promise((r) => setTimeout(r, 2000));
           attempts++;
 
-          // Check if cancelled
           const check = queueRef.current.find((q) => q.id === item.id);
           if (check?.status === "cancelled") return;
 
@@ -549,7 +551,6 @@ export function UploadDocumentDialog({
     [router, updateItem, uploadChunkXHR]
   );
 
-  // Queue runner: processes files sequentially to ensure smooth performance on VPS
   const startUploadAll = async () => {
     setIsProcessingQueue(true);
     const pendingItems = queueRef.current.filter(
@@ -557,7 +558,6 @@ export function UploadDocumentDialog({
     );
 
     for (const item of pendingItems) {
-      // Re-read current status in case user removed or cancelled it
       const current = queueRef.current.find((q) => q.id === item.id);
       if (!current || current.status === "cancelled" || current.status === "completed") {
         continue;
@@ -568,7 +568,6 @@ export function UploadDocumentDialog({
     setIsProcessingQueue(false);
   };
 
-  // Overall statistics for multi-file upload
   const totalFiles = queue.length;
   const completedFiles = queue.filter((q) => q.status === "completed").length;
   const totalBytesAll = queue.reduce((acc, q) => acc + q.file.size, 0);
@@ -580,23 +579,48 @@ export function UploadDocumentDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button className="gap-2 shadow-sm font-medium"><Upload className="size-4" />رفع ملفات التدريب</Button>} />
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto sm:p-6" dir="rtl">
-        <DialogHeader className="text-right">
-          <DialogTitle className="text-xl font-bold flex items-center gap-2">
-            <Sparkles className="size-5 text-indigo-500" />
-            رفع مصادر تعليمية وتدريبية (بدون حد للحجم)
-          </DialogTitle>
-          <p className="text-xs text-muted-foreground mt-1">
-            يدعم كتب ومراجع الـ PDF الكبيرة، المستندات، العروض التقديمية حتى 1GB+ عبر الرفع المجزأ والآمن (Chunked Streaming).
-          </p>
-        </DialogHeader>
+      <DialogTrigger
+        render={
+          <Button className="gap-2 shadow-sm font-medium px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground">
+            <Upload className="size-4" />
+            رفع مصادر تعليمية
+          </Button>
+        }
+      />
+      <DialogContent
+        className="w-[95vw] sm:max-w-4xl md:max-w-5xl max-h-[92vh] flex flex-col p-0 overflow-hidden rounded-2xl border border-border shadow-2xl bg-card"
+        dir="rtl"
+      >
+        {/* Header */}
+        <div className="p-5 sm:p-6 border-b border-border bg-muted/20 shrink-0">
+          <DialogHeader className="text-right space-y-1.5">
+            <DialogTitle className="text-lg sm:text-xl font-bold flex items-center gap-2.5 text-foreground">
+              <span className="p-2 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                <Sparkles className="size-5" />
+              </span>
+              رفع مصادر تدريبية وتعليمية (بدون حد للحجم)
+            </DialogTitle>
+            <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+              يدعم كتب ومراجع الـ PDF الكبيرة حتى 1GB+ عبر الرفع المجزأ والآمن (Chunked Streaming) دون استهلاك لذاكرة السيرفر.
+            </p>
+          </DialogHeader>
+        </div>
 
-        <div className="space-y-5 mt-2">
-          {/* Default selection controls */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-border">
+        {/* Scrollable Body */}
+        <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5">
+          {/* Controls bar: Subject & Source Type */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-xl bg-muted/30 border border-border/80">
+            {/* Subject Selector with embedded live filter */}
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-foreground">المادة الافتراضية</Label>
+              <Label className="text-xs font-semibold text-foreground flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <BookOpen className="size-3.5 text-indigo-500" />
+                  المادة الدراسية (تحديد للملفات المرفوعة)
+                </span>
+                <span className="text-[11px] text-muted-foreground font-normal">
+                  ({subjects.length} مادة معتمدة)
+                </span>
+              </Label>
               <Select
                 value={defaultSubjectId}
                 onValueChange={(val) => {
@@ -607,23 +631,48 @@ export function UploadDocumentDialog({
                   );
                 }}
               >
-                <SelectTrigger className="w-full bg-background text-xs h-9">
+                <SelectTrigger className="w-full bg-background text-xs sm:text-sm h-10 border-border shadow-xs">
                   <SelectValue placeholder="اختر المادة الدراسية">
                     {(val: string) => subjects.find((s) => s.id === val)?.name_ar}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent>
-                  {subjects.map((s) => (
-                    <SelectItem key={s.id} value={s.id} className="text-xs">
-                      {s.name_ar}
-                    </SelectItem>
-                  ))}
+                <SelectContent className="max-h-72 w-full min-w-[280px]">
+                  {/* Search box inside dropdown */}
+                  <div className="p-2 border-b border-border sticky top-0 bg-popover z-10">
+                    <div className="relative">
+                      <Search className="size-3.5 absolute right-2.5 top-2.5 text-muted-foreground" />
+                      <Input
+                        placeholder="ابحث بالاسم عن المادة..."
+                        value={subjectSearch}
+                        onChange={(e) => setSubjectSearch(e.target.value)}
+                        className="h-8 text-xs pr-8 bg-background"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                  </div>
+                  <div className="py-1">
+                    {filteredSubjects.length > 0 ? (
+                      filteredSubjects.map((s) => (
+                        <SelectItem key={s.id} value={s.id} className="text-xs sm:text-sm py-2">
+                          {s.name_ar}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <div className="p-3 text-xs text-center text-muted-foreground">
+                        لا توجد مادة بهذا الاسم
+                      </div>
+                    )}
+                  </div>
                 </SelectContent>
               </Select>
             </div>
 
+            {/* Source Type Selector */}
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-foreground">نوع المصدر الافتراضي</Label>
+              <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                نوع المصدر الافتراضي
+              </Label>
               <Select
                 value={defaultSourceType}
                 onValueChange={(val) => {
@@ -635,14 +684,14 @@ export function UploadDocumentDialog({
                   );
                 }}
               >
-                <SelectTrigger className="w-full bg-background text-xs h-9">
+                <SelectTrigger className="w-full bg-background text-xs sm:text-sm h-10 border-border shadow-xs">
                   <SelectValue>
                     {(val: string) => SOURCE_TYPES.find((t) => t.value === val)?.label}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {SOURCE_TYPES.map((t) => (
-                    <SelectItem key={t.value} value={t.value} className="text-xs">
+                    <SelectItem key={t.value} value={t.value} className="text-xs sm:text-sm py-2">
                       {t.label}
                     </SelectItem>
                   ))}
@@ -651,10 +700,10 @@ export function UploadDocumentDialog({
             </div>
           </div>
 
-          {/* Dropzone / File Picker */}
+          {/* Drag & Drop Area */}
           <div
             onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed border-border hover:border-primary/50 transition-colors rounded-2xl p-6 text-center cursor-pointer bg-card/60 hover:bg-muted/40 group"
+            className="border-2 border-dashed border-border hover:border-primary/60 transition-all rounded-2xl p-7 text-center cursor-pointer bg-muted/10 hover:bg-primary/5 group"
           >
             <input
               ref={fileInputRef}
@@ -664,32 +713,34 @@ export function UploadDocumentDialog({
               className="hidden"
               onChange={handleFileSelect}
             />
-            <div className="flex flex-col items-center justify-center gap-2">
-              <div className="size-12 rounded-full bg-primary/10 text-primary flex items-center justify-center group-hover:scale-105 transition-transform">
-                <Upload className="size-6" />
+            <div className="flex flex-col items-center justify-center gap-2.5">
+              <div className="size-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:scale-105 transition-transform shadow-xs">
+                <Upload className="size-7" />
               </div>
-              <p className="text-sm font-semibold text-foreground">
-                اضغط لاختيار ملف أو عدة ملفات تدريب
-              </p>
-              <p className="text-xs text-muted-foreground">
-                PDF، DOCX، PPTX، TXT — لا يوجد حد برمجي لحجم الملف للأدمن
-              </p>
+              <div>
+                <p className="text-sm sm:text-base font-semibold text-foreground">
+                  اضغط لاختيار ملف أو اسحب الملفات هنا
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  يدعم PDF، DOCX، PPTX، TXT — لا يوجد حد برمجي لحجم الملف للأدمن (50MB, 200MB, 1GB+)
+                </p>
+              </div>
             </div>
           </div>
 
-          {/* Overall Progress for multi-file */}
+          {/* Overall Multi-file Progress Banner */}
           {queue.length > 1 && (
-            <div className="p-3.5 rounded-xl bg-primary/5 border border-primary/20 space-y-2">
-              <div className="flex items-center justify-between text-xs font-medium">
-                <span className="flex items-center gap-1.5 text-primary">
+            <div className="p-4 rounded-xl bg-primary/5 border border-primary/20 space-y-2.5 shadow-xs">
+              <div className="flex items-center justify-between text-xs sm:text-sm font-medium">
+                <span className="flex items-center gap-2 text-primary font-semibold">
                   <FileText className="size-4" />
                   التقدم الإجمالي: {completedFiles} من {totalFiles} ملفات مكتملة
                 </span>
-                <span className="font-semibold text-primary">
+                <span className="font-bold text-primary tabular-nums">
                   {formatBytes(uploadedBytesAll)} / {formatBytes(totalBytesAll)} ({overallPercent}%)
                 </span>
               </div>
-              <div className="w-full h-2 bg-primary/10 rounded-full overflow-hidden">
+              <div className="w-full h-2.5 bg-primary/10 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-primary rounded-full transition-all duration-300"
                   style={{ width: `${overallPercent}%` }}
@@ -698,240 +749,246 @@ export function UploadDocumentDialog({
             </div>
           )}
 
-          {/* Files Queue List */}
+          {/* Queue List */}
           {queue.length > 0 && (
-            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-              {queue.map((item) => {
-                const ext = item.file.name.split(".").pop()?.toUpperCase() || "FILE";
-                return (
-                  <div
-                    key={item.id}
-                    className="p-3.5 rounded-xl border border-border bg-card space-y-3 shadow-xs relative transition-all"
-                  >
-                    {/* Header info */}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <div className="size-10 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs shrink-0">
-                          {ext}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          {item.status === "pending" ? (
-                            <Input
-                              value={item.title}
-                              onChange={(e) => updateItem(item.id, { title: e.target.value })}
-                              className="h-8 text-xs font-medium"
-                              placeholder="عنوان الملف في قاعدة المعرفة"
-                            />
-                          ) : (
-                            <p className="text-sm font-semibold truncate text-foreground">
-                              {item.title}
-                            </p>
-                          )}
-                          <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                            <span>{item.file.name}</span>
-                            <span>•</span>
-                            <span className={`font-medium ${item.file.size <= 0 ? "text-destructive font-bold" : "text-foreground"}`}>
-                              {item.file.size <= 0 ? "0 بايت (ملف فارغ على جهازك)" : formatBytes(item.file.size)}
-                            </span>
+            <div className="space-y-3.5">
+              <p className="text-xs font-semibold text-muted-foreground">الملفات المحددة ({queue.length}):</p>
+              <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
+                {queue.map((item) => {
+                  const ext = item.file.name.split(".").pop()?.toUpperCase() || "FILE";
+                  return (
+                    <div
+                      key={item.id}
+                      className="p-4 rounded-xl border border-border bg-card space-y-3 shadow-xs transition-all hover:border-border/90"
+                    >
+                      {/* Top Row: File icon, editable title, size, status */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                          <div className="size-11 rounded-xl bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
+                            {ext}
                           </div>
-                        </div>
-                      </div>
-
-                      {/* Status Badges & Action Buttons */}
-                      <div className="flex items-center gap-2 shrink-0">
-                        {item.status === "pending" && (
-                          <>
-                            <span className="text-[11px] px-2 py-0.5 rounded-md bg-muted text-muted-foreground font-medium">
-                              بانتظار الرفع
-                            </span>
-                            <Button
-                              variant="ghost"
-                              size="icon-xs"
-                              onClick={() => removeItem(item.id)}
-                              className="text-muted-foreground hover:text-destructive"
-                            >
-                              <Trash2 className="size-3.5" />
-                            </Button>
-                          </>
-                        )}
-
-                        {item.status === "uploading" && (
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => cancelUpload(item.id)}
-                            className="h-7 text-xs gap-1"
-                          >
-                            <Ban className="size-3" />
-                            إلغاء الرفع
-                          </Button>
-                        )}
-
-                        {item.status === "processing" && (
-                          <span className="text-xs px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 font-medium flex items-center gap-1.5 animate-pulse">
-                            <Loader2 className="size-3 animate-spin" />
-                            جارٍ المعالجة والتدريب...
-                          </span>
-                        )}
-
-                        {item.status === "completed" && (
-                          <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-medium flex items-center gap-1.5">
-                            <CheckCircle2 className="size-3.5" />
-                            اكتمل بنجاح
-                          </span>
-                        )}
-
-                        {item.status === "cancelled" && (
-                          <span className="text-xs px-2.5 py-1 rounded-full bg-slate-500/10 text-slate-500 border border-slate-500/20 font-medium flex items-center gap-1.5">
-                            <Ban className="size-3" />
-                            تم الإلغاء
-                          </span>
-                        )}
-
-                        {item.status === "failed" && (
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs px-2.5 py-1 rounded-full bg-destructive/10 text-destructive border border-destructive/20 font-medium flex items-center gap-1.5">
-                              <AlertCircle className="size-3" />
-                              فشل الرفع
-                            </span>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 text-xs"
-                              onClick={() => processFileItem(item)}
-                            >
-                              إعادة المحاولة
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Progress Bar & Telemetry (during uploading or completed) */}
-                    {(item.status === "uploading" || item.status === "processing" || item.status === "completed") && (
-                      <div className="space-y-1.5 pt-1">
-                        <div className="flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-3">
-                            <span className="font-bold text-foreground">
-                              {item.percent}%
-                            </span>
-                            <span className="text-muted-foreground tabular-nums">
-                              {formatBytes(item.uploadedBytes)} / {formatBytes(item.file.size)}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-3 text-muted-foreground">
-                            {item.status === "uploading" && item.speedMBs > 0 && (
-                              <span className="flex items-center gap-1 text-sky-600 dark:text-sky-400">
-                                <Zap className="size-3" />
-                                {item.speedMBs.toFixed(1)} MB/s
-                              </span>
+                          <div className="min-w-0 flex-1 space-y-1">
+                            {item.status === "pending" ? (
+                              <Input
+                                value={item.title}
+                                onChange={(e) => updateItem(item.id, { title: e.target.value })}
+                                className="h-8 text-xs sm:text-sm font-medium bg-background"
+                                placeholder="عنوان الملف في قاعدة المعرفة"
+                              />
+                            ) : (
+                              <p className="text-sm font-semibold truncate text-foreground">
+                                {item.title}
+                              </p>
                             )}
-                            <span className="flex items-center gap-1">
-                              <Clock className="size-3" />
-                              {item.etaText}
-                            </span>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <span className="truncate max-w-[240px] sm:max-w-md">{item.file.name}</span>
+                              <span>•</span>
+                              <span className={`font-semibold tabular-nums ${item.file.size <= 0 ? "text-destructive" : "text-foreground"}`}>
+                                {item.file.size <= 0 ? "0 بايت (ملف فارغ على جهازك)" : formatBytes(item.file.size)}
+                              </span>
+                            </div>
                           </div>
                         </div>
 
-                        {/* Animated Smooth Progress Track */}
-                        <div className="w-full h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden relative">
-                          <div
-                            className={`h-full rounded-full transition-all duration-300 ${
-                              item.status === "completed"
-                                ? "bg-emerald-500"
-                                : item.status === "processing"
-                                ? "bg-amber-500 animate-pulse"
-                                : "bg-gradient-to-r from-blue-600 to-indigo-600"
-                            }`}
-                            style={{ width: `${item.percent}%` }}
-                          />
+                        {/* Status Badges & Buttons */}
+                        <div className="flex items-center gap-2 shrink-0">
+                          {item.status === "pending" && (
+                            <>
+                              <span className="text-xs px-2.5 py-1 rounded-md bg-muted text-muted-foreground font-medium">
+                                بانتظار الرفع
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                onClick={() => removeItem(item.id)}
+                                className="text-muted-foreground hover:text-destructive size-7"
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
+                            </>
+                          )}
+
+                          {item.status === "uploading" && (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => cancelUpload(item.id)}
+                              className="h-8 text-xs gap-1.5 px-3"
+                            >
+                              <Ban className="size-3.5" />
+                              إلغاء الرفع
+                            </Button>
+                          )}
+
+                          {item.status === "processing" && (
+                            <span className="text-xs px-3 py-1.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 font-medium flex items-center gap-1.5 animate-pulse">
+                              <Loader2 className="size-3.5 animate-spin" />
+                              جارٍ المعالجة والتدريب...
+                            </span>
+                          )}
+
+                          {item.status === "completed" && (
+                            <span className="text-xs px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-medium flex items-center gap-1.5">
+                              <CheckCircle2 className="size-4" />
+                              اكتمل بنجاح
+                            </span>
+                          )}
+
+                          {item.status === "cancelled" && (
+                            <span className="text-xs px-2.5 py-1 rounded-full bg-slate-500/10 text-slate-500 border border-slate-500/20 font-medium flex items-center gap-1.5">
+                              <Ban className="size-3.5" />
+                              تم الإلغاء
+                            </span>
+                          )}
+
+                          {item.status === "failed" && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs px-2.5 py-1 rounded-full bg-destructive/10 text-destructive border border-destructive/20 font-medium flex items-center gap-1.5">
+                                <AlertCircle className="size-3.5" />
+                                فشل
+                              </span>
+                              {item.file.size > 0 && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-xs"
+                                  onClick={() => processFileItem(item)}
+                                >
+                                  إعادة المحاولة
+                                </Button>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
-                    )}
 
-                    {/* Phase Banner for Post-upload processing (Requirement #7) */}
-                    {item.status === "processing" && (
-                      <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 flex items-center gap-2 text-xs text-amber-800 dark:text-amber-300">
-                        <Loader2 className="size-4 animate-spin shrink-0" />
-                        <div>
-                          <p className="font-semibold">تم رفع الملف بنجاح ✓</p>
-                          <p className="text-[11px] opacity-90">
-                            جاري تحليل واستخراج النص وتوليد التضمينات (Embeddings) للتدريب وقاعدة المعرفة...
+                      {/* Real Progress Bar & Live Telemetry */}
+                      {(item.status === "uploading" || item.status === "processing" || item.status === "completed") && (
+                        <div className="space-y-2 pt-1">
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-3">
+                              <span className="font-bold text-foreground text-sm tabular-nums">
+                                {item.percent}%
+                              </span>
+                              <span className="text-muted-foreground tabular-nums">
+                                {formatBytes(item.uploadedBytes)} / {formatBytes(item.file.size)}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-3 text-muted-foreground">
+                              {item.status === "uploading" && item.speedMBs > 0 && (
+                                <span className="flex items-center gap-1 font-medium text-sky-600 dark:text-sky-400 tabular-nums">
+                                  <Zap className="size-3.5" />
+                                  {item.speedMBs.toFixed(1)} MB/s
+                                </span>
+                              )}
+                              <span className="flex items-center gap-1">
+                                <Clock className="size-3.5" />
+                                {item.etaText}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Progress Track */}
+                          <div className="w-full h-2.5 bg-muted rounded-full overflow-hidden relative">
+                            <div
+                              className={`h-full rounded-full transition-all duration-300 ${
+                                item.status === "completed"
+                                  ? "bg-emerald-500"
+                                  : item.status === "processing"
+                                  ? "bg-amber-500 animate-pulse"
+                                  : "bg-gradient-to-r from-blue-600 via-indigo-600 to-primary"
+                              }`}
+                              style={{ width: `${item.percent}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Processing Notice Banner */}
+                      {item.status === "processing" && (
+                        <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 flex items-center gap-2.5 text-xs text-amber-800 dark:text-amber-300">
+                          <Loader2 className="size-4 animate-spin shrink-0 text-amber-600" />
+                          <div>
+                            <p className="font-semibold text-sm">تم رفع الملف بنجاح ✓</p>
+                            <p className="text-xs opacity-90 mt-0.5">
+                              جارٍ تحليل واستخراج النص وتوليد التضمينات (Embeddings) للتدريب في الخلفية...
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Completed Notice Banner */}
+                      {item.status === "completed" && (
+                        <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 flex items-center gap-2.5 text-xs text-emerald-800 dark:text-emerald-300">
+                          <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
+                          <p className="font-semibold text-xs sm:text-sm">
+                            تم رفع وتجهيز الملف بالكامل وأصبح جاهزاً للاستخدام في تدريب الذكاء الاصطناعي والإجابة عن أسئلة الطلاب.
                           </p>
                         </div>
-                      </div>
-                    )}
+                      )}
 
-                    {/* Completed Banner */}
-                    {item.status === "completed" && (
-                      <div className="p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 flex items-center gap-2 text-xs text-emerald-800 dark:text-emerald-300">
-                        <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
-                        <p className="font-semibold">
-                          تم رفع وتجهيز الملف بنجاح وأصبح جاهزاً للاستخدام في تدريب الذكاء الاصطناعي والإجابات.
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Error Banner with Friendly Arabic Message */}
-                    {item.status === "failed" && item.errorMessage && (
-                      <div className="p-2.5 rounded-lg bg-destructive/10 border border-destructive/20 flex items-center gap-2 text-xs text-destructive">
-                        <AlertCircle className="size-4 shrink-0" />
-                        <p>{item.errorMessage}</p>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                      {/* Error Banner */}
+                      {item.status === "failed" && item.errorMessage && (
+                        <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 flex items-center gap-2 text-xs text-destructive">
+                          <AlertCircle className="size-4 shrink-0" />
+                          <p className="font-medium leading-relaxed">{item.errorMessage}</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
+        </div>
 
-          {/* Action buttons footer */}
-          <div className="flex items-center justify-between pt-2 border-t border-border">
-            <div className="text-xs text-muted-foreground">
-              {queue.length > 0
-                ? `${queue.length} ملفات في القائمة`
-                : "لم يتم اختيار أي ملف بعد"}
-            </div>
+        {/* Sticky Footer */}
+        <div className="p-4 sm:p-5 border-t border-border bg-muted/20 flex items-center justify-between shrink-0">
+          <div className="text-xs text-muted-foreground font-medium">
+            {queue.length > 0
+              ? `${queue.length} ملفات في القائمة (${formatBytes(totalBytesAll)})`
+              : "لم يتم اختيار أي ملف بعد"}
+          </div>
 
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  if (hasUploading) {
-                    toast.warning("هناك ملفات قيد الرفع حالياً، يرجى إلغاؤها أولاً قبل الإغلاق");
-                    return;
-                  }
-                  setOpen(false);
-                }}
-              >
-                إغلاق
-              </Button>
-
-              <Button
-                onClick={startUploadAll}
-                disabled={
-                  queue.length === 0 ||
-                  isProcessingQueue ||
-                  !queue.some((q) => q.status === "pending" || q.status === "failed")
+          <div className="flex items-center gap-2.5">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (hasUploading) {
+                  toast.warning("هناك ملفات قيد الرفع حالياً، يرجى إلغاؤها أولاً قبل الإغلاق");
+                  return;
                 }
-                size="sm"
-                className="gap-2 px-5"
-              >
-                {isProcessingQueue ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" />
-                    جارٍ الرفع والمعالجة...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="size-4" />
-                    بدء الرفع والتدريب
-                  </>
-                )}
-              </Button>
-            </div>
+                setOpen(false);
+              }}
+              className="text-xs px-4 h-9"
+            >
+              إغلاق
+            </Button>
+
+            <Button
+              onClick={startUploadAll}
+              disabled={
+                queue.length === 0 ||
+                isProcessingQueue ||
+                !queue.some((q) => (q.status === "pending" || q.status === "failed") && q.file.size > 0)
+              }
+              size="sm"
+              className="gap-2 px-6 h-9 font-semibold shadow-sm"
+            >
+              {isProcessingQueue ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  جارٍ الرفع والمعالجة...
+                </>
+              ) : (
+                <>
+                  <Upload className="size-4" />
+                  بدء الرفع والتدريب
+                </>
+              )}
+            </Button>
           </div>
         </div>
       </DialogContent>
