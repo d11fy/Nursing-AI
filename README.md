@@ -53,12 +53,12 @@ npm run admin:promote -- your-email@example.com
 ```bash
 ollama pull qwen2.5:3b
 ollama pull qwen3:4b-instruct
-ollama pull qwen3-vl:4b-instruct
+ollama pull qwen3-vl:2b-instruct
 ollama pull nomic-embed-text
 ollama serve
 ```
 
-إذا كانت خدمة Ollama تعمل أصلًا، لا تحتاج تشغيل `ollama serve` مرة ثانية. يستخدم التطبيق HTTP API مباشرة: `/api/chat` مع `think: false`، و`/api/embed` للتضمين. لا يلزم مفتاح OpenAI في الوضع المحلي. يستخدم `qwen3-vl:4b-instruct` لتحليل صور المحادثة والصور التعليمية، بينما تبقى ملفات PDF وWord وPowerPoint والنصوص على مسار استخراج النص والفهرسة الحالي. تكلفة Ollama المسجلة في التطبيق صفر، ولا تمثل تكلفة تشغيل جهازك.
+إذا كانت خدمة Ollama تعمل أصلًا، لا تحتاج تشغيل `ollama serve` مرة ثانية. يستخدم التطبيق HTTP API مباشرة: `/api/chat` مع `think: false`، و`/api/embed` للتضمين. لا يلزم مفتاح OpenAI في الوضع المحلي. يستخدم `qwen3-vl:2b-instruct` لتحليل صور المحادثة والصور التعليمية بسرعة مناسبة للأجهزة ذات 4GB VRAM، ويصغّر الصور الكبيرة قبل التحليل. تبقى ملفات PDF وWord وPowerPoint والنصوص على مسار استخراج النص والفهرسة الحالي. تكلفة Ollama المسجلة في التطبيق صفر، ولا تمثل تكلفة تشغيل جهازك.
 
 انسخ `.env.example` إلى `.env.local` واضبط اتصال PostgreSQL وقيمة AUTH_SECRET، واستخدم محليًا:
 
@@ -67,7 +67,7 @@ APP_URL=http://localhost:3000
 AI_PROVIDER=ollama
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLLAMA_CHAT_MODEL=qwen3:4b-instruct
-OLLAMA_VISION_MODEL=qwen3-vl:4b-instruct
+OLLAMA_VISION_MODEL=qwen3-vl:2b-instruct
 OLLAMA_EMBEDDING_MODEL=nomic-embed-text
 ```
 

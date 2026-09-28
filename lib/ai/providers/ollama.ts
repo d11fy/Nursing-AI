@@ -57,7 +57,7 @@ export class OllamaProvider implements AIProvider {
     return match[1];
   }
 
-  private visionBody(params: GenerateTextParams & { imageUrl: string }) {
+  private visionBody(params: GenerateTextParams & { imageUrl: string }, stream = false) {
     const image = this.imageBase64(params.imageUrl);
     const lastUserIndex = params.messages.findLastIndex((message) => message.role === "user");
     const messages = params.messages.map(({ role, content }, index) =>
@@ -66,10 +66,10 @@ export class OllamaProvider implements AIProvider {
     if (lastUserIndex < 0) messages.push({ role: "user", content: "حلّل الصورة المرفقة.", images: [image] });
     return {
       model: this.visionModel,
-      stream: false,
+      stream,
       think: false,
       keep_alive: "10m",
-      options: { temperature: 0.2 },
+      options: { temperature: 0.2, num_ctx: 4096 },
       messages: [
         { role: "system", content: OLLAMA_NURSING_SYSTEM_PROMPT + (params.knowledge?.length ? buildKnowledgeContext(params.knowledge) : "") },
         ...messages,
@@ -143,6 +143,39 @@ export class OllamaProvider implements AIProvider {
     const value = this.parse(await this.readText(response, params.signal));
     if (!value.done || !value.message) throw new OllamaError("Ollama vision returned an incomplete response");
     return this.result(value.message.content ?? "", value, this.visionModel);
+  }
+
+  async *generateVisionStream(params: GenerateTextParams & { imageUrl: string }): AsyncGenerator<StreamChunk, GenerateResult, unknown> {
+    const response = await this.post("/api/chat", this.visionBody(params, true), params.signal);
+    if (!response.body) throw new OllamaError("Ollama returned an empty vision stream");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let pending = "";
+    let content = "";
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        pending += done ? decoder.decode() : decoder.decode(value, { stream: true });
+        const lines = pending.split("\n");
+        pending = lines.pop() ?? "";
+        if (done && pending.trim()) { lines.push(pending); pending = ""; }
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const chunk = this.parse(line);
+          const delta = chunk.message?.content ?? "";
+          if (delta) { content += delta; yield { delta }; }
+          if (chunk.done) return this.result(content, chunk, this.visionModel);
+        }
+        if (done) throw new OllamaError("انقطع رد تحليل الصورة قبل اكتماله / Incomplete Ollama vision stream");
+      }
+    } catch (error) {
+      if (params.signal?.aborted) throw params.signal.reason;
+      if (error instanceof OllamaError) throw error;
+      throw new OllamaError("انقطع الاتصال أثناء تحليل الصورة أو انتهت المهلة؛ حاول مجددًا.");
+    } finally {
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
+    }
   }
 
   async createEmbedding(text: string): Promise<EmbeddingResult> {

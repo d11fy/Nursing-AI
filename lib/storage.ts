@@ -2,6 +2,7 @@ import "server-only";
 import { createHmac, timingSafeEqual, randomUUID } from "node:crypto";
 import { getPool } from "@/lib/db/pool";
 import type { DatabaseClient } from "@/lib/db/server";
+import { toVisionDataUri } from "@/lib/vision-image";
 
 export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 const IMAGE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
@@ -49,7 +50,7 @@ export async function getChatImageDataUri(db: DatabaseClient, path: string) {
   if (!db.actor || db.actor.status !== "active") throw new Error("غير مصرح");
   const { rows } = await getPool().query("SELECT owner_id,mime_type,content FROM stored_files WHERE path=$1 AND bucket='chat-images'", [path]);
   if (!rows[0] || (rows[0].owner_id !== db.actor.user_id && db.actor.role !== "admin")) throw new Error("تعذر تحميل الصورة");
-  return `data:${rows[0].mime_type};base64,${Buffer.from(rows[0].content).toString("base64")}`;
+  return toVisionDataUri(Buffer.from(rows[0].content));
 }
 export async function uploadKnowledgeDocument(db: DatabaseClient, file: File) {
   if (db.actor?.role !== "admin") throw new Error("غير مصرح");

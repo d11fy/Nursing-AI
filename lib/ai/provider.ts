@@ -50,6 +50,11 @@ export interface AIProvider {
     params: GenerateTextParams & { imageUrl: string }
   ): Promise<GenerateResult>;
 
+  /** Optional streaming vision path for providers that support incremental output. */
+  generateVisionStream?(
+    params: GenerateTextParams & { imageUrl: string }
+  ): AsyncGenerator<StreamChunk, GenerateResult, unknown>;
+
   createEmbedding(text: string): Promise<EmbeddingResult>;
 
   /** Batched embedding creation for knowledge-base ingestion (fewer round-trips). */

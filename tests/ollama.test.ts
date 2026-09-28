@@ -6,12 +6,12 @@ import { chunkText } from "../lib/ai/rag";
 
 process.env.OLLAMA_BASE_URL = "http://127.0.0.1:11434";
 process.env.OLLAMA_CHAT_MODEL = "qwen2.5:3b";
-process.env.OLLAMA_VISION_MODEL = "qwen3-vl:4b-instruct";
+process.env.OLLAMA_VISION_MODEL = "qwen3-vl:2b-instruct";
 process.env.OLLAMA_EMBEDDING_MODEL = "nomic-embed-text";
 
 test("Ollama configuration works without OpenAI, validates URL and model", () => {
   assert.equal(getAIConfig({ AI_PROVIDER: "ollama" }).embeddingModel, "nomic-embed-text");
-  assert.equal(getAIConfig({ AI_PROVIDER: "ollama" }).visionModel, "qwen3-vl:4b-instruct");
+  assert.equal(getAIConfig({ AI_PROVIDER: "ollama" }).visionModel, "qwen3-vl:2b-instruct");
   assert.throws(() => getAIConfig({ AI_PROVIDER: "unknown" }), /AI_PROVIDER/);
   assert.throws(() => getAIConfig({ AI_PROVIDER: "openai" }), /OPENAI_API_KEY/);
   assert.throws(() => getAIConfig({ AI_PROVIDER: "ollama", OLLAMA_BASE_URL: "localhost:11434" }), /OLLAMA_BASE_URL/);
@@ -88,7 +88,7 @@ test("vision sends base64 images to the configured local model", async (t) => {
   t.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
     assert.ok(url.endsWith("/api/chat"));
     const body = JSON.parse(String(init.body));
-    assert.equal(body.model, "qwen3-vl:4b-instruct");
+    assert.equal(body.model, "qwen3-vl:2b-instruct");
     assert.equal(body.stream, false);
     assert.equal(body.think, false);
     assert.deepEqual(body.messages[1], { role: "user", content: "اشرح الصورة", images: ["aGVsbG8="] });
@@ -98,7 +98,18 @@ test("vision sends base64 images to the configured local model", async (t) => {
     messages: [{ role: "user", content: "اشرح الصورة" }],
     imageUrl: "data:image/png;base64,aGVsbG8=",
   });
-  assert.deepEqual(result, { content: "تحليل الصورة", inputTokens: 12, outputTokens: 3, model: "qwen3-vl:4b-instruct" });
+  assert.deepEqual(result, { content: "تحليل الصورة", inputTokens: 12, outputTokens: 3, model: "qwen3-vl:2b-instruct" });
+});
+
+test("vision can stream partial output immediately", async (t) => {
+  t.mock.method(globalThis, "fetch", async (_url: string, init: RequestInit) => {
+    assert.equal(JSON.parse(String(init.body)).stream, true);
+    return new Response('{"message":{"content":"تحليل "},"done":false}\n{"message":{"content":"سريع"},"done":true,"prompt_eval_count":8,"eval_count":2}\n');
+  });
+  const stream = new OllamaProvider().generateVisionStream({ messages: [], imageUrl: "data:image/webp;base64,aGVsbG8=" });
+  assert.deepEqual((await stream.next()).value, { delta: "تحليل " });
+  assert.deepEqual((await stream.next()).value, { delta: "سريع" });
+  assert.deepEqual(await stream.next(), { done: true, value: { content: "تحليل سريع", model: "qwen3-vl:2b-instruct", inputTokens: 8, outputTokens: 2 } });
 });
 
 test("offline errors are actionable and invalid vision data is rejected locally", async (t) => {

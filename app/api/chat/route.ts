@@ -159,17 +159,26 @@ export async function POST(request: Request) {
 
       try {
         if (imageDataUri) {
-          const result = await provider.generateVisionResponse({
-            messages,
-            knowledge,
-            imageUrl: imageDataUri,
-            signal: request.signal,
-          });
-          fullContent = result.content;
-          inputTokens = result.inputTokens;
-          outputTokens = result.outputTokens;
-          model = result.model;
-          controller.enqueue(encoder.encode(fullContent));
+          const visionParams = { messages, knowledge, imageUrl: imageDataUri, signal: request.signal };
+          if (provider.generateVisionStream) {
+            const generator = provider.generateVisionStream(visionParams);
+            let next = await generator.next();
+            while (!next.done) {
+              fullContent += next.value.delta;
+              controller.enqueue(encoder.encode(next.value.delta));
+              next = await generator.next();
+            }
+            inputTokens = next.value.inputTokens;
+            outputTokens = next.value.outputTokens;
+            model = next.value.model;
+          } else {
+            const result = await provider.generateVisionResponse(visionParams);
+            fullContent = result.content;
+            inputTokens = result.inputTokens;
+            outputTokens = result.outputTokens;
+            model = result.model;
+            controller.enqueue(encoder.encode(fullContent));
+          }
         } else {
           const generator = provider.generateStream({
             messages,

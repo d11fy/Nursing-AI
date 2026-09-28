@@ -10,6 +10,7 @@ import { extractPagesFromFile, type ExtractedPage } from "@/lib/knowledge";
 import { logUsage } from "@/lib/usage";
 import { logEvent } from "@/lib/log";
 import { submitContributionIfRequested } from "@/lib/lectures/contribution";
+import { toVisionDataUri } from "@/lib/vision-image";
 
 const EMBEDDING_BATCH_SIZE = 8;
 // Distinct advisory lock key from lib/knowledge.ts's document pipeline (73194026)
@@ -31,9 +32,9 @@ async function extractPptxPages(buffer: Buffer): Promise<ExtractedPage[]> {
   return pages;
 }
 
-async function extractImagePages(buffer: Buffer, mimeType: string): Promise<ExtractedPage[]> {
+async function extractImagePages(buffer: Buffer): Promise<ExtractedPage[]> {
   const provider = getAIProvider();
-  const dataUri = `data:${mimeType};base64,${buffer.toString("base64")}`;
+  const dataUri = await toVisionDataUri(buffer);
   const result = await provider.generateVisionResponse({
     messages: [{
       role: "user",
@@ -47,7 +48,7 @@ async function extractImagePages(buffer: Buffer, mimeType: string): Promise<Extr
 
 async function extractLecturePages(buffer: Buffer, fileName: string, mimeType: string): Promise<ExtractedPage[]> {
   if (fileName.split(".").pop()?.toLowerCase() === "pptx") return extractPptxPages(buffer);
-  if (mimeType.startsWith("image/")) return extractImagePages(buffer, mimeType);
+  if (mimeType.startsWith("image/")) return extractImagePages(buffer);
   return extractPagesFromFile(buffer, fileName);
 }
 
