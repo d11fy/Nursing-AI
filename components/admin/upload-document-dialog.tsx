@@ -134,14 +134,15 @@ export function UploadDocumentDialog({
 
     const newItems: FileQueueItem[] = Array.from(files).map((file) => {
       const titleWithoutExt = file.name.replace(/\.[^/.]+$/, "");
-      const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
+      const isZeroByte = !file.size || file.size <= 0;
+      const totalChunks = isZeroByte ? 1 : Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
       return {
         id: crypto.randomUUID(),
         file,
         title: titleWithoutExt,
         subjectId: defaultSubjectId || subjects[0]?.id || "",
         sourceType: defaultSourceType,
-        status: "pending",
+        status: isZeroByte ? "failed" : "pending",
         totalChunks,
         uploadedChunks: 0,
         uploadedBytes: 0,
@@ -149,6 +150,9 @@ export function UploadDocumentDialog({
         percent: 0,
         speedMBs: 0,
         etaText: "—",
+        errorMessage: isZeroByte
+          ? "حجم هذا الملف 0 بايت على جهازك (ملف فارغ أو لم يكتمل نسخه/تنزيله). تأكد من اكتمال الملف على جهازك أو اختر الملف الأصلي وليس النسخة الفارغة."
+          : undefined,
       };
     });
 
@@ -666,7 +670,9 @@ export function UploadDocumentDialog({
                           <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
                             <span>{item.file.name}</span>
                             <span>•</span>
-                            <span className="font-medium text-foreground">{formatBytes(item.file.size)}</span>
+                            <span className={`font-medium ${item.file.size <= 0 ? "text-destructive font-bold" : "text-foreground"}`}>
+                              {item.file.size <= 0 ? "0 بايت (ملف فارغ على جهازك)" : formatBytes(item.file.size)}
+                            </span>
                           </div>
                         </div>
                       </div>
