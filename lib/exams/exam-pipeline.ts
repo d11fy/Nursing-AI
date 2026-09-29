@@ -122,100 +122,110 @@ export async function processExamDocument(
     let needsReviewCount = 0;
     let conflictCount = 0;
 
+    // Clean up any previously extracted questions for this exam if re-processing
+    await pool.query(`DELETE FROM public.exam_questions WHERE exam_id = $1`, [examId]);
+
     // 4. Verify each question strictly against curriculum sources
     for (const [idx, q] of allParsedQuestions.entries()) {
-      const verification = await verifyExamQuestion({
-        subjectId: exam.subject_id,
-        questionText: q.question_text,
-        questionType: q.question_type,
-        options: q.options,
-        extractedAnswer: q.extracted_answer,
-        examYear: exam.exam_year,
-      });
+      try {
+        const verification = await verifyExamQuestion({
+          subjectId: exam.subject_id,
+          questionText: q.question_text,
+          questionType: q.question_type,
+          options: q.options,
+          extractedAnswer: q.extracted_answer,
+          examYear: exam.exam_year,
+        });
 
-      if (verification.status === "VERIFIED") verifiedCount++;
-      else if (verification.status === "CONFLICT") conflictCount++;
-      else needsReviewCount++;
+        if (verification.status === "VERIFIED") verifiedCount++;
+        else if (verification.status === "CONFLICT") conflictCount++;
+        else needsReviewCount++;
 
-      // Insert question record into exam_questions
-      const { rows: insertedQ } = await pool.query<{ id: string }>(
-        `INSERT INTO public.exam_questions (
-           exam_id, subject_id, question_text, question_type, options_json,
-           correct_answer_json, extracted_answer, explanation, topic, subtopic,
-           difficulty, difficulty_estimate, status, confidence, page_number,
-           source_document_id, question_number
-         ) VALUES (
-           $1, $2, $3, $4, $5::jsonb,
-           $6::jsonb, $7, $8, $9, $10,
-           $11, $12, $13, $14, $15,
-           $16, $17
-         ) RETURNING id`,
-        [
-          exam.id,
-          exam.subject_id,
-          q.question_text,
-          q.question_type,
-          JSON.stringify(q.options || []),
-          verification.verifiedAnswer ? JSON.stringify(verification.verifiedAnswer) : null,
-          q.extracted_answer || null,
-          verification.explanation || q.explanation || null,
-          q.topic || "General Nursing",
-          q.subtopic || null,
-          q.difficulty_estimate > 0.7 ? "HARD" : q.difficulty_estimate < 0.4 ? "EASY" : "MEDIUM",
-          q.difficulty_estimate,
-          verification.status,
-          verification.confidence,
-          q.page_number || null,
-          exam.document_id,
-          q.question_number || idx + 1,
-        ]
-      );
-
-      const questionId = insertedQ[0].id;
-
-      // Insert question_sources
-      for (const ev of verification.evidence) {
-        await pool.query(
-          `INSERT INTO public.question_sources (
-             question_id, document_id, chunk_id, page_number, quote, support_type, source_priority
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        // Insert question record into exam_questions
+        const { rows: insertedQ } = await pool.query<{ id: string }>(
+          `INSERT INTO public.exam_questions (
+             exam_id, subject_id, question_text, question_type, options_json,
+             correct_answer_json, extracted_answer, explanation, topic, subtopic,
+             difficulty, difficulty_estimate, status, confidence, page_number,
+             source_document_id, question_number
+           ) VALUES (
+             $1, $2, $3, $4, $5::jsonb,
+             $6::jsonb, $7, $8, $9, $10,
+             $11, $12, $13, $14, $15,
+             $16, $17
+           ) RETURNING id`,
           [
-            questionId,
-            ev.documentId,
-            ev.chunkId,
-            ev.pageNumber,
-            ev.quote,
-            ev.supportType,
-            ev.sourcePriority,
-          ]
-        );
-      }
-
-      // If conflict detected, record in audit logs
-      if (verification.status === "CONFLICT") {
-        await pool.query(
-          `INSERT INTO public.exam_audit_logs (subject_id, exam_id, question_id, event_type, details_json)
-           VALUES ($1, $2, $3, 'CONFLICT_DETECTED', $4::jsonb)`,
-          [
-            exam.subject_id,
             exam.id,
-            questionId,
-            JSON.stringify({
-              extractedAnswer: q.extracted_answer,
-              conflictDetails: verification.conflictDetails,
-            }),
+            exam.subject_id,
+            q.question_text,
+            q.question_type,
+            JSON.stringify(q.options || []),
+            verification.verifiedAnswer ? JSON.stringify(verification.verifiedAnswer) : null,
+            q.extracted_answer || null,
+            verification.explanation || q.explanation || null,
+            q.topic || "General Nursing",
+            q.subtopic || null,
+            (q.difficulty_estimate ?? 0.5) > 0.7 ? "HARD" : (q.difficulty_estimate ?? 0.5) < 0.4 ? "EASY" : "MEDIUM",
+            Math.min(0.99, Math.max(0.1, q.difficulty_estimate ?? 0.5)),
+            verification.status,
+            Math.min(0.99, Math.max(0.1, verification.confidence ?? 0.5)),
+            q.page_number || null,
+            exam.document_id,
+            q.question_number || idx + 1,
           ]
         );
-      }
 
-      // 5. Cluster question to track recurrence
-      await assignQuestionToCluster(
-        questionId,
-        exam.subject_id,
-        q.question_text,
-        q.topic || "General Nursing",
-        exam.exam_year
-      );
+        if (insertedQ.length) {
+          const questionId = insertedQ[0].id;
+
+          // Insert question_sources
+          for (const ev of verification.evidence) {
+            await pool.query(
+              `INSERT INTO public.question_sources (
+                 question_id, document_id, chunk_id, page_number, quote, support_type, source_priority
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+              [
+                questionId,
+                ev.documentId,
+                ev.chunkId,
+                ev.pageNumber,
+                ev.quote,
+                ev.supportType,
+                ev.sourcePriority,
+              ]
+            );
+          }
+
+          // If conflict detected, record in audit logs
+          if (verification.status === "CONFLICT") {
+            await pool.query(
+              `INSERT INTO public.exam_audit_logs (subject_id, exam_id, question_id, event_type, details_json)
+               VALUES ($1, $2, $3, 'CONFLICT_DETECTED', $4::jsonb)`,
+              [
+                exam.subject_id,
+                exam.id,
+                questionId,
+                JSON.stringify({
+                  extractedAnswer: q.extracted_answer,
+                  conflictDetails: verification.conflictDetails,
+                }),
+              ]
+            );
+          }
+
+          // 5. Cluster question to track recurrence
+          await assignQuestionToCluster(
+            questionId,
+            exam.subject_id,
+            q.question_text,
+            q.topic || "General Nursing",
+            exam.exam_year
+          );
+        }
+      } catch (qErr) {
+        console.error(`[ExamPipeline] Error processing question ${idx + 1} of exam ${examId}:`, qErr);
+        needsReviewCount++;
+      }
     }
 
     // 6. Mark exam READY and update counts
@@ -225,6 +235,7 @@ export async function processExamDocument(
            verified_questions = $2,
            needs_review_questions = $3,
            conflict_questions = $4,
+           error_message = null,
            updated_at = now()
        WHERE id = $1`,
       [examId, verifiedCount, needsReviewCount, conflictCount]

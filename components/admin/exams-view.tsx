@@ -167,7 +167,19 @@ export function ExamsView({
                   <TableCell>
                     <Badge variant="outline" className="text-[11px]">{e.exam_type}</Badge>
                   </TableCell>
-                  <TableCell>{getStatusBadge(e.status)}</TableCell>
+                  <TableCell>
+                    <div className="space-y-1">
+                      {getStatusBadge(e.status)}
+                      {e.status === "FAILED" && e.error_message && (
+                        <span
+                          className="text-[11px] text-destructive block max-w-[180px] truncate cursor-help"
+                          title={e.error_message}
+                        >
+                          {e.error_message}
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell className="font-bold">{e.total_questions}</TableCell>
                   <TableCell className="text-emerald-600 dark:text-emerald-400 font-semibold">
                     {e.verified_questions}

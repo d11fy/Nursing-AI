@@ -85,107 +85,104 @@ async function retrieveCurriculumEvidence(
   const pool = getPool();
   const queryText = `${questionText} ${options.slice(0, 4).join(" ")}`.slice(0, 1000);
 
-  // 1. Generate embedding for question
-  let queryEmbedding: number[] = [];
-  const config = getAIConfig();
   try {
-    const aiProvider = getAIProvider();
-    const embResult = await aiProvider.createEmbeddings([queryText]);
-    if (embResult.length && embResult[0].embedding.length) {
-      queryEmbedding = embResult[0].embedding;
+    // 1. Generate embedding for question
+    let queryEmbedding: number[] = [];
+    const config = getAIConfig();
+    try {
+      const aiProvider = getAIProvider();
+      const embResult = await aiProvider.createEmbeddings([queryText]);
+      if (embResult.length && embResult[0].embedding.length) {
+        queryEmbedding = embResult[0].embedding;
+      }
+    } catch (err) {
+      console.warn("[QuestionVerifier] Embedding retrieval error, using lexical fallback:", err);
     }
+
+    const hasEmbedding = queryEmbedding.length > 0;
+    const safeSearchText = queryText.slice(0, 300);
+
+    let sql = "";
+    let params: unknown[] = [];
+
+    if (hasEmbedding) {
+      sql = `
+        WITH candidates AS (
+          SELECT
+            dc.id AS chunk_id,
+            dc.document_id,
+            d.title AS doc_title,
+            d.source_type,
+            dc.page_number,
+            dc.content,
+            public.cosine_similarity(dc.embedding, $2::double precision[]) AS similarity,
+            ts_rank_cd(dc.search_vector, plainto_tsquery('simple', $3)) AS text_score
+          FROM public.document_chunks dc
+          JOIN public.documents d ON d.id = dc.document_id
+          WHERE d.subject_id = $1
+            AND d.status = 'ready'
+            AND d.source_type NOT IN ('PAST_EXAM', 'QUESTION_BANK', 'questions')
+            AND dc.embedding_provider = $4
+            AND dc.embedding_dimensions = cardinality($2::double precision[])
+        )
+        SELECT *
+        FROM candidates
+        WHERE similarity > 0.35 OR text_score > 0.05
+        ORDER BY similarity DESC NULLS LAST, text_score DESC
+        LIMIT 6;
+      `;
+      params = [subjectId, queryEmbedding, safeSearchText, config.provider];
+    } else {
+      sql = `
+        WITH candidates AS (
+          SELECT
+            dc.id AS chunk_id,
+            dc.document_id,
+            d.title AS doc_title,
+            d.source_type,
+            dc.page_number,
+            dc.content,
+            0.5::double precision AS similarity,
+            ts_rank_cd(dc.search_vector, plainto_tsquery('simple', $2)) AS text_score
+          FROM public.document_chunks dc
+          JOIN public.documents d ON d.id = dc.document_id
+          WHERE d.subject_id = $1
+            AND d.status = 'ready'
+            AND d.source_type NOT IN ('PAST_EXAM', 'QUESTION_BANK', 'questions')
+        )
+        SELECT *
+        FROM candidates
+        WHERE text_score > 0.02
+        ORDER BY text_score DESC
+        LIMIT 6;
+      `;
+      params = [subjectId, safeSearchText];
+    }
+
+    const { rows } = await pool.query<{
+      chunk_id: string;
+      document_id: string;
+      doc_title: string;
+      source_type: string;
+      page_number: number | null;
+      content: string;
+      similarity: number;
+    }>(sql, params);
+
+    return rows.map((r) => ({
+      chunkId: r.chunk_id,
+      documentId: r.document_id,
+      documentTitle: r.doc_title,
+      sourceType: r.source_type,
+      priority: getSourcePriority(r.source_type),
+      pageNumber: r.page_number,
+      content: r.content,
+      similarity: Number(r.similarity) || 0,
+    }));
   } catch (err) {
-    console.warn("[QuestionVerifier] Embedding retrieval error, using lexical fallback:", err);
+    console.error("[QuestionVerifier] retrieveCurriculumEvidence error:", err);
+    return [];
   }
-
-  // 2. Query document chunks strictly within subject and active official documents
-  const normalizedQuery = queryText
-    .toLowerCase()
-    .replace(/[أإآٱ]/g, "ا")
-    .replace(/ى/g, "ي")
-    .replace(/ؤ/g, "و")
-    .replace(/ئ/g, "ي")
-    .replace(/[ًٌٍَُِّْـ]/g, "")
-    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
-    .trim()
-    .split(/\s+/)
-    .filter((w) => w.length > 2)
-    .slice(0, 10)
-    .join(" | ");
-
-  const hasEmbedding = queryEmbedding.length > 0;
-
-  const sql = `
-    WITH candidates AS (
-      SELECT
-        dc.id AS chunk_id,
-        dc.document_id,
-        d.title AS doc_title,
-        d.source_type,
-        dc.page_number,
-        dc.content,
-        ${
-          hasEmbedding
-            ? `public.cosine_similarity(dc.embedding, $3::double precision[])`
-            : `0.5::double precision`
-        } AS similarity,
-        ${
-          normalizedQuery
-            ? `ts_rank_cd(dc.search_vector, to_tsquery('simple', $4))`
-            : `0.0`
-        } AS text_score
-      FROM public.document_chunks dc
-      JOIN public.documents d ON d.id = dc.document_id
-      WHERE d.subject_id = $1
-        AND d.status = 'ready'
-        AND d.source_type NOT IN ('PAST_EXAM', 'QUESTION_BANK', 'questions')
-        ${
-          hasEmbedding
-            ? `AND dc.embedding_provider = $5 AND dc.embedding_dimensions = cardinality($3::double precision[])`
-            : ``
-        }
-    )
-    SELECT *
-    FROM candidates
-    WHERE similarity > 0.35 OR text_score > 0.05
-    ORDER BY similarity DESC NULLS LAST, text_score DESC
-    LIMIT 6;
-  `;
-
-  const params: unknown[] = [subjectId, null];
-  if (hasEmbedding) {
-    params[2] = queryEmbedding;
-    params[3] = normalizedQuery || "nursing";
-    params[4] = config.provider;
-  } else {
-    params[2] = [];
-    params[3] = normalizedQuery || "nursing";
-  }
-
-  const { rows } = await pool.query<{
-    chunk_id: string;
-    document_id: string;
-    doc_title: string;
-    source_type: string;
-    page_number: number | null;
-    content: string;
-    similarity: number;
-  }>(sql, [
-    subjectId,
-    null,
-    ...(hasEmbedding ? [queryEmbedding, normalizedQuery || "nursing", config.provider] : [[], normalizedQuery || "nursing"]),
-  ]);
-
-  return rows.map((r) => ({
-    chunkId: r.chunk_id,
-    documentId: r.document_id,
-    documentTitle: r.doc_title,
-    sourceType: r.source_type,
-    priority: getSourcePriority(r.source_type),
-    pageNumber: r.page_number,
-    content: r.content,
-    similarity: Number(r.similarity) || 0,
-  }));
 }
 
 /**
@@ -200,44 +197,44 @@ export async function verifyExamQuestion(input: {
   extractedAnswer?: string | null;
   examYear?: number | null;
 }): Promise<VerificationResult> {
-  const candidates = await retrieveCurriculumEvidence(
-    input.subjectId,
-    input.questionText,
-    input.options
-  );
-
-  // If no curriculum evidence found at all, cannot verify -> mark NEEDS_REVIEW
-  if (!candidates.length) {
-    return {
-      status: "NEEDS_REVIEW",
-      verifiedAnswer: null,
-      explanation: "لم يتم العثور على شواهد كافية في الكتب والمحاضرات الرسمية لتأكيد الإجابة دون تخمين.",
-      confidence: 0.3,
-      evidence: [],
-      conflictDetails: null,
-    };
-  }
-
-  // Format evidence packages for LLM
-  const evidencePayload = candidates.map((c, i) => ({
-    sourceId: `S${i + 1}`,
-    documentTitle: c.documentTitle,
-    sourceType: c.sourceType,
-    pageNumber: c.pageNumber,
-    priority: c.priority,
-    content: c.content.slice(0, 2000),
-  }));
-
-  // Route to the strongest available provider (e.g. OpenAI complex or Gemini flash fallback)
-  const route = routeAIRequest({
-    feature: "question_verification",
-    complexity: "COMPLEX",
-  });
-
-  const primary = getProviderByName(route.provider);
-  const fallbacks = route.fallbackProviders.map(getProviderByName);
-
   try {
+    const candidates = await retrieveCurriculumEvidence(
+      input.subjectId,
+      input.questionText,
+      input.options
+    );
+
+    // If no curriculum evidence found at all, cannot verify -> mark NEEDS_REVIEW
+    if (!candidates.length) {
+      return {
+        status: "NEEDS_REVIEW",
+        verifiedAnswer: null,
+        explanation: "لم يتم العثور على شواهد كافية في الكتب والمحاضرات الرسمية لتأكيد الإجابة دون تخمين.",
+        confidence: 0.3,
+        evidence: [],
+        conflictDetails: null,
+      };
+    }
+
+    // Format evidence packages for LLM
+    const evidencePayload = candidates.map((c, i) => ({
+      sourceId: `S${i + 1}`,
+      documentTitle: c.documentTitle,
+      sourceType: c.sourceType,
+      pageNumber: c.pageNumber,
+      priority: c.priority,
+      content: c.content.slice(0, 2000),
+    }));
+
+    // Route to the strongest available provider (e.g. OpenAI complex or Gemini flash fallback)
+    const route = routeAIRequest({
+      feature: "question_verification",
+      complexity: "COMPLEX",
+    });
+
+    const primary = getProviderByName(route.provider);
+    const fallbacks = route.fallbackProviders.map(getProviderByName);
+
     const executed = await executeWithFallback({
       primaryProvider: primary,
       fallbackProviders: fallbacks,
