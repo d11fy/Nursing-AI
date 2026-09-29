@@ -4,7 +4,7 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Image from "next/image";
-import { ThumbsUp, ThumbsDown, Copy, Check } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Copy, Check, Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FeedbackDialog } from "@/components/chat/feedback-dialog";
 import { cn } from "@/lib/utils";
@@ -16,10 +16,12 @@ export interface ChatMessageData {
   imageUrl?: string | null;
 }
 
-export function MessageBubble({ message }: { message: ChatMessageData }) {
+export function MessageBubble({ message, showAITrace=false }: { message: ChatMessageData; showAITrace?:boolean }) {
   const [copied, setCopied] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedback, setFeedback] = useState<"up" | "down" | null>(null);
+  const [trace, setTrace] = useState<Record<string,unknown>|null>(null);
+  const [traceOpen, setTraceOpen] = useState(false);
   const isUser = message.role === "user";
 
   async function copyAnswer() {
@@ -35,6 +37,11 @@ export function MessageBubble({ message }: { message: ChatMessageData }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messageId: message.id, isPositive, reason, comment }),
     });
+  }
+  async function loadTrace(){
+    if(trace){setTraceOpen((value)=>!value);return;}
+    const response=await fetch(`/api/admin/ai-traces/${message.id}`);
+    if(response.ok){setTrace(await response.json());setTraceOpen(true);}
   }
 
   return (
@@ -87,8 +94,12 @@ export function MessageBubble({ message }: { message: ChatMessageData }) {
               onOpenChange={setFeedbackOpen}
               onSubmit={(reason, comment) => sendFeedback(false, reason, comment)}
             />
+            {showAITrace && !message.id.startsWith("local-") && <Button variant="ghost" size="sm" className="mr-auto h-7 gap-1 text-xs" onClick={loadTrace}>
+              <Activity className="size-3.5" /> تتبع AI
+            </Button>}
           </div>
         )}
+        {traceOpen && trace && <pre dir="ltr" className="mt-2 max-h-80 overflow-auto rounded-lg bg-slate-950 p-3 text-left text-[11px] text-slate-100">{JSON.stringify(trace,null,2)}</pre>}
       </div>
     </div>
   );

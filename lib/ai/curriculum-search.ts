@@ -106,7 +106,10 @@ export async function retrieveCurriculum(queries: string[], scope: SearchScope, 
   // Neighbours are optional; retrieval errors above must propagate (not masquerade as NO_SOURCE).
   return selected.map(row => ({ id: row.id, documentId: row.document_id, title: row.title,
     subjectName: row.subject_name, sourceType: row.source_type, chapter: row.chapter,
-    pageNumber: row.page_number, similarity: row.similarity,
+    pageNumber: row.page_number, similarity: row.similarity, chunkIndex: row.chunk_index,
+    evidenceType: scope.lectureId ? "PRIVATE_LECTURE" as const
+      : row.source_type === "lecture" || row.source_type === "notes" ? "UNIVERSITY_SOURCE" as const
+      : row.source_type === "book" ? "TEXTBOOK" as const : "SUPPLEMENTARY" as const,
     content: (neighbours?.rows.filter(n => n.anchor_id===row.id).map(n => n.content).join("\n\n") || row.content).slice(0,3600),
   }));
 }

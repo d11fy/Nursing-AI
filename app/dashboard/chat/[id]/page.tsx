@@ -53,6 +53,7 @@ export default async function ConversationPage({ params }: PageProps<"/dashboard
       subjectId={conversation.subject_id}
       subjectName={subjectName}
       maxImageSizeMb={maxImageSizeMb}
+      showAITrace={profile.role === "admin"}
     />
   );
 }

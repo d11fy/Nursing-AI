@@ -14,6 +14,11 @@ export interface KnowledgeChunk {
   chapter?: string | null;
   pageNumber?: number | null;
   similarity: number;
+  evidenceType?: "USER_UPLOAD" | "PRIVATE_LECTURE" | "UNIVERSITY_SOURCE" | "TEXTBOOK" | "SUPPLEMENTARY";
+  attachmentId?: string;
+  attachmentOrdinal?: number;
+  sectionIndex?: number | null;
+  chunkIndex?: number | null;
 }
 
 export interface GenerateTextParams {

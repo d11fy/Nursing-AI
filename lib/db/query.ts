@@ -10,8 +10,10 @@ type Result<T> = { data: T | null; error: { message: string } | null };
 const columns: Record<Table, string[]> = {
   profiles: "id user_id full_name email university nursing_year academic_year_id role status created_at updated_at".split(" "),
   subjects: "id name_ar name_en description description_ar description_en icon icon_theme status sort_order created_at updated_at archived_at".split(" "),
-  conversations: "id user_id title subject_id lecture_id created_at updated_at".split(" "),
+  conversations: "id user_id title subject_id lecture_id active_attachment_id active_attachment_section_index created_at updated_at".split(" "),
   messages: "id conversation_id role content image_url tokens_input tokens_output model created_at".split(" "),
+  conversation_attachments: "id conversation_id message_id user_id file_path file_type ordinal vision_extracted_text vision_structured_json subject_id lecture_id status provider model input_tokens output_tokens created_at".split(" "),
+  message_ai_traces: "id message_id conversation_id user_id resolved_query detected_subject active_attachment_id attachment_ids retrieved_sources_json reranked_sources_json evidence_coverage selected_provider selected_model fallback_used final_source_ids_json refusal_reason diagnostics_json created_at".split(" "),
   message_feedback: "id message_id user_id is_positive reason comment created_at".split(" "),
   documents: "id title file_url file_name file_size subject_id source_type status vector_store_id file_id chunk_count error_message created_by contribution_id created_at updated_at extraction_page_count ocr_page_count index_version".split(" "),
   document_chunks: "id document_id subject_id content embedding embedding_provider embedding_model embedding_dimensions chapter page_number chunk_index created_at".split(" "),

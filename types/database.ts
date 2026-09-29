@@ -147,8 +147,24 @@ export type Conversation = {
   title: string;
   subject_id: string | null;
   lecture_id: string | null;
+  active_attachment_id: string | null;
+  active_attachment_section_index: number | null;
   created_at: string;
   updated_at: string;
+};
+
+export type ConversationAttachment = {
+  id:string; conversation_id:string; message_id:string|null; user_id:string; file_path:string; file_type:string;
+  ordinal:number; vision_extracted_text:string; vision_structured_json:unknown; subject_id:string|null;
+  lecture_id:string|null; status:"processing"|"ready"|"failed"; provider:string|null; model:string|null;
+  input_tokens:number; output_tokens:number; created_at:string;
+};
+export type MessageAITrace = {
+  id:string; message_id:string; conversation_id:string; user_id:string; resolved_query:string;
+  detected_subject:string|null; active_attachment_id:string|null; attachment_ids:unknown;
+  retrieved_sources_json:unknown; reranked_sources_json:unknown; evidence_coverage:"SUPPORTED"|"PARTIALLY_SUPPORTED"|"UNSUPPORTED";
+  selected_provider:string|null; selected_model:string|null; fallback_used:boolean; final_source_ids_json:unknown;
+  refusal_reason:string|null; diagnostics_json:unknown; created_at:string;
 };
 
 export type Message = {
@@ -322,6 +338,16 @@ export type Database = {
         Row: Message;
         Insert: Partial<Message>;
         Update: Partial<Message>;
+      } & NoRelationships;
+      conversation_attachments: {
+        Row: ConversationAttachment;
+        Insert: Partial<ConversationAttachment>;
+        Update: Partial<ConversationAttachment>;
+      } & NoRelationships;
+      message_ai_traces: {
+        Row: MessageAITrace;
+        Insert: Partial<MessageAITrace>;
+        Update: Partial<MessageAITrace>;
       } & NoRelationships;
       message_feedback: {
         Row: MessageFeedback;

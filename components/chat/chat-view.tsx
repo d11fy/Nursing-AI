@@ -27,6 +27,7 @@ export function ChatView({
   lectureId,
   maxImageSizeMb,
   containerClassName = "h-[calc(100vh-4rem)]",
+  showAITrace = false,
 }: {
   conversationId: string | null;
   initialMessages: ChatMessageData[];
@@ -35,6 +36,7 @@ export function ChatView({
   lectureId?: string | null;
   maxImageSizeMb?: number;
   containerClassName?: string;
+  showAITrace?: boolean;
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessageData[]>(initialMessages);
@@ -129,7 +131,7 @@ export function ChatView({
         ) : (
           <div className="mx-auto max-w-3xl space-y-4">
             {messages.map((m) => (
-              <MessageBubble key={m.id} message={m} />
+              <MessageBubble key={m.id} message={m} showAITrace={showAITrace} />
             ))}
             {isGenerating && messages[messages.length - 1]?.content === "" && (
               <div className="flex items-center gap-2 text-sm text-slate-400">

@@ -252,6 +252,8 @@ export class OpenAIProvider implements AIProvider {
           model,
           messages: toOpenAIMessages(buildSystemPrompt(params), messagesWithImage, "auto"),
           max_completion_tokens: params.maxOutputTokens ?? 2048,
+          response_format: params.jsonSchema ? { type: "json_schema", json_schema: { ...params.jsonSchema, strict: true } } : undefined,
+          reasoning_effort: params.jsonSchema && /^gpt-5/.test(model) ? "low" : undefined,
         },
         { signal: params.signal }
       );
@@ -264,6 +266,8 @@ export class OpenAIProvider implements AIProvider {
             model,
             messages: toOpenAIMessages(buildSystemPrompt(params), messagesWithImage, "auto"),
             max_completion_tokens: params.maxOutputTokens ?? 2048,
+            response_format: params.jsonSchema ? { type: "json_schema", json_schema: { ...params.jsonSchema, strict: true } } : undefined,
+            reasoning_effort: params.jsonSchema && /^gpt-5/.test(model) ? "low" : undefined,
           },
           { signal: params.signal }
         );

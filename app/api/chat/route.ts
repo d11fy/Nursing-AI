@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/db/server";
-import { getAIProvider, routeAIRequest, getProviderByName, classifyRequest, executeWithFallback } from "@/lib/ai";
+import { routeAIRequest, getProviderByName, classifyRequest } from "@/lib/ai";
 import { retrieveCurriculum } from "@/lib/ai/curriculum-search";
 import { answerFromCurriculum } from "@/lib/ai/grounded-answer";
 import { checkDailyLimit, checkRateLimit, logUsage, getMonthlyAiSpend, getSettings } from "@/lib/usage";
@@ -9,6 +9,14 @@ import { sendMessageSchema } from "@/lib/validations/chat";
 import type { ChatMessageInput } from "@/lib/ai/provider";
 import { canStudentAccessSubject } from "@/lib/subjects";
 import { getStudentContext, recordChatLearning, recordUnanswered, updateConversationMemory } from "@/lib/student-memory";
+import {
+  analyzeConversationAttachment,
+  attachmentEvidence,
+  loadConversationAttachments,
+  persistResolvedAttachmentState,
+  resolveConversationReference,
+  saveAITrace,
+} from "@/lib/ai/conversation-context";
 
 function truncateTitle(text: string, max = 60): string {
   const clean = text.trim().replace(/\s+/g, " ");
@@ -126,16 +134,49 @@ export async function POST(request: Request) {
     }
   }
 
-  const provider = getAIProvider();
-  const savedUser = await db.from("messages").insert({
+  const { data: savedUser, error: savedUserError } = await db.from("messages").insert({
     conversation_id: activeConversationId, role: "user", content, image_url: imagePath ?? null,
-  });
-  if (savedUser.error) return NextResponse.json({ error: "تعذر حفظ السؤال" }, { status: 500 });
+  }).select("id").single();
+  if (savedUserError || !savedUser) return NextResponse.json({ error: "تعذر حفظ السؤال" }, { status: 500 });
 
-  const relevantHistory = imageDataUri ? (history ?? []).slice(-6) : (history ?? []);
+  const preparationSignal = AbortSignal.any([request.signal, AbortSignal.timeout(150_000)]);
+  let newAttachmentCacheHit = false;
+  if (imageDataUri && imagePath) {
+    try {
+      const visionProvider = getProviderByName("openai");
+      const analyzed = await analyzeConversationAttachment({
+        conversationId:activeConversationId,messageId:savedUser.id,userId:user.id,filePath:imagePath,
+        imageDataUri,subjectId:activeSubjectId,lectureId:activeLectureId,provider:visionProvider,signal:preparationSignal,
+      });
+      newAttachmentCacheHit = analyzed.cacheHit;
+      if (!analyzed.cacheHit) {
+        await logUsage({
+          userId:user.id,type:"vision",feature:"vision_extraction",model:analyzed.attachment.model ?? "unknown",
+          provider:analyzed.attachment.provider,inputTokens:analyzed.attachment.input_tokens,
+          outputTokens:analyzed.attachment.output_tokens,
+          estimatedCost:visionProvider.calculateCost({model:analyzed.attachment.model ?? "",inputTokens:analyzed.attachment.input_tokens,outputTokens:analyzed.attachment.output_tokens}),
+          success:true,fallbackUsed:false,
+        });
+      }
+    } catch (error) {
+      console.error("vision extraction failed", error);
+      return NextResponse.json({ error: "تعذر فهم الصورة المرفوعة. تأكد أن الصورة واضحة ثم حاول مرة أخرى." }, { status: 422 });
+    }
+  }
+  const attachmentState = await loadConversationAttachments(activeConversationId,user.id);
+  const resolved = resolveConversationReference({
+    question:content,attachments:attachmentState.attachments,activeAttachmentId:attachmentState.activeAttachmentId,
+    activeSectionIndex:attachmentState.activeSectionIndex,history:history as ChatMessageInput[],conversationSummary:studentContext.summary,
+  });
+  const activeResolvedAttachment = resolved.selectedAttachments[0] ?? null;
+  if (activeResolvedAttachment) await persistResolvedAttachmentState({
+    conversationId:activeConversationId,userId:user.id,attachmentId:activeResolvedAttachment.id,sectionIndex:resolved.selectedSectionIndex,
+  });
+  const attachmentSources = attachmentEvidence(resolved);
+  const relevantHistory = (history ?? []).slice(-10);
   const messages: ChatMessageInput[] = [
     ...relevantHistory.map((m) => ({ role: m.role, content: m.content }) as ChatMessageInput),
-    { role: "user", content, imageUrl: imageDataUri },
+    { role: "user", content },
   ];
 
   const encoder = new TextEncoder();
@@ -143,33 +184,11 @@ export async function POST(request: Request) {
 
   // Fast scope classification before stream
   const classification = await classifyRequest({
-    question: content,
-    hasImage: Boolean(imageDataUri),
-    feature: imageDataUri ? "vision" : "chat",
+    question: resolved.resolvedQuestion,
+    hasImage: false,
+    feature: "chat",
     subjectId: activeSubjectId,
   });
-
-  if (classification.scope === "NON_NURSING") {
-    const refusal = "أنا مخصص فقط لمساعدتك في دراسة مواد التمريض والمصادر التعليمية المتاحة في المنصة.";
-    await db.from("messages").insert({
-      conversation_id: conversationIdForClient,
-      role: "assistant",
-      content: refusal,
-      model: "system-refusal",
-    });
-    return new Response(new ReadableStream({
-      start(c) {
-        c.enqueue(encoder.encode(refusal));
-        c.close();
-      },
-    }), {
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "X-Conversation-Id": conversationIdForClient,
-        "Cache-Control": "no-store",
-      },
-    });
-  }
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -187,76 +206,54 @@ export async function POST(request: Request) {
       let unansweredReason: "NO_SOURCE" | "LOW_CONFIDENCE" | "OUTSIDE_CURRICULUM" | "NON_NURSING" | undefined;
       const signal = AbortSignal.any([request.signal, AbortSignal.timeout(150_000)]);
       const startTimer = Date.now();
+      let traceResult: Awaited<ReturnType<typeof answerFromCurriculum>> | null = null;
 
       try {
+        let embeddingCost = 0;
+        let embeddingTokens = 0;
+        const retrievedSources = await retrieveCurriculum(resolved.searchQueries, {
+          userId:user.id,subjectId:activeSubjectId,lectureId:activeLectureId,
+        },15,(embedding) => {
+          embeddingTokens += embedding.tokens;
+          embeddingCost += getProviderByName("openai").calculateCost({model:embedding.model,inputTokens:embedding.tokens,outputTokens:0});
+        }).catch((error) => {
+          if (!attachmentSources.length) throw error;
+          console.error("curriculum retrieval failed; continuing with current upload", error);
+          return [];
+        });
+        if (classification.scope === "NON_NURSING" && attachmentSources.length === 0 && retrievedSources.length === 0) {
+          fullContent = "أنا مخصص فقط لمساعدتك في دراسة مواد التمريض والمصادر التعليمية المتاحة في المنصة.";
+          unansweredReason = "NON_NURSING";
+          controller.enqueue(encoder.encode(fullContent));
+        }
         const appSettings = await getSettings(db);
         const { totalCost: currentMonthCost } = await getMonthlyAiSpend(db);
         const budgetRatio = appSettings.monthlyAiBudget > 0 ? currentMonthCost / appSettings.monthlyAiBudget : 0;
-
-        const route = routeAIRequest({
-          feature: imageDataUri ? "vision" : "chat",
-          complexity: classification.complexity,
-          hasImage: Boolean(imageDataUri),
-          containsSensitiveData: classification.containsSensitiveData,
-          budgetRatio,
-        });
-
-        const primaryProvider = getProviderByName(route.provider);
-        const fallbackProviders = route.fallbackProviders.map(getProviderByName);
-        providerUsed = primaryProvider.name;
-
-        if (imageDataUri) {
-          const visionParams = {
-            messages,
-            knowledge: [],
-            personalizationContext: studentContext.text,
-            imageUrl: imageDataUri,
-            signal,
-            maxOutputTokens: 2048,
-          };
-
-          const exec = await executeWithFallback({
-            primaryProvider,
-            fallbackProviders,
-            operation: async (p) => {
-              if (p.generateVisionResponse) {
-                return await p.generateVisionResponse(visionParams);
-              }
-              return await p.generateText(visionParams);
-            },
-            operationName: "Vision Chat",
+        if (!fullContent) {
+          // Routing happens only after attachment and curriculum evidence have been collected.
+          const sourceConfidence = attachmentSources.length ? 1 : Math.max(0,...retrievedSources.map((source)=>source.similarity));
+          const route = routeAIRequest({
+            feature:"chat",complexity:classification.complexity,hasImage:false,
+            containsSensitiveData:classification.containsSensitiveData,budgetRatio,sourceConfidence,
           });
-
-          fullContent = exec.result.content;
-          inputTokens = exec.result.inputTokens;
-          outputTokens = exec.result.outputTokens;
-          model = exec.result.model;
-          providerUsed = exec.providerUsed;
-          fallbackUsed = exec.fallbackUsed;
-          fallbackFrom = exec.fallbackFrom;
-          fallbackReason = exec.fallbackReason;
-          controller.enqueue(encoder.encode(fullContent));
-          cost = primaryProvider.calculateCost({ model, inputTokens, outputTokens });
-        } else {
-          let embeddingCost = 0;
-          let embeddingTokens = 0;
+          const primaryProvider = getProviderByName(route.provider);
+          const fallbackProviders = route.fallbackProviders.map(getProviderByName);
+          providerUsed = primaryProvider.name;
           const result = await answerFromCurriculum({
             question: content,
+            resolvedQuestion:resolved.resolvedQuestion,
+            searchQueries:resolved.searchQueries,
             history: messages.slice(0, -1),
             personalization: studentContext.text,
+            attachmentSources,
+            style:resolved.style,
             signal,
           }, {
             provider: primaryProvider,
             fallbackProviders,
-            retrieve: (queries) => retrieveCurriculum(queries, {
-              userId: user.id,
-              subjectId: activeSubjectId,
-              lectureId: activeLectureId,
-            }, 24, (res) => {
-              embeddingTokens += res.tokens;
-              embeddingCost += primaryProvider.calculateCost({ model: res.model, inputTokens: res.tokens, outputTokens: 0 });
-            }),
+            retrieve: async () => retrievedSources,
           });
+          traceResult = result;
           fullContent = result.content;
           inputTokens = result.inputTokens + embeddingTokens;
           outputTokens = result.outputTokens;
@@ -271,17 +268,31 @@ export async function POST(request: Request) {
           controller.enqueue(encoder.encode(fullContent));
         }
 
-        const savedAnswer = await db.from("messages").insert({
+        const { data: savedAnswer, error: savedAnswerError } = await db.from("messages").insert({
           conversation_id: conversationIdForClient,
           role: "assistant",
           content: fullContent,
           tokens_input: inputTokens,
           tokens_output: outputTokens,
           model,
-        });
+        }).select("id").single();
 
-        if (savedAnswer.error) throw new Error("Could not persist answer");
+        if (savedAnswerError || !savedAnswer) throw new Error("Could not persist answer");
         answerSaved = true;
+
+        await saveAITrace({
+          messageId:savedAnswer.id,conversationId:conversationIdForClient,userId:user.id,resolvedQuery:resolved.resolvedQuestion,
+          detectedSubject:activeResolvedAttachment?.vision_structured_json.subject_guess,
+          activeAttachmentId:activeResolvedAttachment?.id,attachmentIds:resolved.selectedAttachments.map((attachment)=>attachment.id),
+          retrievedSources:(traceResult?.initialSources ?? []).map((source)=>({id:source.id,documentId:source.documentId,
+            attachmentId:source.attachmentId,title:source.title,type:source.evidenceType,similarity:source.similarity,page:source.pageNumber})),
+          rerankedSources:(traceResult?.sources ?? []).map((source)=>({id:source.id,documentId:source.documentId,
+            attachmentId:source.attachmentId,title:source.title,type:source.evidenceType,similarity:source.similarity,page:source.pageNumber})),
+          evidenceCoverage:traceResult?.evidenceCoverage ?? "UNSUPPORTED",selectedProvider:providerUsed,selectedModel:model,
+          fallbackUsed,finalSourceIds:traceResult?.finalSourceIds ?? [],refusalReason:unansweredReason ?? null,
+          diagnostics:{referenceResolved:resolved.referenceResolved,style:resolved.style,initialCount:traceResult?.initialSources.length ?? 0,
+            rerankedCount:traceResult?.sources.length ?? 0,visionCacheHit:newAttachmentCacheHit,classification:classification.scope},
+        });
 
         await db
           .from("conversations")
@@ -291,8 +302,8 @@ export async function POST(request: Request) {
         const latencyMs = Date.now() - startTimer;
         await logUsage({
           userId: user.id,
-          type: imageDataUri ? "vision" : "chat",
-          feature: imageDataUri ? "vision" : "chat",
+          type: "chat",
+          feature: "chat",
           model,
           provider: providerUsed,
           inputTokens,
@@ -309,7 +320,9 @@ export async function POST(request: Request) {
         try {
           if (unansweredReason) await recordUnanswered(user.id, activeSubjectId, activeLectureId, content, unansweredReason);
           if (learned) await recordChatLearning(user.id, activeSubjectId, activeLectureId, content);
-          await updateConversationMemory(user.id, conversationIdForClient, activeSubjectId, activeLectureId, history, content);
+          const topic = activeResolvedAttachment?.vision_structured_json.topic;
+          await updateConversationMemory(user.id, conversationIdForClient, activeSubjectId, activeLectureId, history,
+            topic ? `${content} [الصورة النشطة: ${topic}${resolved.selectedSectionIndex ? `، الجزء ${resolved.selectedSectionIndex}` : ""}]` : content);
         } catch { console.error("Could not update study memory"); }
       } catch (err) {
         if (fullContent && !answerSaved) {
