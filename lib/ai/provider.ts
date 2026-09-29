@@ -44,12 +44,72 @@ export interface EmbeddingResult {
   model: string;
 }
 
+export type ComplexityClass = "UTILITY" | "SIMPLE" | "NORMAL" | "COMPLEX" | "VISION";
+
+export type RoutingReason =
+  | "UTILITY_TASK"
+  | "SIMPLE_REQUEST"
+  | "NORMAL_REQUEST"
+  | "COMPLEX_REQUEST"
+  | "VISION_REQUEST"
+  | "PRIMARY_RATE_LIMIT"
+  | "PRIMARY_TIMEOUT"
+  | "PROVIDER_DOWN"
+  | "BUDGET_OPTIMIZATION"
+  | "FREE_TIER_LIMIT"
+  | "PRIVACY_REQUIREMENT";
+
+export interface ProviderHealth {
+  provider: string;
+  status: "healthy" | "degraded" | "rate_limited" | "offline" | "disabled";
+  latencyMs?: number;
+  model?: string;
+  lastError?: string;
+  lastChecked: string;
+}
+
+export interface AIRequest {
+  userId: string;
+  feature: string;
+  question: string;
+  studentContext?: string;
+  conversationContext?: ChatMessageInput[];
+  subjectId?: string | null;
+  lectureId?: string | null;
+  retrievedSources?: KnowledgeChunk[];
+  sourceConfidence?: number;
+  complexity?: ComplexityClass;
+  hasImage?: boolean;
+  imageUrl?: string | null;
+  containsSensitiveData?: boolean;
+  preferredProvider?: string;
+  signal?: AbortSignal;
+  taskPrompt?: string;
+  jsonSchema?: { name: string; schema: Record<string, unknown> };
+  maxOutputTokens?: number;
+}
+
+export interface AIResponse {
+  content: string;
+  provider: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  estimatedCost: number;
+  latencyMs?: number;
+  fallbackUsed?: boolean;
+  fallbackFrom?: string;
+  fallbackReason?: string;
+  sources?: KnowledgeChunk[];
+}
+
 /**
- * Provider-agnostic contract for AI operations. Swap the implementation
- * (OpenAI, Gemini, Claude, ...) without touching call sites — see
- * `lib/ai/index.ts` for the factory that picks one via `AI_PROVIDER`.
+ * Provider-agnostic contract for AI operations.
+ * Supports OpenAI, Gemini, Groq, and Cloudflare Workers AI.
  */
 export interface AIProvider {
+  name: string;
+
   generateText(params: GenerateTextParams): Promise<GenerateResult>;
 
   generateStream(
@@ -75,4 +135,8 @@ export interface AIProvider {
     inputTokens: number;
     outputTokens: number;
   }): number;
+
+  healthCheck(): Promise<ProviderHealth>;
+
+  isAvailable?(): Promise<boolean>;
 }

@@ -12,6 +12,7 @@ import {
   CalendarRange,
   FileText,
   ShieldCheck,
+  Cpu,
   type LucideIcon,
 } from "lucide-react";
 
@@ -38,5 +39,6 @@ export const adminNavItems: NavItem[] = [
   { href: "/admin/subjects", label: "المواد", icon: BookOpen },
   { href: "/admin/academic-years", label: "السنوات الدراسية", icon: CalendarRange },
   { href: "/admin/usage", label: "الاستخدام", icon: BarChart3 },
+  { href: "/admin/ai-providers", label: "مزودات الذكاء الاصطناعي", icon: Cpu },
   { href: "/admin/settings", label: "الإعدادات", icon: Settings },
 ];

@@ -9,6 +9,8 @@ export interface AppSettings {
   lectureMaxFileMb: number;
   lectureLargeFileMb: number;
   lectureRetentionDays: number;
+  monthlyAiBudget: number;
+  openaiMonthlyBudget: number;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -18,6 +20,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   lectureMaxFileMb: 50,
   lectureLargeFileMb: 20,
   lectureRetentionDays: 10,
+  monthlyAiBudget: 50,
+  openaiMonthlyBudget: 30,
 };
 
 export async function getSettings(
@@ -35,6 +39,8 @@ export async function getSettings(
     lectureMaxFileMb: Number(map.get("lecture_max_file_mb") ?? DEFAULT_SETTINGS.lectureMaxFileMb),
     lectureLargeFileMb: Number(map.get("lecture_large_file_mb") ?? DEFAULT_SETTINGS.lectureLargeFileMb),
     lectureRetentionDays: Number(map.get("lecture_retention_days") ?? DEFAULT_SETTINGS.lectureRetentionDays),
+    monthlyAiBudget: Number(map.get("monthly_ai_budget") ?? DEFAULT_SETTINGS.monthlyAiBudget),
+    openaiMonthlyBudget: Number(map.get("openai_monthly_budget") ?? DEFAULT_SETTINGS.openaiMonthlyBudget),
   };
 }
 
@@ -97,9 +103,18 @@ export async function logUsage(params: {
   userId: string;
   type: UsageType;
   model: string;
+  provider?: string | null;
+  feature?: string | null;
   inputTokens: number;
   outputTokens: number;
   estimatedCost: number;
+  isFreeTier?: boolean;
+  latencyMs?: number | null;
+  success?: boolean;
+  errorCode?: string | null;
+  fallbackUsed?: boolean;
+  fallbackFrom?: string | null;
+  fallbackReason?: string | null;
   lectureId?: string | null;
 }) {
   const db = createSystemClient();
@@ -107,10 +122,44 @@ export async function logUsage(params: {
     user_id: params.userId,
     type: params.type,
     model: params.model,
+    provider: params.provider ?? null,
+    feature: params.feature ?? params.type,
     input_tokens: params.inputTokens,
     output_tokens: params.outputTokens,
     estimated_cost: params.estimatedCost,
+    is_free_tier: params.isFreeTier ?? false,
+    latency_ms: params.latencyMs ?? null,
+    success: params.success ?? true,
+    error_code: params.errorCode ?? null,
+    fallback_used: params.fallbackUsed ?? false,
+    fallback_from: params.fallbackFrom ?? null,
+    fallback_reason: params.fallbackReason ?? null,
     lecture_id: params.lectureId ?? null,
   });
   if (error) console.error("logUsage error", error);
+}
+
+export async function getMonthlyAiSpend(db: DatabaseClient): Promise<{ totalCost: number; openaiCost: number }> {
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+
+  const { data, error } = await db
+    .from("usage_logs")
+    .select("provider, estimated_cost")
+    .gte("created_at", startOfMonth.toISOString());
+
+  if (error || !data) return { totalCost: 0, openaiCost: 0 };
+
+  let totalCost = 0;
+  let openaiCost = 0;
+  for (const row of data) {
+    const cost = Number(row.estimated_cost) || 0;
+    totalCost += cost;
+    if (row.provider === "openai" || (!row.provider && !row.provider)) {
+      openaiCost += cost;
+    }
+  }
+
+  return { totalCost, openaiCost };
 }

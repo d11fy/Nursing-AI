@@ -5,12 +5,13 @@ import type {
   EmbeddingResult,
   GenerateResult,
   GenerateTextParams,
+  ProviderHealth,
   StreamChunk,
 } from "@/lib/ai/provider";
 import { NURSING_SYSTEM_PROMPT, buildKnowledgeContext } from "@/lib/ai/system-prompt";
 
 function getChatModel(): string {
-  return process.env.OPENAI_CHAT_MODEL?.trim() || "gpt-5.4-mini";
+  return process.env.OPENAI_TEXT_MODEL?.trim() || process.env.OPENAI_CHAT_MODEL?.trim() || "gpt-5.4-mini";
 }
 
 function getEmbeddingModel(): string {
@@ -81,10 +82,57 @@ function isModelNotFoundError(err: unknown): boolean {
 }
 
 export class OpenAIProvider implements AIProvider {
+  readonly name: string = "openai";
   private client: OpenAI;
 
   constructor(apiKey?: string) {
     this.client = new OpenAI({ apiKey: apiKey ?? process.env.OPENAI_API_KEY });
+  }
+
+  async isAvailable(): Promise<boolean> {
+    const key = process.env.OPENAI_API_KEY?.trim();
+    return Boolean(key && key !== "sk-placeholder");
+  }
+
+  async healthCheck(): Promise<ProviderHealth> {
+    const key = process.env.OPENAI_API_KEY?.trim();
+    if (!key || key === "sk-placeholder") {
+      return {
+        provider: "openai",
+        status: "disabled",
+        lastChecked: new Date().toISOString(),
+        lastError: "OPENAI_API_KEY is not configured",
+      };
+    }
+    const start = Date.now();
+    try {
+      const model = getChatModel();
+      const res = await this.client.chat.completions.create(
+        {
+          model,
+          messages: [{ role: "user", content: "ping" }],
+          max_completion_tokens: 5,
+        },
+        { timeout: 8_000 }
+      );
+      return {
+        provider: "openai",
+        status: "healthy",
+        latencyMs: Date.now() - start,
+        model: res.model || model,
+        lastChecked: new Date().toISOString(),
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isRateLimit = msg.toLowerCase().includes("rate limit") || msg.includes("429");
+      return {
+        provider: "openai",
+        status: isRateLimit ? "rate_limited" : "offline",
+        latencyMs: Date.now() - start,
+        lastError: msg,
+        lastChecked: new Date().toISOString(),
+      };
+    }
   }
 
   async generateText(params: GenerateTextParams): Promise<GenerateResult> {

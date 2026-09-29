@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/db/server";
-import { getAIProvider } from "@/lib/ai";
+import { getAIProvider, routeAIRequest, getProviderByName, classifyRequest, executeWithFallback } from "@/lib/ai";
 import { retrieveCurriculum } from "@/lib/ai/curriculum-search";
 import { answerFromCurriculum } from "@/lib/ai/grounded-answer";
-import { checkDailyLimit, checkRateLimit, logUsage } from "@/lib/usage";
+import { checkDailyLimit, checkRateLimit, logUsage, getMonthlyAiSpend, getSettings } from "@/lib/usage";
 import { getChatImageDataUri } from "@/lib/storage";
 import { sendMessageSchema } from "@/lib/validations/chat";
 import type { ChatMessageInput } from "@/lib/ai/provider";
@@ -141,19 +141,70 @@ export async function POST(request: Request) {
   const encoder = new TextEncoder();
   const conversationIdForClient = activeConversationId;
 
+  // Fast scope classification before stream
+  const classification = await classifyRequest({
+    question: content,
+    hasImage: Boolean(imageDataUri),
+    feature: imageDataUri ? "vision" : "chat",
+    subjectId: activeSubjectId,
+  });
+
+  if (classification.scope === "NON_NURSING") {
+    const refusal = "أنا مخصص فقط لمساعدتك في دراسة مواد التمريض والمصادر التعليمية المتاحة في المنصة.";
+    await db.from("messages").insert({
+      conversation_id: conversationIdForClient,
+      role: "assistant",
+      content: refusal,
+      model: "system-refusal",
+    });
+    return new Response(new ReadableStream({
+      start(c) {
+        c.enqueue(encoder.encode(refusal));
+        c.close();
+      },
+    }), {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "X-Conversation-Id": conversationIdForClient,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let fullContent = "";
       let inputTokens = 0;
       let outputTokens = 0;
       let model = "";
+      let providerUsed = "openai";
+      let fallbackUsed = false;
+      let fallbackFrom: string | undefined;
+      let fallbackReason: string | undefined;
       let answerSaved = false;
       let cost = 0;
       let learned = false;
       let unansweredReason: "NO_SOURCE" | "LOW_CONFIDENCE" | "OUTSIDE_CURRICULUM" | "NON_NURSING" | undefined;
       const signal = AbortSignal.any([request.signal, AbortSignal.timeout(150_000)]);
+      const startTimer = Date.now();
 
       try {
+        const appSettings = await getSettings(db);
+        const { totalCost: currentMonthCost } = await getMonthlyAiSpend(db);
+        const budgetRatio = appSettings.monthlyAiBudget > 0 ? currentMonthCost / appSettings.monthlyAiBudget : 0;
+
+        const route = routeAIRequest({
+          feature: imageDataUri ? "vision" : "chat",
+          complexity: classification.complexity,
+          hasImage: Boolean(imageDataUri),
+          containsSensitiveData: classification.containsSensitiveData,
+          budgetRatio,
+        });
+
+        const primaryProvider = getProviderByName(route.provider);
+        const fallbackProviders = route.fallbackProviders.map(getProviderByName);
+        providerUsed = primaryProvider.name;
+
         if (imageDataUri) {
           const visionParams = {
             messages,
@@ -163,49 +214,62 @@ export async function POST(request: Request) {
             signal,
             maxOutputTokens: 2048,
           };
-          if (provider.generateVisionStream) {
-            const generator = provider.generateVisionStream(visionParams);
-            let next = await generator.next();
-            while (!next.done) {
-              fullContent += next.value.delta;
-              controller.enqueue(encoder.encode(next.value.delta));
-              next = await generator.next();
-            }
-            inputTokens = next.value.inputTokens;
-            outputTokens = next.value.outputTokens;
-            model = next.value.model;
-          } else {
-            const result = await provider.generateVisionResponse(visionParams);
-            fullContent = result.content;
-            inputTokens = result.inputTokens;
-            outputTokens = result.outputTokens;
-            model = result.model;
-            controller.enqueue(encoder.encode(fullContent));
-          }
+
+          const exec = await executeWithFallback({
+            primaryProvider,
+            fallbackProviders,
+            operation: async (p) => {
+              if (p.generateVisionResponse) {
+                return await p.generateVisionResponse(visionParams);
+              }
+              return await p.generateText(visionParams);
+            },
+            operationName: "Vision Chat",
+          });
+
+          fullContent = exec.result.content;
+          inputTokens = exec.result.inputTokens;
+          outputTokens = exec.result.outputTokens;
+          model = exec.result.model;
+          providerUsed = exec.providerUsed;
+          fallbackUsed = exec.fallbackUsed;
+          fallbackFrom = exec.fallbackFrom;
+          fallbackReason = exec.fallbackReason;
+          controller.enqueue(encoder.encode(fullContent));
+          cost = primaryProvider.calculateCost({ model, inputTokens, outputTokens });
         } else {
           let embeddingCost = 0;
           let embeddingTokens = 0;
-          const result = await answerFromCurriculum({ question: content, history: messages.slice(0,-1),
-            personalization: studentContext.text, signal }, {
-            provider,
-            retrieve: queries => retrieveCurriculum(queries, {
-              userId:user.id, subjectId:activeSubjectId, lectureId:activeLectureId,
-            },24, result => {
-              embeddingTokens += result.tokens;
-              embeddingCost += provider.calculateCost({ model:result.model,inputTokens:result.tokens,outputTokens:0 });
+          const result = await answerFromCurriculum({
+            question: content,
+            history: messages.slice(0, -1),
+            personalization: studentContext.text,
+            signal,
+          }, {
+            provider: primaryProvider,
+            fallbackProviders,
+            retrieve: (queries) => retrieveCurriculum(queries, {
+              userId: user.id,
+              subjectId: activeSubjectId,
+              lectureId: activeLectureId,
+            }, 24, (res) => {
+              embeddingTokens += res.tokens;
+              embeddingCost += primaryProvider.calculateCost({ model: res.model, inputTokens: res.tokens, outputTokens: 0 });
             }),
           });
           fullContent = result.content;
           inputTokens = result.inputTokens + embeddingTokens;
           outputTokens = result.outputTokens;
           model = result.model;
+          providerUsed = result.provider || primaryProvider.name;
+          fallbackUsed = result.fallbackUsed || false;
+          fallbackFrom = result.fallbackFrom;
+          fallbackReason = result.fallbackReason;
           cost = result.estimatedCost + embeddingCost;
           unansweredReason = result.reason;
           learned = !result.reason && result.sources.length > 0;
-          // Do not expose a draft until quote validation AND evidence audit finish.
           controller.enqueue(encoder.encode(fullContent));
         }
-        if (imageDataUri) cost = provider.calculateCost({ model,inputTokens,outputTokens });
 
         const savedAnswer = await db.from("messages").insert({
           conversation_id: conversationIdForClient,
@@ -224,24 +288,31 @@ export async function POST(request: Request) {
           .update({ updated_at: new Date().toISOString() })
           .eq("id", conversationIdForClient);
 
+        const latencyMs = Date.now() - startTimer;
         await logUsage({
           userId: user.id,
           type: imageDataUri ? "vision" : "chat",
+          feature: imageDataUri ? "vision" : "chat",
           model,
+          provider: providerUsed,
           inputTokens,
           outputTokens,
           estimatedCost: cost,
+          latencyMs,
+          fallbackUsed,
+          fallbackFrom,
+          fallbackReason,
+          success: true,
+          isFreeTier: providerUsed === "gemini" && process.env.ALLOW_FREE_TIER_PRIVATE_CONTENT === "true",
         });
-        // A telemetry/memory failure must never duplicate an already-saved assistant message.
+
         try {
-          if (unansweredReason) await recordUnanswered(user.id,activeSubjectId,activeLectureId,content,unansweredReason);
+          if (unansweredReason) await recordUnanswered(user.id, activeSubjectId, activeLectureId, content, unansweredReason);
           if (learned) await recordChatLearning(user.id, activeSubjectId, activeLectureId, content);
           await updateConversationMemory(user.id, conversationIdForClient, activeSubjectId, activeLectureId, history, content);
         } catch { console.error("Could not update study memory"); }
       } catch (err) {
         if (fullContent && !answerSaved) {
-          // Partial content was streamed (e.g. client stopped generation) —
-          // save what we have instead of losing the exchange.
           await db.from("messages").insert({
             conversation_id: conversationIdForClient,
             role: "assistant",
@@ -250,16 +321,12 @@ export async function POST(request: Request) {
           });
         } else if (!answerSaved) {
           console.error("chat stream error", err);
-          let userMsg = "خدمة الذكاء الاصطناعي غير متاحة مؤقتًا، حاول مرة أخرى بعد قليل.";
+          let userMsg = "تعذر تجهيز الإجابة حاليًا. حاول مرة أخرى بعد قليل.";
           if (err && typeof err === "object") {
             const status = (err as { status?: number; statusCode?: number }).status || (err as { status?: number; statusCode?: number }).statusCode;
             const message = String((err as { message?: string }).message || "");
             if (status === 401 || message.includes("API key") || message.includes("Incorrect API key")) {
-              userMsg = "تعذر الاتصال بالذكاء الاصطناعي: مفتاح OpenAI API غير صالح أو غير محدد في السيرفر (OPENAI_API_KEY). يرجى تزويد مفتاح صالح.";
-            } else if (status === 429 || message.includes("quota") || message.includes("rate limit") || message.includes("exceeded")) {
-              userMsg = "تعذر الاتصال بالذكاء الاصطناعي: تم تجاوز حد الاستخدام أو نفاد الرصيد في حساب OpenAI.";
-            } else if (status === 404 || message.includes("model_not_found")) {
-              userMsg = "تعذر الاتصال بالذكاء الاصطناعي: النموذج المطلوب غير متوفر في حساب OpenAI.";
+              userMsg = "تعذر الاتصال بالذكاء الاصطناعي بسبب خطأ في الإعدادات. يرجى مراجعة إدارة المنصة.";
             }
           }
           controller.enqueue(encoder.encode(userMsg));

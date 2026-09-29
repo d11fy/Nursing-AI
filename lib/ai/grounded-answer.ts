@@ -1,5 +1,7 @@
 import { z } from "zod";
 import type { AIProvider, ChatMessageInput, GenerateResult, KnowledgeChunk } from "./provider";
+import { extractJson } from "./json";
+import { executeWithFallback } from "./fallback";
 
 const planSchema = z.object({
   intent: z.enum(["academic", "non_nursing", "ambiguous", "social"]),
@@ -20,6 +22,10 @@ export type GroundedResult = GenerateResult & {
   reason?: "NO_SOURCE" | "LOW_CONFIDENCE" | "OUTSIDE_CURRICULUM" | "NON_NURSING";
   sources: KnowledgeChunk[];
   estimatedCost: number;
+  provider?: string;
+  fallbackUsed?: boolean;
+  fallbackFrom?: string;
+  fallbackReason?: string;
 };
 export const GROUNDED_RESPONSES = {
   missing: "لم أجد معلومات كافية للإجابة عن هذا السؤال ضمن المصادر المرفوعة والمتاحة لك حاليًا. يمكنك توضيح المصطلح أو رفع محاضرة تتناوله.",
@@ -95,20 +101,56 @@ export async function answerFromCurriculum(input: {
   question: string; history: ChatMessageInput[]; personalization: string; signal?: AbortSignal;
 }, dependencies: {
   provider: AIProvider;
+  fallbackProviders?: AIProvider[];
   retrieve: (queries: string[]) => Promise<KnowledgeChunk[]>;
 }): Promise<GroundedResult> {
-  const { provider } = dependencies;
+  const { provider, fallbackProviders } = dependencies;
   let inputTokens = 0, outputTokens = 0, estimatedCost = 0, model = "";
   let sources: KnowledgeChunk[] = [];
+  let providerUsed = provider.name || "openai";
+  let fallbackUsed = false;
+  let fallbackFrom: string | undefined;
+  let fallbackReason: string | undefined;
+
   const finish = (content: string, reason?: GroundedResult["reason"]): GroundedResult =>
-    ({content, reason, sources, inputTokens, outputTokens, model, estimatedCost});
+    ({content, reason, sources, inputTokens, outputTokens, model, estimatedCost, provider: providerUsed, fallbackUsed, fallbackFrom, fallbackReason});
+
   async function structured<T>(schema: z.ZodType<T>, name: string, taskPrompt: string, data: unknown, maxOutputTokens: number): Promise<T> {
-    const result = await provider.generateText({ taskPrompt, jsonSchema: {name, schema:z.toJSONSchema(schema)},
-      messages:[{role:"user",content:JSON.stringify(data)}], signal:input.signal,maxOutputTokens });
-    model = result.model; inputTokens += result.inputTokens; outputTokens += result.outputTokens;
+    const params = {
+      taskPrompt,
+      jsonSchema: { name, schema: z.toJSONSchema(schema) },
+      messages: [{ role: "user" as const, content: JSON.stringify(data) }],
+      signal: input.signal,
+      maxOutputTokens,
+    };
+
+    let result: GenerateResult;
+    if (fallbackProviders && fallbackProviders.length > 0) {
+      const exec = await executeWithFallback({
+        primaryProvider: provider,
+        fallbackProviders,
+        operation: (p) => p.generateText(params),
+        operationName: `Grounded ${name}`,
+      });
+      result = exec.result;
+      providerUsed = exec.providerUsed;
+      if (exec.fallbackUsed) {
+        fallbackUsed = true;
+        fallbackFrom = exec.fallbackFrom;
+        fallbackReason = exec.fallbackReason;
+      }
+    } else {
+      result = await provider.generateText(params);
+      if (provider.name) providerUsed = provider.name;
+    }
+
+    model = result.model;
+    inputTokens += result.inputTokens;
+    outputTokens += result.outputTokens;
     estimatedCost += provider.calculateCost(result);
-    // Invalid/malformed output is an operational error, never accepted as an answer.
-    return schema.parse(JSON.parse(result.content));
+
+    const rawJson = extractJson(result.content);
+    return schema.parse(JSON.parse(rawJson));
   }
   const plan = await structured(planSchema,"retrieval_plan",PLAN_PROMPT,{
     question: input.question,

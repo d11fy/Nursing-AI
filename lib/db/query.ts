@@ -15,13 +15,14 @@ const columns: Record<Table, string[]> = {
   message_feedback: "id message_id user_id is_positive reason comment created_at".split(" "),
   documents: "id title file_url file_name file_size subject_id source_type status vector_store_id file_id chunk_count error_message created_by contribution_id created_at updated_at extraction_page_count ocr_page_count index_version".split(" "),
   document_chunks: "id document_id subject_id content embedding embedding_provider embedding_model embedding_dimensions chapter page_number chunk_index created_at".split(" "),
-  usage_logs: "id user_id type model input_tokens output_tokens estimated_cost lecture_id created_at".split(" "),
+  usage_logs: "id user_id type model input_tokens output_tokens estimated_cost lecture_id created_at provider feature fallback_used fallback_from fallback_reason latency_ms success error_code is_free_tier".split(" "),
   settings: "key value updated_at".split(" "),
   lectures: "id user_id subject_id title file_name original_file_name storage_path mime_type file_size_bytes file_hash status error_message uploaded_at processing_started_at processing_completed_at delete_after deleted_at contribution_status contribution_consent_at contribution_ownership_confirmed_at created_at updated_at".split(" "),
   lecture_chunks: "id lecture_id user_id subject_id content page_number chunk_index embedding embedding_provider embedding_model embedding_dimensions created_at".split(" "),
   generated_study_content: "id lecture_id user_id content_type content_json model input_tokens output_tokens created_at updated_at".split(" "),
   file_cleanup_logs: "id lecture_id storage_path attempted_at status error_message".split(" "),
   knowledge_contributions: "id lecture_id user_id subject_id classification classification_confidence privacy_flagged status reviewed_by reviewed_at approved_document_id created_at".split(" "),
+  ai_provider_settings: "provider enabled role priority simple_enabled normal_enabled complex_enabled vision_enabled utility_enabled fallback_enabled status last_error last_error_at consecutive_failures cooldown_until updated_at".split(" "),
 };
 
 // Server-only data access: every non-system query gets an ownership predicate,

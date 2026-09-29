@@ -1,6 +1,6 @@
 import "server-only";
 import { createSystemClient } from "@/lib/db/server";
-import { getAIProvider } from "@/lib/ai";
+import { routeAIRequest, getProviderByName, executeWithFallback, isMedicalSensitive } from "@/lib/ai";
 import { extractJson } from "@/lib/ai/json";
 import { logUsage } from "@/lib/usage";
 import type { StudyContentType } from "@/types/database";
@@ -52,13 +52,29 @@ export async function generateStudyContent(
   const text = (chunks ?? []).map((c) => c.content).join("\n\n").trim();
   if (!text) throw new Error("لا يوجد محتوى لهذه المحاضرة بعد");
 
-  const provider = getAIProvider();
-  const result = await provider.generateText({
-    messages: [{
-      role: "user",
-      content: `${PROMPTS[type]}\n\n---\nمحتوى المحاضرة "${lectureTitle}":\n${text.slice(0, 12000)}`,
-    }],
+  const sensitive = isMedicalSensitive(text.slice(0, 3000));
+  const route = routeAIRequest({
+    feature: type,
+    complexity: (type === "flashcards" || type === "key_points") ? "SIMPLE" : (sensitive ? "COMPLEX" : "NORMAL"),
   });
+
+  const primary = getProviderByName(route.provider);
+  const fallbacks = route.fallbackProviders.map(getProviderByName);
+
+  const startTimer = Date.now();
+  const exec = await executeWithFallback({
+    primaryProvider: primary,
+    fallbackProviders: fallbacks,
+    operation: (p) => p.generateText({
+      messages: [{
+        role: "user",
+        content: `${PROMPTS[type]}\n\n---\nمحتوى المحاضرة "${lectureTitle}":\n${text.slice(0, 16000)}`,
+      }],
+    }),
+    operationName: `Generate ${type}`,
+  });
+
+  const result = exec.result;
 
   let contentJson: unknown;
   try {
@@ -80,13 +96,21 @@ export async function generateStudyContent(
   });
   if (error) throw new Error(error.message);
 
+  const latencyMs = Date.now() - startTimer;
   await logUsage({
     userId,
     type,
+    feature: type,
     model: result.model,
+    provider: exec.providerUsed,
     inputTokens: result.inputTokens,
     outputTokens: result.outputTokens,
-    estimatedCost: provider.calculateCost({ model: result.model, inputTokens: result.inputTokens, outputTokens: result.outputTokens }),
+    estimatedCost: primary.calculateCost({ model: result.model, inputTokens: result.inputTokens, outputTokens: result.outputTokens }),
+    latencyMs,
+    fallbackUsed: exec.fallbackUsed,
+    fallbackFrom: exec.fallbackFrom,
+    fallbackReason: exec.fallbackReason,
+    success: true,
     lectureId,
   });
 

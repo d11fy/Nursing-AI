@@ -209,14 +209,46 @@ export type DocumentChunk = {
   created_at: string;
 };
 
+export type AIProviderName = "openai" | "gemini" | "groq" | "cloudflare";
+export type AIProviderRole = "primary" | "economy" | "fast" | "utility";
+export type AIProviderStatus = "healthy" | "degraded" | "rate_limited" | "offline" | "disabled";
+
+export type AIProviderSetting = {
+  provider: AIProviderName;
+  enabled: boolean;
+  role: AIProviderRole;
+  priority: number;
+  simple_enabled: boolean;
+  normal_enabled: boolean;
+  complex_enabled: boolean;
+  vision_enabled: boolean;
+  utility_enabled: boolean;
+  fallback_enabled: boolean;
+  status: AIProviderStatus;
+  last_error: string | null;
+  last_error_at: string | null;
+  consecutive_failures: number;
+  cooldown_until: string | null;
+  updated_at: string;
+};
+
 export type UsageLog = {
   id: string;
   user_id: string;
   type: UsageType;
   model: string | null;
+  provider?: string | null;
+  feature?: string | null;
   input_tokens: number;
   output_tokens: number;
   estimated_cost: number;
+  is_free_tier?: boolean;
+  latency_ms?: number | null;
+  success?: boolean;
+  error_code?: string | null;
+  fallback_used?: boolean;
+  fallback_from?: string | null;
+  fallback_reason?: string | null;
   lecture_id: string | null;
   created_at: string;
 };
@@ -340,6 +372,11 @@ export type Database = {
         Row: KnowledgeContribution;
         Insert: Partial<KnowledgeContribution>;
         Update: Partial<KnowledgeContribution>;
+      } & NoRelationships;
+      ai_provider_settings: {
+        Row: AIProviderSetting;
+        Insert: Partial<AIProviderSetting>;
+        Update: Partial<AIProviderSetting>;
       } & NoRelationships;
     };
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- empty schema namespace
