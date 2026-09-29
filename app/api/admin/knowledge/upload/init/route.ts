@@ -58,8 +58,8 @@ export async function POST(request: Request) {
     const { rows } = await pool.query(
       `INSERT INTO public.knowledge_upload_sessions (
         admin_id, file_name, file_size, mime_type, total_chunks,
-        title, subject_id, source_type, storage_path, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'uploading')
+        title, subject_id, source_type, storage_path, status, metadata_json
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'uploading', $10::jsonb)
       RETURNING id, storage_path, total_chunks`,
       [
         admin.user_id,
@@ -71,6 +71,14 @@ export async function POST(request: Request) {
         parsed.data.subjectId,
         parsed.data.sourceType,
         storagePath,
+        JSON.stringify({
+          academicYearId: parsed.data.academicYearId || null,
+          semester: parsed.data.semester || null,
+          examYear: parsed.data.examYear || null,
+          doctorName: parsed.data.doctorName || null,
+          examType: parsed.data.examType || null,
+          notes: parsed.data.notes || null,
+        }),
       ]
     );
 

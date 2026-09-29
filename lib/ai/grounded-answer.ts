@@ -65,7 +65,18 @@ function sourceLabel(source: KnowledgeChunk): string {
     return [image, source.sectionIndex ? `الجزء/الشريحة ${source.sectionIndex}` : null, source.title]
       .filter(Boolean).map((value) => plainMetadata(String(value))).join(" — ");
   }
-  return [source.title || source.chapter || "المصدر المرفوع", source.subjectName,
+  const sType = (source.sourceType || "").toUpperCase();
+  const prefix = (sType === "BOOK" || sType === "TEXTBOOK")
+    ? "المصدر الأساسي (المرجع المعتمد)"
+    : (sType === "LECTURE" || sType === "DOCTOR_SLIDES" || sType === "UNIVERSITY_LECTURE")
+    ? "مصدر داعم (محاضرة/سلايدات)"
+    : (sType === "PAST_EXAM" || sType === "QUESTION_BANK")
+    ? "مثال امتحان سابق"
+    : (sType === "SUMMARY")
+    ? "ملخص دراسي داعم"
+    : (source.title || "المصدر المرفوع");
+
+  return [prefix, source.title, source.subjectName,
     source.pageNumber ? `صفحة ${source.pageNumber}` : null]
     .filter(Boolean).map((value) => plainMetadata(String(value))).join(" — ");
 }

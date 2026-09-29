@@ -2,7 +2,23 @@ export type NursingYear = "year1" | "year2" | "year3" | "year4" | "other";
 export type UserRole = "student" | "admin";
 export type UserStatus = "active" | "suspended";
 export type MessageRole = "user" | "assistant" | "system";
-export type SourceType = "book" | "lecture" | "notes" | "questions" | "reference" | "student_contribution";
+export type SourceType =
+  | "BOOK"
+  | "UNIVERSITY_LECTURE"
+  | "DOCTOR_SLIDES"
+  | "SUMMARY"
+  | "PAST_EXAM"
+  | "QUESTION_BANK"
+  | "MODEL_ANSWERS"
+  | "LAB_MATERIAL"
+  | "REVIEW_NOTES"
+  | "book"
+  | "lecture"
+  | "notes"
+  | "questions"
+  | "reference"
+  | "student_contribution";
+
 export type DocumentStatus = "uploading" | "processing" | "ready" | "failed";
 export type SubjectStatus = "active" | "inactive";
 export type UsageType = "chat" | "vision" | "embedding" | "lecture_processing" | "summary" | "key_points" | "quiz" | "flashcards";
@@ -207,6 +223,15 @@ export type DocumentRow = {
   error_message: string | null;
   created_by: string | null;
   contribution_id: string | null;
+  academic_year_id?: string | null;
+  semester?: number | null;
+  exam_year?: number | null;
+  doctor_name?: string | null;
+  exam_type?: string | null;
+  notes?: string | null;
+  file_hash?: string | null;
+  content_hash?: string | null;
+  processing_version?: number;
   created_at: string;
 };
 
@@ -224,6 +249,195 @@ export type DocumentChunk = {
   chunk_index: number;
   created_at: string;
 };
+
+export type QuestionType =
+  | "MCQ"
+  | "TRUE_FALSE"
+  | "SHORT_ANSWER"
+  | "ESSAY"
+  | "SATA"
+  | "MATCHING"
+  | "CASE_STUDY"
+  | "CALCULATION"
+  | "PRIORITY"
+  | "UNKNOWN";
+
+export type QuestionVerificationStatus =
+  | "EXTRACTED"
+  | "VERIFIED"
+  | "NEEDS_REVIEW"
+  | "CONFLICT"
+  | "REJECTED";
+
+export type SupportType = "DIRECT" | "SUPPORTING" | "CONFLICTING";
+
+export type ExamStatus =
+  | "UPLOADED"
+  | "EXTRACTING"
+  | "PROCESSING"
+  | "VERIFYING"
+  | "READY"
+  | "FAILED";
+
+export type SummaryVerificationStatus =
+  | "VERIFIED"
+  | "SUPPORTED"
+  | "UNVERIFIED"
+  | "CONFLICTING";
+
+export type SubjectReadinessStatus =
+  | "NOT_READY"
+  | "BUILDING"
+  | "READY"
+  | "NEEDS_REVIEW";
+
+export type Exam = {
+  id: string;
+  subject_id: string;
+  title: string;
+  exam_year: number | null;
+  semester: number | null;
+  exam_type: string;
+  doctor_name: string | null;
+  document_id: string | null;
+  status: ExamStatus;
+  total_questions: number;
+  verified_questions: number;
+  needs_review_questions: number;
+  conflict_questions: number;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ExamQuestion = {
+  id: string;
+  exam_id: string | null;
+  subject_id: string;
+  question_text: string;
+  question_type: QuestionType;
+  options_json: string[] | Array<{ text: string; label?: string }>;
+  correct_answer_json: unknown;
+  extracted_answer: string | null;
+  explanation: string | null;
+  topic: string;
+  subtopic: string | null;
+  difficulty: "EASY" | "MEDIUM" | "HARD";
+  difficulty_estimate: number;
+  status: QuestionVerificationStatus;
+  confidence: number;
+  page_number: number | null;
+  source_document_id: string | null;
+  question_number: number | null;
+  review_notes: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type QuestionSource = {
+  id: string;
+  question_id: string;
+  document_id: string;
+  chunk_id: string | null;
+  page_number: number | null;
+  quote: string | null;
+  support_type: SupportType;
+  source_priority: number;
+  created_at: string;
+};
+
+export type QuestionCluster = {
+  id: string;
+  subject_id: string;
+  topic: string;
+  canonical_question: string;
+  cluster_summary: string | null;
+  occurrences_count: number;
+  exam_years_json: number[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type QuestionClusterMember = {
+  id: string;
+  cluster_id: string;
+  question_id: string;
+  similarity: number;
+  created_at: string;
+};
+
+export type ExamTopicStats = {
+  id: string;
+  subject_id: string;
+  topic: string;
+  exam_count: number;
+  total_exams: number;
+  question_count: number;
+  frequency: number;
+  common_question_types_json: string[];
+  avg_difficulty: number;
+  updated_at: string;
+};
+
+export type SummaryKnowledgePoint = {
+  id: string;
+  document_id: string;
+  subject_id: string;
+  point_type: "topic" | "key_point" | "definition" | "important_term" | "table_summary" | "list_item";
+  topic: string;
+  content: string;
+  verification_status: SummaryVerificationStatus;
+  verified_by_chunk_id: string | null;
+  page_number: number | null;
+  created_at: string;
+};
+
+export type ExamAuditLog = {
+  id: string;
+  subject_id: string | null;
+  exam_id: string | null;
+  question_id: string | null;
+  user_id: string | null;
+  event_type:
+    | "EXAM_UPLOADED"
+    | "QUESTION_EXTRACTED"
+    | "QUESTION_VERIFIED"
+    | "QUESTION_EDITED"
+    | "QUESTION_APPROVED"
+    | "QUESTION_REJECTED"
+    | "CONFLICT_DETECTED";
+  details_json: Record<string, unknown>;
+  created_at: string;
+};
+
+export type StudentExamAttempt = {
+  id: string;
+  user_id: string;
+  subject_id: string;
+  exam_id: string | null;
+  mode: "STUDY" | "EXAM";
+  practice_type: "PAST_EXAM" | "UNIVERSITY_STYLE" | "MIXED";
+  total_questions: number;
+  answered_questions: number;
+  correct_answers: number;
+  wrong_answers: number;
+  score_percentage: number;
+  completed_at: string | null;
+  created_at: string;
+};
+
+export type StudentExamAttemptAnswer = {
+  id: string;
+  attempt_id: string;
+  question_id: string | null;
+  selected_answer: unknown;
+  is_correct: boolean | null;
+  topic: string | null;
+  created_at: string;
+};
+
 
 export type AIProviderName = "openai" | "gemini" | "groq" | "cloudflare";
 export type AIProviderRole = "primary" | "economy" | "fast" | "utility";
@@ -404,7 +618,58 @@ export type Database = {
         Insert: Partial<AIProviderSetting>;
         Update: Partial<AIProviderSetting>;
       } & NoRelationships;
+      exams: {
+        Row: Exam;
+        Insert: Partial<Exam>;
+        Update: Partial<Exam>;
+      } & NoRelationships;
+      exam_questions: {
+        Row: ExamQuestion;
+        Insert: Partial<ExamQuestion>;
+        Update: Partial<ExamQuestion>;
+      } & NoRelationships;
+      question_sources: {
+        Row: QuestionSource;
+        Insert: Partial<QuestionSource>;
+        Update: Partial<QuestionSource>;
+      } & NoRelationships;
+      question_clusters: {
+        Row: QuestionCluster;
+        Insert: Partial<QuestionCluster>;
+        Update: Partial<QuestionCluster>;
+      } & NoRelationships;
+      question_cluster_members: {
+        Row: QuestionClusterMember;
+        Insert: Partial<QuestionClusterMember>;
+        Update: Partial<QuestionClusterMember>;
+      } & NoRelationships;
+      exam_topic_stats: {
+        Row: ExamTopicStats;
+        Insert: Partial<ExamTopicStats>;
+        Update: Partial<ExamTopicStats>;
+      } & NoRelationships;
+      summary_knowledge_points: {
+        Row: SummaryKnowledgePoint;
+        Insert: Partial<SummaryKnowledgePoint>;
+        Update: Partial<SummaryKnowledgePoint>;
+      } & NoRelationships;
+      exam_audit_logs: {
+        Row: ExamAuditLog;
+        Insert: Partial<ExamAuditLog>;
+        Update: Partial<ExamAuditLog>;
+      } & NoRelationships;
+      student_exam_attempts: {
+        Row: StudentExamAttempt;
+        Insert: Partial<StudentExamAttempt>;
+        Update: Partial<StudentExamAttempt>;
+      } & NoRelationships;
+      student_exam_attempt_answers: {
+        Row: StudentExamAttemptAnswer;
+        Insert: Partial<StudentExamAttemptAnswer>;
+        Update: Partial<StudentExamAttemptAnswer>;
+      } & NoRelationships;
     };
+
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- empty schema namespace
     Views: {};
     Functions: {

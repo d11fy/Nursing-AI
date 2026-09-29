@@ -39,11 +39,15 @@ const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB per chunk
 const MAX_CHUNK_RETRIES = 3;
 
 const SOURCE_TYPES = [
-  { value: "book", label: "كتاب" },
-  { value: "lecture", label: "محاضرة" },
-  { value: "notes", label: "ملاحظات" },
-  { value: "questions", label: "أسئلة" },
-  { value: "reference", label: "مرجع" },
+  { value: "BOOK", label: "كتاب معتمد (Book)" },
+  { value: "UNIVERSITY_LECTURE", label: "محاضرة جامعية رسمية (University Lecture)" },
+  { value: "DOCTOR_SLIDES", label: "سلايدات الدكتور (Doctor Slides)" },
+  { value: "SUMMARY", label: "ملخص دراسي (Summary)" },
+  { value: "PAST_EXAM", label: "امتحان سنوات سابقة (Past Exam)" },
+  { value: "QUESTION_BANK", label: "بنك أسئلة (Question Bank)" },
+  { value: "MODEL_ANSWERS", label: "إجابات نموذجية (Model Answers)" },
+  { value: "LAB_MATERIAL", label: "مادة المعمل السريري (Lab Material)" },
+  { value: "REVIEW_NOTES", label: "ملاحظات مراجعة (Review Notes)" },
 ] as const;
 
 type SourceType = (typeof SOURCE_TYPES)[number]["value"];
@@ -73,6 +77,11 @@ interface FileQueueItem {
   errorMessage?: string;
   xhr?: XMLHttpRequest | null;
   abortController?: AbortController | null;
+  examYear?: number;
+  semester?: number;
+  doctorName?: string;
+  examType?: string;
+  notes?: string;
 }
 
 function formatBytes(bytes: number): string {
@@ -115,7 +124,13 @@ export function UploadDocumentDialog({
   const [queue, setQueue] = useState<FileQueueItem[]>([]);
   const [isProcessingQueue, setIsProcessingQueue] = useState(false);
   const [defaultSubjectId, setDefaultSubjectId] = useState<string>(subjects[0]?.id ?? "");
-  const [defaultSourceType, setDefaultSourceType] = useState<SourceType>("reference");
+  const [defaultSourceType, setDefaultSourceType] = useState<SourceType>("BOOK");
+  const [defaultExamYear, setDefaultExamYear] = useState<string>(new Date().getFullYear().toString());
+  const [defaultSemester, setDefaultSemester] = useState<string>("1");
+  const [defaultDoctorName, setDefaultDoctorName] = useState<string>("");
+  const [defaultExamType, setDefaultExamType] = useState<string>("FINAL");
+  const [defaultNotes, setDefaultNotes] = useState<string>("");
+  const [showAdvancedMeta, setShowAdvancedMeta] = useState(false);
   const [subjectSearch, setSubjectSearch] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -151,6 +166,11 @@ export function UploadDocumentDialog({
         title: titleWithoutExt,
         subjectId: defaultSubjectId || subjects[0]?.id || "",
         sourceType: defaultSourceType,
+        examYear: defaultExamYear ? parseInt(defaultExamYear, 10) : undefined,
+        semester: defaultSemester ? parseInt(defaultSemester, 10) : undefined,
+        doctorName: defaultDoctorName || undefined,
+        examType: defaultExamType || undefined,
+        notes: defaultNotes || undefined,
         status: isZeroByte ? "failed" : "pending",
         totalChunks,
         uploadedChunks: 0,
@@ -314,6 +334,11 @@ export function UploadDocumentDialog({
               fileSize: item.file.size,
               mimeType: item.file.type || "application/octet-stream",
               totalChunks: item.totalChunks,
+              examYear: item.examYear,
+              semester: item.semester,
+              doctorName: item.doctorName,
+              examType: item.examType,
+              notes: item.notes,
             }),
           });
           const initData = await initRes.json();
@@ -698,6 +723,79 @@ export function UploadDocumentDialog({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          {/* Optional Extended Metadata Toggle */}
+          <div className="rounded-xl border border-border/80 bg-muted/20 p-3 space-y-3">
+            <button
+              type="button"
+              onClick={() => setShowAdvancedMeta(!showAdvancedMeta)}
+              className="flex items-center justify-between w-full text-xs font-semibold text-primary hover:underline"
+            >
+              <span>معلومات إضافية / تفاصيل الامتحان والدكتور (اختياري)</span>
+              <span>{showAdvancedMeta ? "▲ إخفاء" : "▼ إظهار"}</span>
+            </button>
+
+            {showAdvancedMeta && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+                <div>
+                  <Label className="text-[11px] text-muted-foreground block mb-1">سنة الامتحان</Label>
+                  <Input
+                    type="number"
+                    min={2000}
+                    max={2099}
+                    placeholder="2025"
+                    value={defaultExamYear}
+                    onChange={(e) => setDefaultExamYear(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[11px] text-muted-foreground block mb-1">الفصل الدراسي</Label>
+                  <Select value={defaultSemester} onValueChange={(val) => { if (val) setDefaultSemester(val); }}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">الفصل الأول</SelectItem>
+                      <SelectItem value="2">الفصل الثاني</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-[11px] text-muted-foreground block mb-1">اسم الدكتور/المحاضر</Label>
+                  <Input
+                    placeholder="د. أحمد"
+                    value={defaultDoctorName}
+                    onChange={(e) => setDefaultDoctorName(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[11px] text-muted-foreground block mb-1">نوع الاختبار</Label>
+                  <Select value={defaultExamType} onValueChange={(val) => { if (val) setDefaultExamType(val); }}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="FINAL">نهائي (Final)</SelectItem>
+                      <SelectItem value="MIDTERM">نصفي (Midterm)</SelectItem>
+                      <SelectItem value="QUIZ">كويز (Quiz)</SelectItem>
+                      <SelectItem value="PRACTICE">تدريبي (Practice)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="col-span-2 sm:col-span-4">
+                  <Label className="text-[11px] text-muted-foreground block mb-1">ملاحظات توضيحية</Label>
+                  <Input
+                    placeholder="مثال: أسئلة شاملة لوحدة القلب والأوعية الدموية..."
+                    value={defaultNotes}
+                    onChange={(e) => setDefaultNotes(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Drag & Drop Area */}

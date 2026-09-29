@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     const pool = getPool();
     const { rows } = await pool.query(
       `SELECT id, admin_id, file_name, file_size, mime_type, total_chunks,
-              title, subject_id, source_type, storage_path, status, document_id
+              title, subject_id, source_type, storage_path, status, document_id, metadata_json
        FROM public.knowledge_upload_sessions
        WHERE id = $1 AND admin_id = $2`,
       [uploadId, admin.user_id]
@@ -28,6 +28,7 @@ export async function POST(request: Request) {
     }
 
     const session = rows[0];
+    const meta = (session.metadata_json as Record<string, unknown>) || {};
 
     // Verify all chunks are accounted for
     const chunkCheck = await pool.query(
@@ -52,8 +53,9 @@ export async function POST(request: Request) {
       const docRes = await pool.query(
         `INSERT INTO public.documents (
           title, file_url, file_name, file_size, subject_id,
-          source_type, status, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, 'processing', $7)
+          source_type, status, created_by,
+          academic_year_id, semester, exam_year, doctor_name, exam_type, notes
+        ) VALUES ($1, $2, $3, $4, $5, $6, 'processing', $7, $8, $9, $10, $11, $12, $13)
         RETURNING id`,
         [
           session.title,
@@ -63,13 +65,36 @@ export async function POST(request: Request) {
           session.subject_id,
           session.source_type,
           admin.user_id,
+          meta.academicYearId || null,
+          meta.semester || null,
+          meta.examYear || null,
+          meta.doctorName || null,
+          meta.examType || null,
+          meta.notes || null,
         ]
       );
       documentId = docRes.rows[0].id;
     } else {
       await pool.query(
-        "UPDATE public.documents SET status = 'processing', updated_at = now() WHERE id = $1",
-        [documentId]
+        `UPDATE public.documents
+         SET status = 'processing',
+             academic_year_id = coalesce($2, academic_year_id),
+             semester = coalesce($3, semester),
+             exam_year = coalesce($4, exam_year),
+             doctor_name = coalesce($5, doctor_name),
+             exam_type = coalesce($6, exam_type),
+             notes = coalesce($7, notes),
+             updated_at = now()
+         WHERE id = $1`,
+        [
+          documentId,
+          meta.academicYearId || null,
+          meta.semester || null,
+          meta.examYear || null,
+          meta.doctorName || null,
+          meta.examType || null,
+          meta.notes || null,
+        ]
       );
     }
 

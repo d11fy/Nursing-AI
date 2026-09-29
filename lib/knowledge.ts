@@ -122,7 +122,7 @@ async function ingestDocument(documentId: string, staging: PoolClient): Promise<
 
   const { data: doc, error: docError } = await db
     .from("documents")
-    .select("id, file_url, file_name, subject_id, title")
+    .select("id, file_url, file_name, subject_id, title, source_type, exam_year, semester, exam_type, doctor_name")
     .eq("id", documentId)
     .single();
 
@@ -186,6 +186,46 @@ async function ingestDocument(documentId: string, staging: PoolClient): Promise<
         extraction_page_count=$3,ocr_page_count=$4,index_version=2 WHERE id=$1`,
         [documentId,chunkIndex,pages.length,pages.filter(p=>p.ocr).length]);
       await staging.query("COMMIT");
+
+      // Auto-trigger specialized exam / summary pipeline if applicable
+      const sType = (doc.source_type || "").toUpperCase();
+      if (["PAST_EXAM", "QUESTION_BANK", "QUESTIONS"].includes(sType) && doc.subject_id) {
+        const pool = getPool();
+        const { rows: existingExams } = await pool.query<{ id: string }>(
+          "SELECT id FROM public.exams WHERE document_id = $1",
+          [documentId]
+        );
+        let examId = existingExams[0]?.id;
+        if (!examId) {
+          const { rows: newExam } = await pool.query<{ id: string }>(
+            `INSERT INTO public.exams (
+               subject_id, title, exam_year, semester, exam_type, doctor_name, document_id, status
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'UPLOADED')
+             RETURNING id`,
+            [
+              doc.subject_id,
+              doc.title,
+              doc.exam_year || null,
+              doc.semester || null,
+              doc.exam_type || "PAST_EXAM",
+              doc.doctor_name || null,
+              documentId,
+            ]
+          );
+          examId = newExam[0]?.id;
+        }
+        if (examId) {
+          const { processExamDocument } = await import("@/lib/exams/exam-pipeline");
+          void processExamDocument(examId).catch((err) => {
+            console.error(`[ExamPipeline] Error processing exam ${examId}:`, err);
+          });
+        }
+      } else if (["SUMMARY", "REVIEW_NOTES"].includes(sType) && doc.subject_id) {
+        const { processSummaryDocument } = await import("@/lib/exams/summary-processor");
+        void processSummaryDocument(documentId, doc.subject_id, pages).catch((err) => {
+          console.error(`[SummaryProcessor] Error processing summary ${documentId}:`, err);
+        });
+      }
     } catch(error) { await staging.query("ROLLBACK"); throw error; }
   } catch (err) {
     await db

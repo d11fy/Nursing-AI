@@ -108,8 +108,9 @@ export async function retrieveCurriculum(queries: string[], scope: SearchScope, 
     subjectName: row.subject_name, sourceType: row.source_type, chapter: row.chapter,
     pageNumber: row.page_number, similarity: row.similarity, chunkIndex: row.chunk_index,
     evidenceType: scope.lectureId ? "PRIVATE_LECTURE" as const
-      : row.source_type === "lecture" || row.source_type === "notes" ? "UNIVERSITY_SOURCE" as const
-      : row.source_type === "book" ? "TEXTBOOK" as const : "SUPPLEMENTARY" as const,
+      : (row.source_type?.toUpperCase() === "BOOK" || row.source_type?.toUpperCase() === "TEXTBOOK") ? "TEXTBOOK" as const
+      : (row.source_type?.toUpperCase() === "UNIVERSITY_LECTURE" || row.source_type?.toUpperCase() === "DOCTOR_SLIDES" || row.source_type === "lecture") ? "UNIVERSITY_SOURCE" as const
+      : "SUPPLEMENTARY" as const,
     content: (neighbours?.rows.filter(n => n.anchor_id===row.id).map(n => n.content).join("\n\n") || row.content).slice(0,3600),
   }));
 }

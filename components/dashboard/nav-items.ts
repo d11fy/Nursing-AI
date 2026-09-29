@@ -13,6 +13,9 @@ import {
   FileText,
   ShieldCheck,
   Cpu,
+  BrainCircuit,
+  FileCheck2,
+  HelpCircle,
   type LucideIcon,
 } from "lucide-react";
 
@@ -32,6 +35,9 @@ export const studentNavItems: NavItem[] = [
 
 export const adminNavItems: NavItem[] = [
   { href: "/admin", label: "لوحة التحكم", icon: LayoutDashboard },
+  { href: "/admin/training-center", label: "مركز التدريب والجاهزية", icon: BrainCircuit },
+  { href: "/admin/exams", label: "نماذج الامتحانات", icon: FileCheck2 },
+  { href: "/admin/question-bank", label: "بنك الأسئلة", icon: HelpCircle },
   { href: "/admin/students", label: "الطلاب", icon: GraduationCap },
   { href: "/admin/knowledge", label: "قاعدة المعرفة", icon: Database },
   { href: "/admin/knowledge/contributions", label: "مراجعة المساهمات", icon: ShieldCheck },

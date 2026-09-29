@@ -3,8 +3,30 @@ import { z } from "zod";
 export const documentUploadSchema = z.object({
   title: z.string().trim().min(2, "عنوان الملف مطلوب"),
   subjectId: z.string().uuid("الرجاء اختيار مادة"),
-  sourceType: z.enum(["book", "lecture", "notes", "questions", "reference"]),
+  sourceType: z.enum([
+    "BOOK",
+    "UNIVERSITY_LECTURE",
+    "DOCTOR_SLIDES",
+    "SUMMARY",
+    "PAST_EXAM",
+    "QUESTION_BANK",
+    "MODEL_ANSWERS",
+    "LAB_MATERIAL",
+    "REVIEW_NOTES",
+    "book",
+    "lecture",
+    "notes",
+    "questions",
+    "reference",
+  ]),
+  academicYearId: z.string().uuid().optional().nullable(),
+  semester: z.coerce.number().int().min(1).max(2).optional().nullable(),
+  examYear: z.coerce.number().int().min(1990).max(2100).optional().nullable(),
+  doctorName: z.string().trim().optional().nullable(),
+  examType: z.string().trim().optional().nullable(),
+  notes: z.string().trim().optional().nullable(),
 });
+
 
 export type DocumentUploadInput = z.infer<typeof documentUploadSchema>;
 
