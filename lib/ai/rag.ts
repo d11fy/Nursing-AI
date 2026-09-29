@@ -4,38 +4,29 @@ import type { KnowledgeChunk } from "@/lib/ai/provider";
 import { getAIConfig } from "./config.mjs";
 import { getPool } from "@/lib/db/pool";
 
-/** Rough token-aware chunking: splits on paragraph boundaries, then packs
- * them into ~chunkSize-character windows so embeddings stay under model
- * limits while keeping semantic units intact. */
-export function chunkText(text: string, chunkSize = 1200, overlap = 150): string[] {
-  if (chunkSize <= 0 || overlap < 0 || overlap >= chunkSize) throw new Error("Invalid chunk size/overlap");
-  const paragraphs = text
-    .split(/\n{2,}/)
-    .map((p) => p.trim())
-    .filter(Boolean)
-    .flatMap((paragraph) => {
-      const parts: string[] = [];
-      for (let start = 0; start < paragraph.length; start += chunkSize - overlap) {
-        parts.push(paragraph.slice(start, start + chunkSize));
-        if (start + chunkSize >= paragraph.length) break;
-      }
-      return parts;
-    });
-
+/** Keep paragraph/sentence/word boundaries where possible and overlap context within a page. */
+export function chunkText(text: string, chunkSize = 1800, overlap = 250): string[] {
+  if (!Number.isInteger(chunkSize) || chunkSize <= 0 || overlap < 0 || overlap >= chunkSize) throw new Error("Invalid chunk size/overlap");
+  const cleaned = text.replace(/\r\n?/g, "\n").replace(/\u0000/g, "").trim();
   const chunks: string[] = [];
-  let current = "";
-
-  for (const paragraph of paragraphs) {
-    if ((current + "\n\n" + paragraph).length > chunkSize && current) {
-      chunks.push(current.trim());
-      const available = Math.max(0, chunkSize - paragraph.length - 2);
-      const tailLength = Math.min(overlap, available);
-      current = tailLength ? current.slice(-tailLength) : "";
+  let start = 0;
+  while (start < cleaned.length) {
+    let end = Math.min(start + chunkSize, cleaned.length);
+    if (end < cleaned.length) {
+      const window = cleaned.slice(start,end);
+      const floor = Math.floor(chunkSize * 0.55);
+      const breaks = [window.lastIndexOf("\n\n"), ...[...window.matchAll(/[.!?؟]\s/g)].map(m => m.index! + 1), window.lastIndexOf(" ")];
+      const boundary = breaks.find(i => i >= floor);
+      if (boundary !== undefined) end = start + boundary;
     }
-    current += (current ? "\n\n" : "") + paragraph;
+    const chunk = cleaned.slice(start,end).trim();
+    if (chunk) chunks.push(chunk);
+    if (end >= cleaned.length) break;
+    let next = Math.max(start+1,end-overlap);
+    // Start at a complete word without skipping any previously unseen content.
+    while (next < end && next > 0 && !/\s/.test(cleaned[next-1])) next++;
+    start = next;
   }
-
-  if (current.trim()) chunks.push(current.trim());
   return chunks;
 }
 

@@ -64,7 +64,7 @@ function buildSystemPrompt(params: GenerateTextParams): string {
   const personalization = params.personalizationContext
     ? `\n\nStudent personalization context (not an academic source):\n${params.personalizationContext}`
     : "";
-  return NURSING_SYSTEM_PROMPT + personalization + knowledge;
+  return (params.taskPrompt ?? NURSING_SYSTEM_PROMPT) + personalization + knowledge;
 }
 
 const DEFAULT_FALLBACK_MODEL = "gpt-4o-mini";
@@ -96,7 +96,9 @@ export class OpenAIProvider implements AIProvider {
         {
           model,
           messages: toOpenAIMessages(buildSystemPrompt(params), params.messages),
-          max_tokens: params.maxOutputTokens,
+          max_completion_tokens: params.maxOutputTokens,
+          response_format: params.jsonSchema ? { type: "json_schema", json_schema: { ...params.jsonSchema, strict: true } } : undefined,
+          reasoning_effort: params.jsonSchema && /^gpt-5/.test(model) ? "low" : undefined,
         },
         { signal: params.signal }
       );
@@ -108,7 +110,9 @@ export class OpenAIProvider implements AIProvider {
           {
             model,
             messages: toOpenAIMessages(buildSystemPrompt(params), params.messages),
-            max_tokens: params.maxOutputTokens,
+            max_completion_tokens: params.maxOutputTokens,
+            response_format: params.jsonSchema ? { type: "json_schema", json_schema: { ...params.jsonSchema, strict: true } } : undefined,
+            reasoning_effort: params.jsonSchema && /^gpt-5/.test(model) ? "low" : undefined,
           },
           { signal: params.signal }
         );
@@ -117,6 +121,9 @@ export class OpenAIProvider implements AIProvider {
       }
     }
 
+    if (params.taskPrompt && completion.choices[0]?.finish_reason === "length") {
+      throw new Error("لم تكتمل معالجة المصدر؛ تجاوزت الاستجابة حد الطول، حاول تقسيم المحتوى");
+    }
     return {
       content: completion.choices[0]?.message?.content ?? "",
       inputTokens: completion.usage?.prompt_tokens ?? 0,
@@ -138,7 +145,7 @@ export class OpenAIProvider implements AIProvider {
           messages: toOpenAIMessages(buildSystemPrompt(params), params.messages),
           stream: true,
           stream_options: { include_usage: true },
-          max_tokens: params.maxOutputTokens,
+          max_completion_tokens: params.maxOutputTokens,
         },
         { signal: params.signal }
       );
@@ -152,7 +159,7 @@ export class OpenAIProvider implements AIProvider {
             messages: toOpenAIMessages(buildSystemPrompt(params), params.messages),
             stream: true,
             stream_options: { include_usage: true },
-            max_tokens: params.maxOutputTokens,
+            max_completion_tokens: params.maxOutputTokens,
           },
           { signal: params.signal }
         );
@@ -183,7 +190,7 @@ export class OpenAIProvider implements AIProvider {
   async generateVisionResponse(
     params: GenerateTextParams & { imageUrl: string }
   ): Promise<GenerateResult> {
-    let model = getChatModel();
+    let model = process.env.OPENAI_VISION_MODEL?.trim() || getChatModel();
     const messagesWithImage: ChatMessageInput[] = params.messages.map((m, i, arr) =>
       i === arr.length - 1 && m.role === "user"
         ? { ...m, imageUrl: params.imageUrl }
@@ -196,7 +203,7 @@ export class OpenAIProvider implements AIProvider {
         {
           model,
           messages: toOpenAIMessages(buildSystemPrompt(params), messagesWithImage, "auto"),
-          max_tokens: params.maxOutputTokens ?? 2048,
+          max_completion_tokens: params.maxOutputTokens ?? 2048,
         },
         { signal: params.signal }
       );
@@ -208,7 +215,7 @@ export class OpenAIProvider implements AIProvider {
           {
             model,
             messages: toOpenAIMessages(buildSystemPrompt(params), messagesWithImage, "auto"),
-            max_tokens: params.maxOutputTokens ?? 2048,
+            max_completion_tokens: params.maxOutputTokens ?? 2048,
           },
           { signal: params.signal }
         );
@@ -217,6 +224,9 @@ export class OpenAIProvider implements AIProvider {
       }
     }
 
+    if (params.taskPrompt && completion.choices[0]?.finish_reason === "length") {
+      throw new Error("لم تكتمل معالجة المصدر؛ تجاوزت الاستجابة حد الطول، حاول تقسيم المحتوى");
+    }
     return {
       content: completion.choices[0]?.message?.content ?? "",
       inputTokens: completion.usage?.prompt_tokens ?? 0,
@@ -228,7 +238,7 @@ export class OpenAIProvider implements AIProvider {
   async *generateVisionStream(
     params: GenerateTextParams & { imageUrl: string }
   ): AsyncGenerator<StreamChunk, GenerateResult, unknown> {
-    let model = getChatModel();
+    let model = process.env.OPENAI_VISION_MODEL?.trim() || getChatModel();
     const messagesWithImage: ChatMessageInput[] = params.messages.map((m, i, arr) =>
       i === arr.length - 1 && m.role === "user"
         ? { ...m, imageUrl: params.imageUrl }
@@ -243,7 +253,7 @@ export class OpenAIProvider implements AIProvider {
           messages: toOpenAIMessages(buildSystemPrompt(params), messagesWithImage, "auto"),
           stream: true,
           stream_options: { include_usage: true },
-          max_tokens: params.maxOutputTokens ?? 2048,
+          max_completion_tokens: params.maxOutputTokens ?? 2048,
         },
         { signal: params.signal }
       );
@@ -257,7 +267,7 @@ export class OpenAIProvider implements AIProvider {
             messages: toOpenAIMessages(buildSystemPrompt(params), messagesWithImage, "auto"),
             stream: true,
             stream_options: { include_usage: true },
-            max_tokens: params.maxOutputTokens ?? 2048,
+            max_completion_tokens: params.maxOutputTokens ?? 2048,
           },
           { signal: params.signal }
         );

@@ -134,7 +134,7 @@ export function ChatView({
             {isGenerating && messages[messages.length - 1]?.content === "" && (
               <div className="flex items-center gap-2 text-sm text-slate-400">
                 <Loader2 className="size-4 animate-spin" />
-                جارٍ التفكير...
+                جارٍ البحث في المصادر ومراجعة الإجابة...
               </div>
             )}
           </div>

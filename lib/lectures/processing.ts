@@ -1,5 +1,4 @@
 import "server-only";
-import JSZip from "jszip";
 import { downloadLectureFile } from "@/lib/storage";
 import { createSystemClient } from "@/lib/db/server";
 import { getAIProvider } from "@/lib/ai";
@@ -11,44 +10,21 @@ import { logUsage } from "@/lib/usage";
 import { logEvent } from "@/lib/log";
 import { submitContributionIfRequested } from "@/lib/lectures/contribution";
 import { toVisionDataUri } from "@/lib/vision-image";
+import { transcribePage } from "@/lib/ai/document-ocr";
 
 const EMBEDDING_BATCH_SIZE = 32;
 // Distinct advisory lock key from lib/knowledge.ts's document pipeline (73194026)
 // so admin document ingestion and student lecture ingestion never block each other.
 const LECTURE_LOCK_KEY = 73194027;
 
-async function extractPptxPages(buffer: Buffer): Promise<ExtractedPage[]> {
-  const zip = await JSZip.loadAsync(buffer);
-  const slideFiles = Object.keys(zip.files)
-    .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
-    .sort((a, b) => Number(a.match(/slide(\d+)\.xml/)![1]) - Number(b.match(/slide(\d+)\.xml/)![1]));
-
-  const pages: ExtractedPage[] = [];
-  for (let i = 0; i < slideFiles.length; i++) {
-    const xml = await zip.files[slideFiles[i]].async("text");
-    const text = [...xml.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((m) => m[1]).join(" ").trim();
-    if (text) pages.push({ pageNumber: i + 1, text });
-  }
-  return pages;
-}
-
 async function extractImagePages(buffer: Buffer): Promise<ExtractedPage[]> {
   const provider = getAIProvider();
   const dataUri = await toVisionDataUri(buffer);
-  const result = await provider.generateVisionResponse({
-    messages: [{
-      role: "user",
-      content: "استخرج النص والمحتوى التعليمي الكامل من هذه الصورة (محاضرة تمريضية) بدقة وبالكامل، بدون تلخيص أو حذف تفاصيل.",
-    }],
-    imageUrl: dataUri,
-    maxOutputTokens: 1200,
-  });
-  const text = result.content.trim();
+  const text = await transcribePage(dataUri,provider);
   return text ? [{ pageNumber: null, text }] : [];
 }
 
 async function extractLecturePages(buffer: Buffer, fileName: string, mimeType: string): Promise<ExtractedPage[]> {
-  if (fileName.split(".").pop()?.toLowerCase() === "pptx") return extractPptxPages(buffer);
   if (mimeType.startsWith("image/")) return extractImagePages(buffer);
   return extractPagesFromFile(buffer, fileName);
 }

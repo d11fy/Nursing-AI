@@ -5,6 +5,11 @@ export interface ChatMessageInput {
 }
 
 export interface KnowledgeChunk {
+  id?: string;
+  documentId?: string;
+  title?: string;
+  subjectName?: string | null;
+  sourceType?: string;
   content: string;
   chapter?: string | null;
   pageNumber?: number | null;
@@ -17,6 +22,9 @@ export interface GenerateTextParams {
   personalizationContext?: string;
   signal?: AbortSignal;
   maxOutputTokens?: number;
+  /** Trusted server task instructions, never populated from request JSON. */
+  taskPrompt?: string;
+  jsonSchema?: { name: string; schema: Record<string, unknown> };
 }
 
 export interface GenerateResult {

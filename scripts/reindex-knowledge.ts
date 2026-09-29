@@ -1,5 +1,5 @@
-import nextEnv from "@next/env";
-nextEnv.loadEnvConfig(process.cwd());
+import { loadEnvConfig } from "@next/env";
+loadEnvConfig(process.cwd());
 
 async function main() {
   // Dynamic imports ensure provider configuration is read after .env.local.
@@ -13,12 +13,15 @@ async function main() {
     const config = getAIConfig();
     await runMigrations();
     pool = getPool();
-    const documents = await pool.query<{ id: string }>("SELECT id FROM documents ORDER BY created_at");
+    const staleOnly = process.argv.includes("--stale-only");
+    const documents = await pool.query<{ id: string }>(`SELECT id FROM documents ${staleOnly ? "WHERE index_version<2 OR status='failed'" : ""} ORDER BY created_at`);
     console.log(`Reindexing ${documents.rows.length} documents with ${config.provider}/${config.embeddingModel}`);
+    let failed = 0;
     for (const { id } of documents.rows) {
-      await processDocument(id);
-      console.log(`Indexed ${id}`);
+      try { await processDocument(id); console.log(`Indexed ${id}`); }
+      catch(error) { failed++; console.error(`Failed ${id}: ${error instanceof Error ? error.message : "Indexing error"}`); }
     }
+    if(failed) process.exitCode=1;
   } catch (error) {
     console.error(error instanceof Error ? error.message : "Reindex failed");
     process.exitCode = 1;

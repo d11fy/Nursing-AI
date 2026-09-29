@@ -38,7 +38,8 @@ export function DocumentRowActions({ documentId }: { documentId: string }) {
         toast.success("تمت إعادة معالجة الملف");
         router.refresh();
       } else {
-        toast.error("تعذرت إعادة المعالجة");
+        const data = await res.json().catch(() => null);
+        toast.error(data?.error || "تعذرت إعادة المعالجة");
       }
     });
   }

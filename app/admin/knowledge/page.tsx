@@ -38,7 +38,7 @@ export default async function AdminKnowledgePage() {
   const [{ data: documents }, { data: subjects }, { data: allSubjects }] = await Promise.all([
     db
       .from("documents")
-      .select("id, title, file_name, file_size, chunk_count, status, created_at, subject_id")
+      .select("id, title, file_name, file_size, chunk_count, status, created_at, subject_id, extraction_page_count, ocr_page_count, index_version, error_message")
       .order("created_at", { ascending: false }),
     db.from("subjects").select("id, name_ar").eq("status", "active"),
     db.from("subjects").select("id, name_ar"),
@@ -54,8 +54,9 @@ export default async function AdminKnowledgePage() {
       </div>
 
       <p className="rounded-xl border border-border bg-card p-4 text-sm">
-        بعد تغيير مزوّد الذكاء الاصطناعي أو موديل التضمين، اختر «إعادة المعالجة» لكل ملف من قائمة الإجراءات.
-        المقاطع القديمة أو غير المتوافقة لا تُستخدم في البحث حتى تُعاد فهرستها.
+        يبحث المساعد تلقائيًا في الملفات الجاهزة، ويذكر اسم المصدر والصفحة.
+        اختر «إعادة المعالجة» للملفات القديمة لإعادة قراءة الصفحات المصورة وتحسين تقسيم النص.
+        القراءة البصرية قد تخطئ في النصوص غير الواضحة؛ راجع جودة النسخة الأصلية.
       </p>
 
       <div className="overflow-x-auto rounded-xl border border-border bg-card">
@@ -66,6 +67,7 @@ export default async function AdminKnowledgePage() {
               <TableHead>المادة</TableHead>
               <TableHead>الحجم</TableHead>
               <TableHead>عدد المقاطع</TableHead>
+              <TableHead>قراءة المحتوى</TableHead>
               <TableHead>تاريخ الرفع</TableHead>
               <TableHead>الحالة</TableHead>
               <TableHead />
@@ -78,6 +80,11 @@ export default async function AdminKnowledgePage() {
                 <TableCell>{subjectNameById.get(d.subject_id ?? "") ?? "—"}</TableCell>
                 <TableCell>{formatSize(d.file_size)}</TableCell>
                 <TableCell>{d.chunk_count}</TableCell>
+                <TableCell className="text-xs">
+                  {d.extraction_page_count != null ? `${d.extraction_page_count} صفحة · ${d.ocr_page_count} قراءة بصرية` : "لم تُقَسّ تغطية الصفحات بعد"}
+                  {d.index_version < 2 && <p className="text-amber-700">إعادة المعالجة تحسّن قراءة الملف</p>}
+                  {d.error_message && <p className="max-w-xs text-red-600">{d.error_message}</p>}
+                </TableCell>
                 <TableCell>{new Date(d.created_at).toLocaleDateString("ar-EG")}</TableCell>
                 <TableCell>
                   <Badge variant={STATUS_VARIANT[d.status]}>{STATUS_LABEL[d.status]}</Badge>

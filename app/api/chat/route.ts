@@ -1,16 +1,14 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/db/server";
 import { getAIProvider } from "@/lib/ai";
-import { searchKnowledge } from "@/lib/ai/rag";
-import { searchLectureKnowledge } from "@/lib/ai/lecture-rag";
+import { retrieveCurriculum } from "@/lib/ai/curriculum-search";
+import { answerFromCurriculum } from "@/lib/ai/grounded-answer";
 import { checkDailyLimit, checkRateLimit, logUsage } from "@/lib/usage";
 import { getChatImageDataUri } from "@/lib/storage";
 import { sendMessageSchema } from "@/lib/validations/chat";
 import type { ChatMessageInput } from "@/lib/ai/provider";
-import type { KnowledgeChunk } from "@/lib/ai/provider";
 import { canStudentAccessSubject } from "@/lib/subjects";
 import { getStudentContext, recordChatLearning, recordUnanswered, updateConversationMemory } from "@/lib/student-memory";
-import { classifyQuestion, scopeResponse } from "@/lib/ai/question-policy";
 
 function truncateTitle(text: string, max = 60): string {
   const clean = text.trim().replace(/\s+/g, " ");
@@ -108,14 +106,16 @@ export async function POST(request: Request) {
   }
 
   // Load recent history for context (before inserting the new user message).
-  const { data: history } = await db
+  const { data: latestHistory, error: historyError } = await db
     .from("messages")
     .select("role, content")
     .eq("conversation_id", activeConversationId)
-    .order("created_at", { ascending: true })
-    .limit(20);
-  const studentContext = await getStudentContext(user.id, activeConversationId, activeSubjectId, activeLectureId);
-  const scope = classifyQuestion(content, Boolean(activeSubjectId || activeLectureId), Boolean(imagePath));
+    .order("created_at", { ascending: false })
+    .limit(10);
+  if (historyError) return NextResponse.json({ error: "تعذر تحميل المحادثة" }, { status: 503 });
+  const history = (latestHistory ?? []).reverse();
+  const studentContext = await getStudentContext(user.id, activeConversationId, activeSubjectId, activeLectureId)
+    .catch(() => ({ text: "", summary: "", preferences: {} }));
 
   let imageDataUri: string | null = null;
   if (imagePath) {
@@ -126,42 +126,11 @@ export async function POST(request: Request) {
     }
   }
 
-  let provider;
-  let knowledge: KnowledgeChunk[];
-  try {
-    provider = getAIProvider();
-    // The image already contains the source material. Avoid loading the
-    // embedding model immediately before the vision model on small GPUs.
-    knowledge = imageDataUri
-      ? []
-      : activeLectureId && lectureTitle
-        ? await searchLectureKnowledge(content, activeLectureId, user.id, lectureTitle, 5)
-        : await searchKnowledge(content, activeSubjectId, 5);
-  } catch (error) {
-    console.error("chat provider error", error);
-    return NextResponse.json({ error: "خدمة الذكاء الاصطناعي غير متاحة مؤقتًا، حاول مرة أخرى بعد قليل." }, { status: 503 });
-  }
-
-  await db.from("messages").insert({
-    conversation_id: activeConversationId,
-    role: "user",
-    content,
-    image_url: imagePath ?? null,
+  const provider = getAIProvider();
+  const savedUser = await db.from("messages").insert({
+    conversation_id: activeConversationId, role: "user", content, image_url: imagePath ?? null,
   });
-
-  if (!imageDataUri && scope !== "NURSING_IN_SCOPE") {
-    const reason = scope === "NON_NURSING" ? "NON_NURSING" : scope === "NURSING_OUT_OF_CURRICULUM" ? "OUTSIDE_CURRICULUM" : "LOW_CONFIDENCE";
-    const answer = scopeResponse[scope];
-    await recordUnanswered(user.id, activeSubjectId, activeLectureId, content, reason);
-    await db.from("messages").insert({ conversation_id: activeConversationId, role: "assistant", content: answer, model: "policy" });
-    return new Response(answer, { headers: { "Content-Type": "text/plain; charset=utf-8", "X-Conversation-Id": activeConversationId, "Cache-Control": "no-store" } });
-  }
-  if (!imageDataUri && knowledge.length === 0) {
-    const answer = scopeResponse.NO_SOURCE;
-    await recordUnanswered(user.id, activeSubjectId, activeLectureId, content, "NO_SOURCE");
-    await db.from("messages").insert({ conversation_id: activeConversationId, role: "assistant", content: answer, model: "policy" });
-    return new Response(answer, { headers: { "Content-Type": "text/plain; charset=utf-8", "X-Conversation-Id": activeConversationId, "Cache-Control": "no-store" } });
-  }
+  if (savedUser.error) return NextResponse.json({ error: "تعذر حفظ السؤال" }, { status: 500 });
 
   const relevantHistory = imageDataUri ? (history ?? []).slice(-6) : (history ?? []);
   const messages: ChatMessageInput[] = [
@@ -178,15 +147,20 @@ export async function POST(request: Request) {
       let inputTokens = 0;
       let outputTokens = 0;
       let model = "";
+      let answerSaved = false;
+      let cost = 0;
+      let learned = false;
+      let unansweredReason: "NO_SOURCE" | "LOW_CONFIDENCE" | "OUTSIDE_CURRICULUM" | "NON_NURSING" | undefined;
+      const signal = AbortSignal.any([request.signal, AbortSignal.timeout(150_000)]);
 
       try {
         if (imageDataUri) {
           const visionParams = {
             messages,
-            knowledge,
+            knowledge: [],
             personalizationContext: studentContext.text,
             imageUrl: imageDataUri,
-            signal: request.signal,
+            signal,
             maxOutputTokens: 2048,
           };
           if (provider.generateVisionStream) {
@@ -209,26 +183,31 @@ export async function POST(request: Request) {
             controller.enqueue(encoder.encode(fullContent));
           }
         } else {
-          const generator = provider.generateStream({
-            messages,
-            knowledge,
-            personalizationContext: studentContext.text,
-            signal: request.signal,
+          let embeddingCost = 0;
+          let embeddingTokens = 0;
+          const result = await answerFromCurriculum({ question: content, history: messages.slice(0,-1),
+            personalization: studentContext.text, signal }, {
+            provider,
+            retrieve: queries => retrieveCurriculum(queries, {
+              userId:user.id, subjectId:activeSubjectId, lectureId:activeLectureId,
+            },24, result => {
+              embeddingTokens += result.tokens;
+              embeddingCost += provider.calculateCost({ model:result.model,inputTokens:result.tokens,outputTokens:0 });
+            }),
           });
-          let next = await generator.next();
-          while (!next.done) {
-            fullContent += next.value.delta;
-            controller.enqueue(encoder.encode(next.value.delta));
-            next = await generator.next();
-          }
-          inputTokens = next.value.inputTokens;
-          outputTokens = next.value.outputTokens;
-          model = next.value.model;
+          fullContent = result.content;
+          inputTokens = result.inputTokens + embeddingTokens;
+          outputTokens = result.outputTokens;
+          model = result.model;
+          cost = result.estimatedCost + embeddingCost;
+          unansweredReason = result.reason;
+          learned = !result.reason && result.sources.length > 0;
+          // Do not expose a draft until quote validation AND evidence audit finish.
+          controller.enqueue(encoder.encode(fullContent));
         }
+        if (imageDataUri) cost = provider.calculateCost({ model,inputTokens,outputTokens });
 
-        const cost = provider.calculateCost({ model, inputTokens, outputTokens });
-
-        await db.from("messages").insert({
+        const savedAnswer = await db.from("messages").insert({
           conversation_id: conversationIdForClient,
           role: "assistant",
           content: fullContent,
@@ -236,6 +215,9 @@ export async function POST(request: Request) {
           tokens_output: outputTokens,
           model,
         });
+
+        if (savedAnswer.error) throw new Error("Could not persist answer");
+        answerSaved = true;
 
         await db
           .from("conversations")
@@ -250,10 +232,14 @@ export async function POST(request: Request) {
           outputTokens,
           estimatedCost: cost,
         });
-        await recordChatLearning(user.id, activeSubjectId, activeLectureId, content);
-        await updateConversationMemory(user.id, conversationIdForClient, activeSubjectId, activeLectureId, history ?? [], content);
+        // A telemetry/memory failure must never duplicate an already-saved assistant message.
+        try {
+          if (unansweredReason) await recordUnanswered(user.id,activeSubjectId,activeLectureId,content,unansweredReason);
+          if (learned) await recordChatLearning(user.id, activeSubjectId, activeLectureId, content);
+          await updateConversationMemory(user.id, conversationIdForClient, activeSubjectId, activeLectureId, history, content);
+        } catch { console.error("Could not update study memory"); }
       } catch (err) {
-        if (fullContent) {
+        if (fullContent && !answerSaved) {
           // Partial content was streamed (e.g. client stopped generation) —
           // save what we have instead of losing the exchange.
           await db.from("messages").insert({
@@ -262,7 +248,7 @@ export async function POST(request: Request) {
             content: fullContent,
             model,
           });
-        } else {
+        } else if (!answerSaved) {
           console.error("chat stream error", err);
           let userMsg = "خدمة الذكاء الاصطناعي غير متاحة مؤقتًا، حاول مرة أخرى بعد قليل.";
           if (err && typeof err === "object") {

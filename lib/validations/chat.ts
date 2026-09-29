@@ -5,7 +5,7 @@ export const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024; // default; overridden by a
 
 export const sendMessageSchema = z.object({
   conversationId: z.string().uuid().optional(),
-  content: z.string().trim().min(1, "الرجاء كتابة سؤال"),
+  content: z.string().trim().min(1, "الرجاء كتابة سؤال").max(12000, "السؤال طويل جدًا؛ ارفع النص كملف أو اختصر السؤال"),
   subjectId: z.string().uuid().optional().nullable(),
   lectureId: z.string().uuid().optional().nullable(),
   imagePath: z.string().min(1).optional().nullable(),

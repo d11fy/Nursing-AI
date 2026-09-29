@@ -174,6 +174,9 @@ export type MessageFeedback = {
 };
 
 export type DocumentRow = {
+  extraction_page_count: number | null;
+  ocr_page_count: number;
+  index_version: number;
   id: string;
   title: string;
   file_url: string;
