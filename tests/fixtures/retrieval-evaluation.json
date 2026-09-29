@@ -1,0 +1,39 @@
+[
+  {"id":"ethics-justice","question":"ما معنى مبدأ العدالة Justice في أخلاقيات التمريض؟","expected_subject":"أخلاقيات وقضايا مهنية","expected_document":"اخلاقيات وقضايا","expected_topic":"Justice"},
+  {"id":"ethics-autonomy","question":"ماذا تعني استقلالية الممرضة Nurses autonomy؟","expected_subject":"أخلاقيات وقضايا مهنية","expected_document":"اخلاقيات وقضايا","expected_topic":"Nurses autonomy"},
+  {"id":"ethics-work-conditions","question":"ما المقترحات المذكورة لتحسين ظروف عمل الممرضين؟","expected_subject":"أخلاقيات وقضايا مهنية","expected_document":"اخلاقيات وقضايا","expected_topic":"Working conditions for nurses"},
+  {"id":"ethics-professional-issues","question":"اشرح القضايا المهنية Professional issues في التمريض","expected_subject":"أخلاقيات وقضايا مهنية","expected_document":"اخلاقيات وقضايا","expected_topic":"Professional issues"},
+
+  {"id":"fundamentals-blood-saline","question":"ما المحلول المتوافق مع إعطاء الدم ولماذا؟","expected_subject":"أسس علم التمريض (2)","expected_document":"جميع مجاضرات اسس 2 نظري","expected_topic":"Blood administration"},
+  {"id":"fundamentals-insulin-pump","question":"متى يمكن فصل قسطرة مضخة الإنسولين مؤقتًا؟","expected_subject":"أسس علم التمريض (2)","expected_document":"جميع مجاضرات اسس 2 نظري","expected_topic":"Insulin pumps"},
+  {"id":"fundamentals-infection-colonization","question":"ما الفرق بين Infection وColonization حسب المحاضرة؟","expected_subject":"أسس علم التمريض (2)","expected_document":"جميع مجاضرات اسس 2 نظري","expected_topic":"Infection and colonization"},
+  {"id":"fundamentals-urinary-diversion","question":"ما المقصود بالتحويل البولي Urinary diversion؟","expected_subject":"أسس علم التمريض (2)","expected_document":"جميع مجاضرات اسس 2 نظري","expected_topic":"Urinary diversion"},
+
+  {"id":"skills-medication-abbreviations","question":"اشرح اختصارات Stat وbid وtid وqid وPRN","expected_subject":"أسس علم التمريض (2) (عملي)","expected_document":"اسس علم التمريض 2 عملي","expected_topic":"Medication abbreviations"},
+  {"id":"skills-catheter-ports","question":"ما وظيفة منفذ تصريف البول ومنفذ البالون في القسطرة؟","expected_subject":"أسس علم التمريض (2) (عملي)","expected_document":"اسس علم التمريض 2 عملي","expected_topic":"Urinary catheter ports"},
+  {"id":"skills-ng-preparation","question":"كيف نهيئ المريض قبل إدخال أنبوب NG لتقليل القلق؟","expected_subject":"أسس علم التمريض (2) (عملي)","expected_document":"اسس علم التمريض 2 عملي","expected_topic":"Nasogastric tube client preparation"},
+  {"id":"skills-deltoid","question":"لماذا يعد موضع Deltoid أقل مواضع الحقن العضلي استخدامًا؟","expected_subject":"أسس علم التمريض (2) (عملي)","expected_document":"اسس علم التمريض 2 عملي","expected_topic":"Deltoid intramuscular injection site"},
+
+  {"id":"micro-gram-stain","question":"إلى ماذا يصنف Gram stain البكتيريا؟","expected_subject":"الأحياء الدقيقة","expected_document":"مجمع المطلوب من الأحياء","expected_topic":"Gram stain"},
+  {"id":"micro-halogens","question":"اشرح تأثير Halogens مثل iodine وchlorine في مكافحة الأحياء الدقيقة","expected_subject":"الأحياء الدقيقة","expected_document":"مجمع المطلوب من الأحياء","expected_topic":"Halogens"},
+  {"id":"micro-zygospore","question":"كيف يتكون Zygospore؟","expected_subject":"الأحياء الدقيقة","expected_document":"مجمع المطلوب من الأحياء","expected_topic":"Zygospore"},
+  {"id":"micro-tdp-tdt","question":"ما الفرق بين Thermal death point وThermal death time؟","expected_subject":"الأحياء الدقيقة","expected_document":"مجمع المطلوب من الأحياء","expected_topic":"Microbial heat control"},
+
+  {"id":"assessment-pulse-volume","question":"كيف يتم تصنيف pulse volume عندما يكون النبض غائبًا أو ضعيفًا؟","expected_subject":"التقييم الصحي التمريضي","expected_document":"تقييم صحي (2)","expected_topic":"Pulse volume grading"},
+  {"id":"assessment-carpal-tunnel","question":"ما اختبارا Tinel وPhalen المستخدمان لتقييم carpal tunnel syndrome؟","expected_subject":"التقييم الصحي التمريضي","expected_document":"تقييم صحي (2)","expected_topic":"Carpal tunnel syndrome tests"},
+  {"id":"assessment-diaphragm","question":"كيف يفحص الممرض diaphragmatic excursion بالقرع؟","expected_subject":"التقييم الصحي التمريضي","expected_document":"تقييم صحي (2)","expected_topic":"Diaphragmatic excursion"},
+  {"id":"assessment-apical-impulse","question":"متى قد يصعب جس apical impulse؟","expected_subject":"التقييم الصحي التمريضي","expected_document":"تقييم صحي (2)","expected_topic":"Apical impulse"},
+
+  {"id":"anatomy-temperature","question":"ماذا يحدث للتفاعلات الأيضية عندما تنخفض حرارة الجسم عن 37 درجة؟","expected_subject":"علم التشريح ووظائف الأعضاء (1)","expected_document":"تشريح_1_كاملة","expected_topic":"Normal body temperature"},
+  {"id":"anatomy-abdominopelvic-trauma","question":"لماذا تكون أعضاء البطن والحوض معرضة للإصابة عند الرضوض؟","expected_subject":"علم التشريح ووظائف الأعضاء (1)","expected_document":"تشريح_1_كاملة","expected_topic":"Abdominopelvic trauma"},
+  {"id":"anatomy-axon-terminals","question":"ماذا تحتوي axonal terminals وكيف تنتقل الإشارة إلى العصبون التالي؟","expected_subject":"علم التشريح ووظائف الأعضاء (1)","expected_document":"تشريح_1_كاملة","expected_topic":"Axons and nerve impulses"},
+  {"id":"anatomy-skull-growth","question":"كيف يتغير حجم الجمجمة من الولادة حتى عمر تسع سنوات؟","expected_subject":"علم التشريح ووظائف الأعضاء (1)","expected_document":"تشريح_1_كاملة","expected_topic":"Skull growth"},
+
+  {"id":"psychology-stm","question":"ما خصائص الذاكرة قصيرة المدى Short-Term Memory؟","expected_subject":"علم النفس","expected_document":"Psychology for nurses","expected_topic":"Short-term memory"},
+  {"id":"psychology-confrontation","question":"كيف تساعد المواجهة Confrontation في التعامل مع الضغط النفسي؟","expected_subject":"علم النفس","expected_document":"Psychology for nurses","expected_topic":"Coping with stress"},
+  {"id":"psychology-educational","question":"ما مجال عمل Educational and school psychology؟","expected_subject":"علم النفس","expected_document":"Psychology for nurses","expected_topic":"Educational psychology"},
+  {"id":"psychology-forensic","question":"ما المقصود بعلم النفس الجنائي Forensic psychology؟","expected_subject":"علم النفس","expected_document":"Psychology for nurses","expected_topic":"Forensic psychology"},
+
+  {"id":"terminology-phobia","question":"ماذا تعني اللاحقة الطبية -phobia؟ أعط مثالًا من المحاضرة","expected_subject":"مصطلحات طبية","expected_document":"اجمالي محاضرات مصطلحات طبية","expected_topic":"Suffix -phobia"},
+  {"id":"terminology-plegia","question":"ماذا تعني اللاحقة -plegia وما معنى Hemiplegia؟","expected_subject":"مصطلحات طبية","expected_document":"اجمالي محاضرات مصطلحات طبية","expected_topic":"Suffix -plegia"}
+]
