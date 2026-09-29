@@ -49,6 +49,12 @@ export default async function AdminKnowledgePage() {
         from message_ai_traces t join conversations c on c.id=t.conversation_id where c.subject_id=s.id),0)::int as retrieval_success
     from subjects s left join documents d on d.subject_id=s.id
     where s.status='active' group by s.id,s.name_ar order by s.sort_order,s.name_ar`);
+  const refusalMetrics=await getPool().query<{total:number;unnecessary:number;rate:number}>(`
+    select count(*)::int as total,
+      count(*) filter(where diagnostics_json->>'unnecessaryRefusalCandidate'='true')::int as unnecessary,
+      coalesce(round(100.0*count(*) filter(where diagnostics_json->>'unnecessaryRefusalCandidate'='true')/nullif(count(*),0)),0)::int as rate
+    from message_ai_traces`);
+  const refusal=refusalMetrics.rows[0]??{total:0,unnecessary:0,rate:0};
 
   const [{ data: documents }, { data: subjects }, { data: allSubjects }] = await Promise.all([
     db
@@ -73,6 +79,11 @@ export default async function AdminKnowledgePage() {
         اختر «إعادة المعالجة» للملفات القديمة لإعادة قراءة الصفحات المصورة وتحسين تقسيم النص.
         القراءة البصرية قد تخطئ في النصوص غير الواضحة؛ راجع جودة النسخة الأصلية.
       </p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border bg-card p-4"><p className="text-xs text-muted-foreground">إجابات تم تتبعها</p><p className="text-2xl font-bold">{refusal.total}</p></div>
+        <div className="rounded-xl border bg-card p-4"><p className="text-xs text-muted-foreground">رفض مع وجود دليل</p><p className="text-2xl font-bold">{refusal.unnecessary}</p></div>
+        <div className="rounded-xl border bg-card p-4"><p className="text-xs text-muted-foreground">Unnecessary Refusal Rate</p><p className="text-2xl font-bold">{refusal.rate}%</p></div>
+      </div>
 
       <div className="overflow-x-auto rounded-xl border border-border bg-card">
         <Table>

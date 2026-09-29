@@ -279,7 +279,17 @@ export async function saveAITrace(input: {
   selectedModel?:string|null; fallbackUsed:boolean; finalSourceIds:string[]; refusalReason?:string|null;
   diagnostics?:Record<string,unknown>;
 }) {
-  await getPool().query(
+  const pool=getPool();
+  const hasAvailableEvidence=input.retrievedSources.length>0 || input.attachmentIds.length>0;
+  const diagnostics={...input.diagnostics,unnecessaryRefusalCandidate:input.evidenceCoverage==="UNSUPPORTED"&&hasAvailableEvidence};
+  if(diagnostics.unnecessaryRefusalCandidate){
+    const previous=await pool.query<{count:number}>(`select count(*)::int as count from (
+      select evidence_coverage,attachment_ids,retrieved_sources_json from message_ai_traces
+      where conversation_id=$1 order by created_at desc limit 2) recent
+      where evidence_coverage='UNSUPPORTED' and (jsonb_array_length(attachment_ids)>0 or jsonb_array_length(retrieved_sources_json)>0)`,[input.conversationId]);
+    if((previous.rows[0]?.count??0)>=1)Object.assign(diagnostics,{event:"REPEATED_UNNECESSARY_REFUSAL"});
+  }
+  await pool.query(
     `insert into message_ai_traces(message_id,conversation_id,user_id,resolved_query,detected_subject,
       active_attachment_id,attachment_ids,retrieved_sources_json,reranked_sources_json,evidence_coverage,
       selected_provider,selected_model,fallback_used,final_source_ids_json,refusal_reason,diagnostics_json)
@@ -291,6 +301,6 @@ export async function saveAITrace(input: {
     [input.messageId,input.conversationId,input.userId,input.resolvedQuery,input.detectedSubject ?? null,
       input.activeAttachmentId ?? null,JSON.stringify(input.attachmentIds),JSON.stringify(input.retrievedSources),
       JSON.stringify(input.rerankedSources),input.evidenceCoverage,input.selectedProvider ?? null,input.selectedModel ?? null,
-      input.fallbackUsed,JSON.stringify(input.finalSourceIds),input.refusalReason ?? null,JSON.stringify(input.diagnostics ?? {})]
+      input.fallbackUsed,JSON.stringify(input.finalSourceIds),input.refusalReason ?? null,JSON.stringify(diagnostics)]
   );
 }
