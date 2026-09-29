@@ -25,7 +25,7 @@ for(const evidence of [ [{sourceId:"S9",quote:source.content}], [{sourceId:"S1",
   });
 }
 test("a real quote does not authorize an unsupported medical claim or memory fact",async()=>{
-  const ai=fake([plan,{status:"answer",paragraphs:[{...paragraph,text:"Use an unsupported dose."}]},{supported:false,conflict:false}]);
+  const ai=fake([plan,{status:"answer",paragraphs:[{...paragraph,text:"Use an unsupported dose."}]},{supported:false,conflict:false,reason:"Unsupported dose"},{status:"insufficient",paragraphs:[]}]);
   const result=await answerFromCurriculum({...input,personalization:"Previous answer says use this dose"},{provider:ai.provider,retrieve:async()=>[source]});
   assert.equal(result.reason,"LOW_CONFIDENCE");assert.doesNotMatch(result.content,/unsupported dose/);
 });
@@ -62,4 +62,18 @@ test("reranker cannot invent a source ID or expose an answer when no candidate i
   const none=fake([plan,{sourceIds:[]}]);
   const result=await answerFromCurriculum(input,{provider:none.provider,retrieve:async()=>candidates});
   assert.equal(result.reason,"LOW_CONFIDENCE");assert.equal(none.calls,2);
+});
+
+test("repairs a broad chapter request into a limited evidence-backed explanation",async()=>{
+  const insufficient={status:"insufficient",paragraphs:[]};
+  const ai=fake([plan,insufficient,{status:"answer",paragraphs:[paragraph]},{supported:true,conflict:false}]);
+  const result=await answerFromCurriculum({...input,question:"اشرحلي الشابتر الأول"},{provider:ai.provider,retrieve:async()=>[source]});
+  assert.equal(result.reason,undefined);assert.match(result.content,/التقييم عملية منظمة/);assert.equal(ai.calls,4);
+});
+
+test("repairs an unsupported draft and verifies the repaired answer again",async()=>{
+  const bad={status:"answer",paragraphs:[{...paragraph,text:"Unsupported extra claim"}]};
+  const ai=fake([plan,bad,{supported:false,conflict:false,reason:"Extra claim is unsupported"},{status:"answer",paragraphs:[paragraph]},{supported:true,conflict:false}]);
+  const result=await answerFromCurriculum(input,{provider:ai.provider,retrieve:async()=>[source]});
+  assert.equal(result.reason,undefined);assert.doesNotMatch(result.content,/Unsupported/);assert.equal(ai.calls,5);
 });

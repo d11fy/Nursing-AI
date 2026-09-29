@@ -15,7 +15,11 @@ const draftSchema = z.object({
     evidence: z.array(z.object({ sourceId: z.string(), quote: z.string().min(12).max(1500) })).min(1).max(4),
   })).max(10),
 });
-const verificationSchema = z.object({ supported: z.boolean(), conflict: z.boolean() });
+const verificationSchema = z.object({
+  supported: z.boolean(),
+  conflict: z.boolean(),
+  reason: z.string().max(1200).optional(),
+});
 const rankingSchema = z.object({ sourceIds:z.array(z.string()).max(8) });
 type Draft = z.infer<typeof draftSchema>;
 export type GroundedResult = GenerateResult & {
@@ -71,6 +75,13 @@ negations, causal claims, and comparisons against the cited source. A matching q
 Set supported=false if any claim is unsupported, contradicted, fabricated, outside the question, or if evidence is insufficient to answer.
 Set conflict=true if the supplied relevant sources disagree in a clinically/materially important way.
 Neither student history nor medical knowledge outside the supplied excerpts is admissible. Return JSON only.`;
+const REPAIR_PROMPT = `${ANSWER_PROMPT}
+This is a repair pass after a cautious evidence audit rejected the first draft.
+Give a useful LIMITED explanation from the supplied excerpts instead of refusing merely because they do not cover an entire chapter.
+Remove every unsupported detail. For broad requests such as "explain chapter one", summarize only the topics actually present in the excerpts,
+state naturally that this is the available part of the chapter, and offer to continue section by section.
+Copy evidence quotes exactly, without translating, correcting spelling, changing punctuation, or adding ellipses.
+If the excerpts truly contain no fact that answers the request, return insufficient. Output ONLY the specified JSON.`;
 
 const normalizedQuote = (s: string) => s.normalize("NFC").replace(/\s+/g," ").trim();
 export function hasValidEvidence(draft: Draft, sources: KnowledgeChunk[]): boolean {
@@ -182,18 +193,36 @@ export async function answerFromCurriculum(input: {
     return {...source,content};
   }).filter(s => s.content.trim());
   const sourceData = sources.map((s,i) => ({id:`S${i+1}`,title:s.title,subject:s.subjectName,type:s.sourceType,page:s.pageNumber,text:s.content}));
-  const draft = await structured(draftSchema,"curriculum_answer",ANSWER_PROMPT,{
+  const answerInput = {
     question:input.question,standaloneQuestion:plan.standaloneQuestion,
     studentPreferencesAndContext:input.personalization.slice(0,2500),sources:sourceData,
-  },5000);
+  };
+  let draft = await structured(draftSchema,"curriculum_answer",ANSWER_PROMPT,answerInput,5000);
   if (draft.status === "conflict") return finish(GROUNDED_RESPONSES.conflict,"LOW_CONFIDENCE");
   if (draft.status === "non_nursing") return finish(GROUNDED_RESPONSES.scope,"NON_NURSING");
   if (draft.status === "ambiguous") return finish(GROUNDED_RESPONSES.ambiguous,"LOW_CONFIDENCE");
+  if (draft.status === "insufficient") {
+    draft = await structured(draftSchema,"curriculum_answer_repair",REPAIR_PROMPT,{
+      ...answerInput, rejectedDraft:draft,
+      auditReason:"The first draft refused a broad request. Produce a limited explanation only from facts present in the excerpts.",
+    },5000);
+  }
   if (!hasValidEvidence(draft,sources)) return finish(GROUNDED_RESPONSES.uncertain,"LOW_CONFIDENCE");
-  const verification = await structured(verificationSchema,"evidence_check",VERIFY_PROMPT,{
+  let verification = await structured(verificationSchema,"evidence_check",VERIFY_PROMPT,{
     question:plan.standaloneQuestion,sources:sourceData,answer:draft.paragraphs,
-  },1500);
+  },1800);
   if (verification.conflict) return finish(GROUNDED_RESPONSES.conflict,"LOW_CONFIDENCE");
-  if (!verification.supported) return finish(GROUNDED_RESPONSES.uncertain,"LOW_CONFIDENCE");
+  if (!verification.supported) {
+    draft = await structured(draftSchema,"curriculum_answer_repair",REPAIR_PROMPT,{
+      ...answerInput, rejectedDraft:draft,
+      auditReason:verification.reason || "The draft contained claims that were not fully supported by its cited excerpts.",
+    },5000);
+    if (!hasValidEvidence(draft,sources)) return finish(GROUNDED_RESPONSES.uncertain,"LOW_CONFIDENCE");
+    verification = await structured(verificationSchema,"evidence_check",VERIFY_PROMPT,{
+      question:plan.standaloneQuestion,sources:sourceData,answer:draft.paragraphs,
+    },1800);
+    if (verification.conflict) return finish(GROUNDED_RESPONSES.conflict,"LOW_CONFIDENCE");
+    if (!verification.supported) return finish(GROUNDED_RESPONSES.uncertain,"LOW_CONFIDENCE");
+  }
   return finish(renderCitedAnswer(draft,sources));
 }
