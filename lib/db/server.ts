@@ -1,6 +1,6 @@
 import "server-only";
 import { currentProfile } from "@/lib/auth/session";
-import { getPool, transaction } from "./pool";
+import { transaction } from "./pool";
 import { Query, type Actor } from "./query";
 import type { Database } from "@/types/database";
 
@@ -17,7 +17,10 @@ export class DatabaseClient {
   constructor(readonly actor: Actor, readonly system = false) {}
   readonly auth = { getUser: async () => ({ data: { user: this.actor ? { id: this.actor.user_id } : null } }) };
   from<T extends keyof Tables>(table: T) {
-    return new Query(table, this.actor, this.system, (sql, values) => getPool().query(sql, values));
+    return new Query(table, this.actor, this.system, (sql, values) => transaction(async client => {
+      await client.query("SELECT set_config('app.user_id',$1,true),set_config('app.ai_worker',$2,true)", [this.actor?.user_id ?? '', this.system ? 'on' : 'off']);
+      return client.query(sql, values);
+    }));
   }
   async rpc<F extends keyof Functions>(name: F, args?: Functions[F]["Args"]): Promise<{ data: Functions[F]["Returns"] | null; error: { message: string } | null }> {
     try {

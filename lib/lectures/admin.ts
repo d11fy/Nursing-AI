@@ -1,5 +1,5 @@
 import "server-only";
-import { getPool } from "@/lib/db/pool";
+import {workerDb} from "@/lib/tutor/db";
 import type { LectureStatus, LectureContributionStatus } from "@/types/database";
 
 export type AdminLectureRow = {
@@ -39,7 +39,7 @@ export async function getAdminLectures(filters: {
   if (filters.expiringSoon) where.push(`l.delete_after IS NOT NULL AND l.deleted_at IS NULL AND l.delete_after <= now() + interval '3 days'`);
   if (filters.contributionStatus) where.push(`l.contribution_status = ${bind(filters.contributionStatus)}`);
 
-  const { rows } = await getPool().query<AdminLectureRow>(
+  const { rows } = await workerDb.query<AdminLectureRow>(
     `SELECT l.id, l.title, l.file_name, l.file_size_bytes, l.status, l.uploaded_at, l.delete_after, l.deleted_at, l.contribution_status,
        p.full_name AS student_name, p.email AS student_email,
        s.id AS subject_id, s.name_ar AS subject_name,
@@ -64,7 +64,7 @@ export type LectureStorageStats = {
 };
 
 export async function getLectureStorageStats(): Promise<LectureStorageStats> {
-  const { rows } = await getPool().query<{
+  const { rows } = await workerDb.query<{
     total_storage: string; large_count: string; scheduled_count: string; deleted_month: string; failed_count: string;
   }>(
     `SELECT
@@ -103,7 +103,7 @@ export type AdminContributionRow = {
 };
 
 export async function getAdminContributions(status: "pending" | "approved" | "rejected" = "pending"): Promise<AdminContributionRow[]> {
-  const { rows } = await getPool().query<AdminContributionRow>(
+  const { rows } = await workerDb.query<AdminContributionRow>(
     `SELECT c.id, c.lecture_id, l.title AS lecture_title, l.file_name, l.mime_type, l.file_size_bytes,
        p.full_name AS student_name, p.email AS student_email, s.name_ar AS subject_name,
        c.classification, c.classification_confidence, c.privacy_flagged, c.status, c.created_at
@@ -119,8 +119,8 @@ export async function getAdminContributions(status: "pending" | "approved" | "re
 }
 
 export async function getContributionPreview(lectureId: string): Promise<string> {
-  const { rows } = await getPool().query<{ content: string }>(
-    `SELECT content FROM lecture_chunks WHERE lecture_id=$1 ORDER BY chunk_index ASC LIMIT 5`,
+  const { rows } = await workerDb.query<{ content: string }>(
+    `SELECT c.content FROM knowledge_chunks c join knowledge_documents d on d.id=c.document_id WHERE d.lecture_id=$1 ORDER BY c.chunk_index ASC LIMIT 5`,
     [lectureId]
   );
   return rows.map((r) => r.content).join("\n\n");

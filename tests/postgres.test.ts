@@ -1,6 +1,7 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from '@electric-sql/pglite-pgvector';
 import { Query, type Actor, type Executor } from "../lib/db/query";
 import { hashPassword, verifyPassword, newToken, tokenHash } from "../lib/auth/password";
 import { migrate } from "../scripts/migrate.mjs";
@@ -16,7 +17,7 @@ import { runLectureCleanupSweep } from "../lib/lectures/retention";
 import { submitContributionIfRequested } from "../lib/lectures/contribution";
 import { classifyLectureContent } from "../lib/ai/classification";
 
-const db = new PGlite();
+const db = new PGlite({extensions:{vector}});
 const executor: Executor = (sql, values) => db.query(sql, values);
 const migrationClient = { query: async (sql: string, values?: unknown[]) => {
   if (!values && (sql.includes(";") || sql.includes("--"))) { await db.exec(sql); return { rows: [] }; }
@@ -29,6 +30,7 @@ let conversation: string;
 let message: string;
 
 before(async () => {
+  process.env.AI_ARCHITECTURE='legacy';
   process.env.DATABASE_URL = "postgresql://integration-test-only";
   process.env.AUTH_SECRET = "integration-test-secret-".repeat(3);
   process.env.APP_URL = "https://nursing.example.test";
@@ -52,7 +54,7 @@ after(() => db.close());
 
 test("migration can rerun without losing users or duplicating seeds", async () => {
   await migrate(migrationClient);
-  assert.equal((await db.query<{ n: number }>("SELECT count(*)::int n FROM subjects")).rows[0].n, 8);
+  assert.equal((await db.query<{ n: number }>("SELECT count(*)::int n FROM subjects")).rows[0].n, 64);
   assert.equal((await db.query<{ n: number }>("SELECT count(*)::int n FROM app_users")).rows[0].n, 3);
   assert.equal((await db.query<{ n: number }>("SELECT count(*)::int n FROM academic_years")).rows[0].n, 4);
 });
@@ -63,8 +65,11 @@ test("academic years filter subjects and enforce direct access server-side", asy
   await setStudentAcademicYear(bob.user_id, byCode.get("third_year")!);
   const first = await getStudentSubjects(alice.user_id);
   const third = await getStudentSubjects(bob.user_id);
-  assert.deepEqual(first.subjects.map(s => s.name_en).sort(), ["Anatomy & Physiology", "Fundamentals of Nursing"]);
-  assert.deepEqual(third.subjects.map(s => s.name_en).sort(), ["Maternity Nursing", "Pediatric Nursing"]);
+  assert.equal(first.subjects.length,17);
+  assert.ok(first.subjects.some(s=>s.name_en==="Anatomy & Physiology"));
+  assert.ok(first.subjects.some(s=>s.course_code==="NURS 1305"));
+  assert.equal(third.subjects.length,15);
+  assert.ok(third.subjects.some(s=>s.name_en==="Pediatric Nursing"));
   const pediatrics = third.subjects.find(s => s.name_en === "Pediatric Nursing")!;
   assert.equal(await canStudentAccessSubject(alice.user_id, pediatrics.id), false);
   assert.ok((await new Query("conversations", alice, false, executor).insert({ user_id: alice.user_id, subject_id: pediatrics.id })).error);
@@ -152,13 +157,15 @@ test("RAG uses standard PostgreSQL arrays without pgvector", async () => {
 });
 
 test("RAG isolates provider, model and dimensions, excluding legacy vectors", async () => {
-  const doc = await new Query("documents", admin, false, executor).insert({ title: "Local", file_url: "knowledge/local", file_name: "local.txt", status: "ready" }).single();
+  const ownSubject=(await db.query<{id:string}>("insert into subjects(name_ar,name_en) values('محلي','Local Fixture') returning id")).rows[0].id;
+  const doc = await new Query("documents", admin, false, executor).insert({subject_id:ownSubject, title: "Local", file_url: "knowledge/local", file_name: "local.txt", status: "ready" }).single();
   const vector = Array.from({ length: 1536 }, (_, i) => i === 0 ? 1 : 0);
   for (const [provider, model, dimension] of [["openai", "text-embedding-3-small", 1536], ["openai", "text-embedding-3-large", 3072], ["custom", "test-model", 1536]] as const) {
     await db.query("INSERT INTO document_chunks(document_id,content,chunk_index,embedding,embedding_provider,embedding_model,embedding_dimensions) VALUES($1,$2,0,$3,$4,$5,$6)", [doc.data!.id, `${provider}/${model}/${dimension}`, Array.from({ length: dimension }, (_, i) => i === 0 ? 1 : 0), provider, model, dimension]);
   }
   await db.query("INSERT INTO document_chunks(document_id,content,chunk_index,embedding) VALUES($1,'legacy',0,$2)", [doc.data!.id, vector]);
-  const found = await new DatabaseClient(null, true).rpc("match_document_chunks", { query_embedding: vector, query_provider: "openai", query_model: "text-embedding-3-small", match_subject_id: null, match_count: 5 });
+  await db.query("update document_chunks set subject_id=$2 where document_id=$1",[doc.data!.id,ownSubject]);
+  const found = await new DatabaseClient(null, true).rpc("match_document_chunks", { query_embedding: vector, query_provider: "openai", query_model: "text-embedding-3-small", match_subject_id: doc.data!.subject_id, match_count: 5 });
   assert.equal(found.error, null);
   assert.equal(found.data?.length, 1);
   assert.equal(found.data?.[0].content, "openai/text-embedding-3-small/1536");
@@ -367,8 +374,7 @@ test("a non-nursing contribution is auto-rejected and never reaches the shared k
   );
 
   const fetchMock = t.mock.method(globalThis, "fetch", async () => Response.json({
-    message: { content: JSON.stringify({ classification: "NOT_NURSING", confidence: 0.9, contains_personal_data: false }) },
-    done: true,
+    status:"completed",model:"gpt-6-luna",output:[],output_text:JSON.stringify({ classification: "NOT_NURSING", confidence: 0.9, contains_personal_data: false }),usage:{input_tokens:10,output_tokens:10},
   }));
   try {
     await submitContributionIfRequested(lectureId);

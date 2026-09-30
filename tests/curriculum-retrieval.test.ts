@@ -1,12 +1,13 @@
 import { before, after, test } from "node:test";
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from '@electric-sql/pglite-pgvector';
 import { migrate } from "../scripts/migrate.mjs";
 import { getAIProvider } from "../lib/ai";
 import { retrieveCurriculum, searchTerms } from "../lib/ai/curriculum-search";
 import { processDocument } from "../lib/knowledge";
 
-const db = new PGlite();
+const db = new PGlite({extensions:{vector}});
 const alice = "10000000-0000-4000-8000-000000000001";
 const bob = "10000000-0000-4000-8000-000000000002";
 const execute = async (sql:string,values?:unknown[]) => {
@@ -18,7 +19,8 @@ before(async()=>{
   process.env.DATABASE_URL="postgresql://test-only";
   process.env.OPENAI_API_KEY="test-only";
   process.env.AI_PROVIDER="openai";
-  process.env.OPENAI_EMBEDDING_MODEL="test-embedding";
+  process.env.OPENAI_EMBEDDING_MODEL='text-embedding-3-small';
+  process.env.AI_ARCHITECTURE='legacy';
   Object.assign(globalThis,{nursingPool:{query:execute,connect:async()=>({query:execute,release(){}})}});
   await migrate({query:execute});
   const years=(await db.query<{id:string}>("SELECT id FROM academic_years ORDER BY sort_order")).rows;

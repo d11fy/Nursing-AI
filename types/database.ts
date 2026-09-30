@@ -3,6 +3,7 @@ export type UserRole = "student" | "admin";
 export type UserStatus = "active" | "suspended";
 export type MessageRole = "user" | "assistant" | "system";
 export type SourceType =
+  | 'university_lecture' | 'doctor_slides' | 'official_course_material' | 'required_textbook' | 'lab_manual' | 'exam_questions' | 'approved_notes' | 'student_private_file'
   | "BOOK"
   | "UNIVERSITY_LECTURE"
   | "DOCTOR_SLIDES"
@@ -192,10 +193,15 @@ export type Message = {
   tokens_input: number;
   tokens_output: number;
   model: string | null;
+  answer_origin?:string|null;
+  source_ids?:unknown;
   created_at: string;
 };
 
 export type MessageFeedback = {
+  subject_id?:string|null;
+  answer_origin?:string|null;
+  source_ids?:unknown;
   id: string;
   message_id: string;
   user_id: string;
@@ -463,6 +469,9 @@ export type AIProviderSetting = {
 };
 
 export type UsageLog = {
+  cached_input_tokens?:number;
+  reasoning_effort?:string|null;
+  pricing_version?:string|null;
   id: string;
   user_id: string;
   type: UsageType;

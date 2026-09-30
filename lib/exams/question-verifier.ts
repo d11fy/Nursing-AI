@@ -1,13 +1,12 @@
 import "server-only";
 import { z } from "zod";
-import { getPool } from "@/lib/db/pool";
+import {workerDb} from "@/lib/tutor/db";
+import {logUsage} from "@/lib/usage";
+import {understandQuery} from "@/lib/tutor/retrieval";
 import { routeAIRequest, getProviderByName } from "@/lib/ai/router";
 import { executeWithFallback } from "@/lib/ai/fallback";
 import { extractJson } from "@/lib/ai/json";
-import { getAIConfig } from "@/lib/ai/config.mjs";
 import { getAIProvider } from "@/lib/ai";
-import { searchTerms } from "@/lib/ai/curriculum-search";
-import { getSourcePriority } from "./priorities";
 import type {
   QuestionVerificationStatus,
   SupportType,
@@ -77,136 +76,27 @@ export function validQuestionEvidence(sourceContent: string, quote: string | nul
 /**
  * Searches curriculum documents (Books, Lectures, Official Material) for the question.
  */
-async function retrieveCurriculumEvidence(
-  subjectId: string,
-  questionText: string,
-  options: string[]
-): Promise<Array<{
-  chunkId: string;
-  documentId: string;
-  documentTitle: string;
-  sourceType: string;
-  priority: number;
-  pageNumber: number | null;
-  content: string;
-  similarity: number;
-}>> {
-  const pool = getPool();
-  const queryText = `${questionText} ${options.slice(0, 4).join(" ")}`.slice(0, 1000);
-
-  try {
-    // 1. Generate embedding for question
-    let queryEmbedding: number[] = [];
-    const config = getAIConfig();
-    let embeddingProvider = config.provider;
-    let embeddingModel = config.embeddingModel;
-    try {
-      const aiProvider = getAIProvider();
-      const embResult = await aiProvider.createEmbeddings([queryText]);
-      if (embResult.length && embResult[0].embedding.length) {
-        queryEmbedding = embResult[0].embedding;
-        embeddingProvider = aiProvider.name;
-        embeddingModel = embResult[0].model;
-      }
-    } catch (err) {
-      console.warn("[QuestionVerifier] Embedding retrieval error, using lexical fallback:", err);
-    }
-
-    const hasEmbedding = queryEmbedding.length > 0;
-    const safeSearchText = searchTerms(questionText);
-
-    let sql = "";
-    let params: unknown[] = [];
-
-    if (hasEmbedding) {
-      sql = `
-        WITH candidates AS (
-          SELECT
-            dc.id AS chunk_id,
-            dc.document_id,
-            d.title AS doc_title,
-            d.source_type,
-            dc.page_number,
-            dc.content,
-            CASE WHEN dc.embedding_provider = $4 AND dc.embedding_model = $5
-              AND dc.embedding_dimensions = cardinality($2::double precision[])
-              THEN public.cosine_similarity(dc.embedding, $2::double precision[])
-              ELSE NULL END AS similarity,
-            ts_rank_cd(dc.search_vector, to_tsquery('simple', $3)) AS text_score
-          FROM public.document_chunks dc
-          JOIN public.documents d ON d.id = dc.document_id
-          WHERE d.subject_id = $1
-            AND d.status = 'ready'
-            AND upper(d.source_type) NOT IN ('PAST_EXAM', 'QUESTION_BANK', 'QUESTIONS')
-            AND ((dc.embedding_provider = $4 AND dc.embedding_model = $5
-              AND dc.embedding_dimensions = cardinality($2::double precision[]))
-              OR ($3 <> '' AND dc.search_vector @@ to_tsquery('simple', $3)))
-        )
-        SELECT *
-        FROM candidates
-        WHERE similarity > 0.25 OR text_score > 0
-        ORDER BY coalesce(similarity, 0) + text_score DESC, chunk_id
-        LIMIT 10;
-      `;
-      params = [subjectId, queryEmbedding, safeSearchText, embeddingProvider, embeddingModel];
-    } else {
-      sql = `
-        WITH candidates AS (
-          SELECT
-            dc.id AS chunk_id,
-            dc.document_id,
-            d.title AS doc_title,
-            d.source_type,
-            dc.page_number,
-            dc.content,
-            0.5::double precision AS similarity,
-            ts_rank_cd(dc.search_vector, to_tsquery('simple', $2)) AS text_score
-          FROM public.document_chunks dc
-          JOIN public.documents d ON d.id = dc.document_id
-          WHERE d.subject_id = $1
-            AND d.status = 'ready'
-            AND upper(d.source_type) NOT IN ('PAST_EXAM', 'QUESTION_BANK', 'QUESTIONS')
-        )
-        SELECT *
-        FROM candidates
-        WHERE text_score > 0
-        ORDER BY text_score DESC, chunk_id
-        LIMIT 10;
-      `;
-      params = [subjectId, safeSearchText];
-    }
-
-    const { rows } = await pool.query<{
-      chunk_id: string;
-      document_id: string;
-      doc_title: string;
-      source_type: string;
-      page_number: number | null;
-      content: string;
-      similarity: number;
-    }>(sql, params);
-
-    return rows.map((r) => ({
-      chunkId: r.chunk_id,
-      documentId: r.document_id,
-      documentTitle: r.doc_title,
-      sourceType: r.source_type,
-      priority: getSourcePriority(r.source_type),
-      pageNumber: r.page_number,
-      content: r.content,
-      similarity: Number(r.similarity) || 0,
-    }));
-  } catch (err) {
-    console.error("[QuestionVerifier] retrieveCurriculumEvidence error:", err);
-    return [];
-  }
+async function retrieveCurriculumEvidence(subjectId:string,questionText:string,options:string[],userId?:string) {
+ const queryText=`${questionText} ${options.slice(0,4).join(' ')}`.slice(0,1500),query=understandQuery(queryText),ai=getAIProvider();
+ const embedded=await ai.createEmbedding(queryText);
+ if(userId)await logUsage({userId,type:'embedding',feature:'exam_retrieval',provider:'openai',model:embedded.model,inputTokens:embedded.tokens,outputTokens:0,estimatedCost:ai.calculateCost({model:embedded.model,inputTokens:embedded.tokens,outputTokens:0})});
+ const rows=(await workerDb.query<{chunk_id:string;document_id:string;doc_title:string;source_type:string;source_priority:number;page_number:number|null;content:string;similarity:number}>(`
+ with eligible as materialized (select k.* from knowledge_chunks k join knowledge_documents d on d.id=k.document_id where d.subject_id=$1 and d.owner_id is null and d.is_active and d.status='ready' and d.source_type<>'exam_questions'),
+ semantic as(select id,row_number() over(order by embedding <=> $2::vector) n from eligible order by embedding <=> $2::vector limit 25),
+ lexical as(select id,row_number() over(order by ts_rank_cd(search_vector,to_tsquery('simple',$3)) desc) n from eligible where $3<>'' and search_vector @@ to_tsquery('simple',$3) limit 25)
+ select k.id chunk_id,d.legacy_document_id document_id,d.title doc_title,d.source_type,d.source_priority,k.page_number,k.content,1-(k.embedding <=> $2::vector) similarity
+ from eligible k join knowledge_documents d on d.id=k.document_id left join semantic v on v.id=k.id left join lexical l on l.id=k.id
+ where (v.id is not null or l.id is not null) and d.legacy_document_id is not null
+ order by coalesce(1.0/(60+v.n),0)+coalesce(1.0/(60+l.n),0)+d.source_priority*0.00003 desc limit 10`,[subjectId,`[${embedded.embedding.join(',')}]`,query.lexical])).rows;
+ return rows.map(r=>({chunkId:r.chunk_id,documentId:r.document_id,documentTitle:r.doc_title,sourceType:r.source_type,priority:r.source_priority,pageNumber:r.page_number,content:r.content,similarity:r.similarity}));
 }
 
 /**
  * Strict verification of an exam question against official curriculum evidence.
- * Does NOT hardcode OpenAI; uses the multi-provider AI Router with COMPLEX reasoning.
+ * Uses the shared pgvector index and one GPT-6 Luna Responses request.
  */
 export async function verifyExamQuestion(input: {
+  userId?: string;
   subjectId: string;
   questionText: string;
   questionType: string;
@@ -219,7 +109,7 @@ export async function verifyExamQuestion(input: {
     const candidates = await retrieveCurriculumEvidence(
       input.subjectId,
       input.questionText,
-      input.options
+      input.options, input.userId
     );
 
     // If no curriculum evidence found at all, cannot verify -> mark NEEDS_REVIEW
@@ -244,7 +134,7 @@ export async function verifyExamQuestion(input: {
       content: c.content.slice(0, 3000),
     }));
 
-    // Route to the strongest available provider (e.g. OpenAI complex or Gemini flash fallback)
+    // Use the same main model at high reasoning effort.
     const route = routeAIRequest({
       feature: "question_verification",
       complexity: "COMPLEX",
@@ -277,11 +167,12 @@ export async function verifyExamQuestion(input: {
             name: "question_verification",
             schema: z.toJSONSchema(verificationResponseSchema),
           },
-          maxOutputTokens: 3000,
+          maxOutputTokens: 3000,reasoningEffort:"high",feature:"question_verification",
         }),
       operationName: "Verify Exam Question",
     });
 
+    if(input.userId)await logUsage({userId:input.userId,type:'quiz',feature:'question_verification',provider:'openai',model:executed.result.model,inputTokens:executed.result.inputTokens,cachedInputTokens:executed.result.cachedInputTokens,outputTokens:executed.result.outputTokens,reasoningEffort:'high',estimatedCost:primary.calculateCost(executed.result)});
     const parsedJson = JSON.parse(extractJson(executed.result.content));
     const validated = verificationResponseSchema.parse(parsedJson);
 

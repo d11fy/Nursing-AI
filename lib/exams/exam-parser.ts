@@ -1,4 +1,5 @@
 import "server-only";
+import {logUsage} from "@/lib/usage";
 import { z } from "zod";
 import { routeAIRequest, getProviderByName } from "@/lib/ai/router";
 import { executeWithFallback } from "@/lib/ai/fallback";
@@ -78,7 +79,8 @@ Rules:
 export async function parseExamPage(
   pageText: string,
   pageNumber: number | null,
-  subjectName?: string
+  subjectName?: string,
+  userId?:string
 ): Promise<ParsedQuestionRaw[]> {
   const trimmed = pageText.trim();
   if (trimmed.length < 30) return [];
@@ -109,11 +111,12 @@ export async function parseExamPage(
             name: "exam_page_extraction",
             schema: z.toJSONSchema(pageExtractionSchema),
           },
-          maxOutputTokens: 4000,
+          maxOutputTokens: 8000,reasoningEffort:"low",feature:"exam_question_extraction",
         }),
       operationName: `Parse Exam Page ${pageNumber ?? 1}`,
     });
 
+    if(userId)await logUsage({userId,type:'quiz',feature:'exam_question_extraction',provider:'openai',model:executed.result.model,inputTokens:executed.result.inputTokens,cachedInputTokens:executed.result.cachedInputTokens,outputTokens:executed.result.outputTokens,reasoningEffort:'low',estimatedCost:primary.calculateCost(executed.result)});
     const parsedJson = JSON.parse(extractJson(executed.result.content));
     const validated = pageExtractionSchema.safeParse(parsedJson);
 

@@ -78,6 +78,7 @@ export function MessageBubble({ message, showAITrace=false }: { message: ChatMes
               size="icon"
               className={cn("size-7", feedback === "up" && "text-green-600")}
               onClick={() => sendFeedback(true)}
+              disabled={message.id.startsWith('local-')}
             >
               <ThumbsUp className="size-3.5" />
             </Button>
@@ -86,6 +87,7 @@ export function MessageBubble({ message, showAITrace=false }: { message: ChatMes
               size="icon"
               className={cn("size-7", feedback === "down" && "text-red-600")}
               onClick={() => setFeedbackOpen(true)}
+              disabled={message.id.startsWith('local-')}
             >
               <ThumbsDown className="size-3.5" />
             </Button>

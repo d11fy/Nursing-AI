@@ -22,3 +22,14 @@ export function worksheetText(xml: string, strings: string[]): string {
     }).filter(Boolean).join(" | ")
   ).filter(Boolean).join("\n");
 }
+
+export function docxText(xml: string): string {
+  const body = xml.match(/<w:body[^>]*>([\s\S]*?)<\/w:body>/)?.[1] ?? xml;
+  const text = (part:string) => [...part.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g)].map(m=>decodeXmlText(m[1])).join('');
+  return [...body.matchAll(/<w:tbl\b[^>]*>[\s\S]*?<\/w:tbl>|<w:p\b[^>]*>[\s\S]*?<\/w:p>/g)].map(m=> {
+    if(m[0].startsWith('<w:tbl')) return [...m[0].matchAll(/<w:tr\b[^>]*>([\s\S]*?)<\/w:tr>/g)].map(row=>
+      [...row[1].matchAll(/<w:tc\b[^>]*>([\s\S]*?)<\/w:tc>/g)].map(cell=>text(cell[1])).join(' | ')).join('\n');
+    const value=text(m[0]), style=m[0].match(/<w:pStyle[^>]*w:val="([^"]+)"/i)?.[1];
+    return /^heading/i.test(style??'') ? `## ${value}` : /<w:numPr/.test(m[0]) ? `- ${value}` : value;
+  }).filter(Boolean).join('\n\n').trim();
+}

@@ -39,6 +39,12 @@ const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB per chunk
 const MAX_CHUNK_RETRIES = 3;
 
 const SOURCE_TYPES = [
+  {value:'official_course_material',label:'مادة مساق رسمية'},
+  {value:'required_textbook',label:'كتاب المساق المطلوب'},
+  {value:'university_lecture',label:'محاضرة جامعية'},
+  {value:'doctor_slides',label:'سلايدات الدكتور'},
+  {value:'lab_manual',label:'دليل المختبر'},
+  {value:'approved_notes',label:'ملاحظات معتمدة'},
   { value: "BOOK", label: "كتاب معتمد (Book)" },
   { value: "UNIVERSITY_LECTURE", label: "محاضرة جامعية رسمية (University Lecture)" },
   { value: "DOCTOR_SLIDES", label: "سلايدات الدكتور (Doctor Slides)" },
@@ -82,6 +88,8 @@ interface FileQueueItem {
   doctorName?: string;
   examType?: string;
   notes?: string;
+  academicYearId?:string;
+  priority?:number;
 }
 
 function formatBytes(bytes: number): string {
@@ -116,14 +124,18 @@ function formatArabicEta(seconds: number): string {
 
 export function UploadDocumentDialog({
   subjects,
+  academicYears=[],
 }: {
   subjects: { id: string; name_ar: string }[];
+  academicYears?:{id:string;name_ar:string}[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [queue, setQueue] = useState<FileQueueItem[]>([]);
   const [isProcessingQueue, setIsProcessingQueue] = useState(false);
   const [defaultSubjectId, setDefaultSubjectId] = useState<string>(subjects[0]?.id ?? "");
+  const [defaultYear,setDefaultYear]=useState('');
+  const [defaultPriority,setDefaultPriority]=useState('95');
   const [defaultSourceType, setDefaultSourceType] = useState<SourceType>("BOOK");
   const [defaultExamYear, setDefaultExamYear] = useState<string>(new Date().getFullYear().toString());
   const [defaultSemester, setDefaultSemester] = useState<string>("1");
@@ -166,6 +178,7 @@ export function UploadDocumentDialog({
         title: titleWithoutExt,
         subjectId: defaultSubjectId || subjects[0]?.id || "",
         sourceType: defaultSourceType,
+        academicYearId:defaultYear||undefined,priority:Number(defaultPriority),
         examYear: defaultExamYear ? parseInt(defaultExamYear, 10) : undefined,
         semester: defaultSemester ? parseInt(defaultSemester, 10) : undefined,
         doctorName: defaultDoctorName || undefined,
@@ -330,6 +343,7 @@ export function UploadDocumentDialog({
               title: item.title,
               subjectId: item.subjectId,
               sourceType: item.sourceType,
+              academicYearId:item.academicYearId,priority:item.priority,
               fileName: item.file.name,
               fileSize: item.file.size,
               mimeType: item.file.type || "application/octet-stream",
@@ -726,6 +740,14 @@ export function UploadDocumentDialog({
           </div>
 
           {/* Optional Extended Metadata Toggle */}
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-xs">السنة الدراسية<select className="mt-1 w-full rounded border bg-background p-2" value={defaultYear} onChange={event=>{
+              setDefaultYear(event.target.value);setQueue(previous=>previous.map(item=>item.status==='pending'?{...item,academicYearId:event.target.value||undefined}:item));
+            }}><option value="">كل السنوات المعيّنة للمادة</option>{academicYears.map(year=><option key={year.id} value={year.id}>{year.name_ar}</option>)}</select></label>
+            <label className="text-xs">أولوية المصدر (0–100)<Input type="number" min={0} max={100} value={defaultPriority} onChange={event=>{
+              setDefaultPriority(event.target.value);setQueue(previous=>previous.map(item=>item.status==='pending'?{...item,priority:Number(event.target.value)}:item));
+            }}/></label>
+          </div>
           <div className="rounded-xl border border-border/80 bg-muted/20 p-3 space-y-3">
             <button
               type="button"
@@ -752,7 +774,7 @@ export function UploadDocumentDialog({
                 </div>
                 <div>
                   <Label className="text-[11px] text-muted-foreground block mb-1">الفصل الدراسي</Label>
-                  <Select value={defaultSemester} onValueChange={(val) => { if (val) setDefaultSemester(val); }}>
+                  <Select value={defaultSemester} onValueChange={(val) => { if (val) {setDefaultSemester(val);setQueue(previous=>previous.map(item=>item.status==='pending'?{...item,semester:Number(val)}:item));} }}>
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue />
                     </SelectTrigger>

@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
-import { getPool } from "@/lib/db/pool";
+import { identityDb } from '@/lib/tutor/db';
+import { hashText } from '@/lib/tutor/chunking';
 import { extractJson } from "@/lib/ai/json";
 import type { AIProvider, ChatMessageInput, KnowledgeChunk } from "@/lib/ai/provider";
 
@@ -39,6 +40,7 @@ export type ConversationAttachment = {
   provider: string | null;
   model: string | null;
   input_tokens: number;
+  cached_input_tokens?:number;
   output_tokens: number;
   created_at: string;
 };
@@ -62,9 +64,9 @@ export async function analyzeConversationAttachment(input: {
   provider: AIProvider;
   signal?: AbortSignal;
 }): Promise<{ attachment: ConversationAttachment; cacheHit: boolean }> {
-  const pool = getPool();
+  const pool = identityDb(input.userId);
   const cached = await pool.query<ConversationAttachment>(
-    `select * from conversation_attachments where conversation_id=$1 and user_id=$2 and file_path=$3 and status='ready' limit 1`,
+    `select * from conversation_attachments where conversation_id=$1 and user_id=$2 and file_path=$3 and status='ready' and analysis_version=2 limit 1`,
     [input.conversationId, input.userId, input.filePath]
   );
   if (cached.rows[0]) {
@@ -75,7 +77,10 @@ export async function analyzeConversationAttachment(input: {
     return { attachment: cached.rows[0], cacheHit: true };
   }
 
-  const result = await input.provider.generateVisionResponse({
+  const contentHash=hashText(input.imageDataUri);
+  const reusable=(await pool.query<ConversationAttachment>(`select * from conversation_attachments where user_id=$1 and content_hash=$2
+    and status='ready' and analysis_version=2 order by created_at desc limit 1`,[input.userId,contentHash])).rows[0];
+  const result = reusable ? {content:JSON.stringify(reusable.vision_structured_json),model:reusable.model??'gpt-6-luna',inputTokens:0,outputTokens:0,cachedInputTokens:0} : await input.provider.generateVisionResponse({
     taskPrompt: VISION_EXTRACTION_PROMPT,
     jsonSchema: { name: "vision_extraction", schema: z.toJSONSchema(visionContextSchema) },
     messages: [{ role: "user", content: "Extract the visible study content into the required structure." }],
@@ -88,27 +93,28 @@ export async function analyzeConversationAttachment(input: {
   const inserted = await pool.query<ConversationAttachment>(
     `insert into conversation_attachments(
        conversation_id,message_id,user_id,file_path,file_type,ordinal,vision_extracted_text,
-       vision_structured_json,subject_id,lecture_id,status,provider,model,input_tokens,output_tokens
+       vision_structured_json,subject_id,lecture_id,status,provider,model,input_tokens,output_tokens,content_hash,cached_input_tokens,analysis_version
      ) values(
        $1,$2,$3,$4,$5,
        (select coalesce(max(ordinal),0)+1 from conversation_attachments where conversation_id=$1),
-       $6,$7::jsonb,$8,$9,'ready',$10,$11,$12,$13
+       $6,$7::jsonb,$8,$9,'ready',$10,$11,$12,$13,$14,$15,2
      )
      on conflict(conversation_id,file_path) do update set
        message_id=excluded.message_id, vision_extracted_text=excluded.vision_extracted_text,
        vision_structured_json=excluded.vision_structured_json, status='ready', provider=excluded.provider,
-       model=excluded.model, input_tokens=excluded.input_tokens, output_tokens=excluded.output_tokens
+       model=excluded.model, input_tokens=excluded.input_tokens, output_tokens=excluded.output_tokens,
+       content_hash=excluded.content_hash,cached_input_tokens=excluded.cached_input_tokens,analysis_version=2
      returning *`,
     [input.conversationId,input.messageId,input.userId,input.filePath,input.fileType ?? "image",
       extractedText,JSON.stringify(context),input.subjectId,input.lectureId,input.provider.name,result.model,
-      result.inputTokens,result.outputTokens]
+      result.inputTokens,result.outputTokens,contentHash,result.cachedInputTokens??0]
   );
   const attachment = inserted.rows[0];
   await pool.query(
     `update conversations set active_attachment_id=$1, active_attachment_section_index=null, updated_at=now() where id=$2 and user_id=$3`,
     [attachment.id,input.conversationId,input.userId]
   );
-  return { attachment, cacheHit: false };
+  return { attachment, cacheHit: Boolean(reusable) };
 }
 
 export async function loadConversationAttachments(conversationId: string, userId: string): Promise<{
@@ -116,7 +122,7 @@ export async function loadConversationAttachments(conversationId: string, userId
   activeAttachmentId: string | null;
   activeSectionIndex: number | null;
 }> {
-  const pool = getPool();
+  const pool = identityDb(userId);
   const [attachments, conversation] = await Promise.all([
     pool.query<ConversationAttachment>(
       `select * from conversation_attachments where conversation_id=$1 and user_id=$2 and status='ready' order by ordinal asc`,
@@ -178,6 +184,7 @@ export function resolveConversationReference(input: {
   const normalized = normalizeArabic(raw);
   const shortQuestion = (normalized.match(/[\p{L}\p{N}]+/gu)?.length ?? 0) <= 5;
   const referenceWords = /(?:هاي|هاذي|هذه|هذا|الصورة|الصوره|الشريحة|الشريحه|الجزء|النقطة|النقطه|الاول|الثاني|كمل|تابع|عليه|فيها|منها|ارجع|اختبرني|للامتحان)/u.test(normalized)
+    || /\b(?:this|that|it|first|second|image|slide|page|continue|again|about it)\b/i.test(normalized)
     || (shortQuestion && /(?:ليش|شو يعني|وضح|فسر)/u.test(normalized));
   const explicitImages = mentionedOrdinals(normalized,"الصورة|صورة|الصوره|صوره|المرفق|ملف|image");
   let selected = explicitImages.map((ordinal) => input.attachments.find((a) => a.ordinal === ordinal)).filter(Boolean) as ConversationAttachment[];
@@ -186,8 +193,10 @@ export function resolveConversationReference(input: {
   const repeatsActiveTopic = Boolean(activeTopic && normalized.includes(activeTopic));
   if (!selected.length && active && (referenceWords || repeatsActiveTopic)) selected = [active];
 
-  const sectionOrdinals = mentionedOrdinals(normalized,"الشريحة|شريحة|الشريحه|شريحه|الجزء|جزء|النقطة|نقطة|النقطه|نقطه|القسم|section|slide");
+  const sectionOrdinals = mentionedOrdinals(normalized,"الصفحة|صفحة|page|الشريحة|شريحة|الشريحه|شريحه|الجزء|جزء|النقطة|نقطة|النقطه|نقطه|القسم|section|slide");
   let sectionIndex = sectionOrdinals[0] ?? null;
+  if (/\bfirst\b/.test(normalized)) sectionIndex=1;
+  if (/\bsecond\b/.test(normalized)) sectionIndex=2;
   if (sectionIndex === null && /(?:^|\s)(?:الاول|اول|الأول)(?:\s|$|بس)/u.test(normalized) && active) sectionIndex = 1;
   if (/(?:^|\s)(?:كمل|تابع|continue)(?:\s|$)/u.test(normalized) && active) sectionIndex = Math.max(1,(input.activeSectionIndex ?? 0)+1);
   if (/(?:ارجع|عود).*(?:اول|الأول|الاول)/u.test(normalized) && active) sectionIndex = 1;
@@ -200,12 +209,13 @@ export function resolveConversationReference(input: {
   const contexts = selected.map((attachment) => {
     const data = attachment.vision_structured_json;
     const section = sectionIndex ? data.sections.find((s) => s.index === sectionIndex) : null;
-    const visible = section ? [section] : data.sections;
+    const visible = sectionIndex ? (section ? [section] : []) : data.sections.slice(0,attachment.file_type==='file'?2:8);
     return [
-      `Uploaded image ${attachment.ordinal}${data.topic ? ` topic: ${data.topic}` : ""}${data.subject_guess ? `; subject: ${data.subject_guess}` : ""}.`,
+      `Uploaded ${attachment.file_type==='file'?'file':'image'} ${attachment.ordinal}${data.topic ? ` topic: ${data.topic}` : ""}${data.subject_guess ? `; subject: ${data.subject_guess}` : ""}.`,
       section ? `The student refers to section ${section.index}${section.title ? ` (${section.title})` : ""}.` : "",
-      visible.map((s) => `Section ${s.index}${s.title ? ` - ${s.title}` : ""}: ${s.text}`).join("\n"),
-      data.medical_terms.length ? `Visible medical terms: ${data.medical_terms.join(", ")}` : "",
+      sectionIndex && !section ? `Requested page/section ${sectionIndex}; retrieve its indexed content separately.` : "",
+      visible.map((s) => `Section ${s.index}${s.title ? ` - ${s.title}` : ""}: ${s.text.slice(0,1200)}`).join("\n"),
+      data.medical_terms.length ? `Visible medical terms: ${data.medical_terms.slice(0,12).join(", ")}` : "",
     ].filter(Boolean).join("\n");
   });
   const referenceResolved = Boolean(selected.length && (referenceWords || explicitImages.length || sectionIndex));
@@ -230,28 +240,28 @@ export function attachmentEvidence(resolved: ResolvedConversationQuery): Knowled
     const data = attachment.vision_structured_json;
     const sections = resolved.selectedSectionIndex
       ? data.sections.filter((s) => s.index === resolved.selectedSectionIndex)
-      : data.sections;
+      : data.sections.slice(0,attachment.file_type==='file'?3:8);
     if (sections.length) {
       for (const section of sections) chunks.push({
         id:`attachment:${attachment.id}:section:${section.index}`,
-        title:`الصورة التي رفعتها (${attachment.ordinal})${section.title ? ` — ${section.title}` : ""}`,
+        title:`${attachment.file_type==='file'?'الملف':'الصورة'} التي رفعتها (${attachment.ordinal})${section.title ? ` — ${section.title}` : ""}`,
         subjectName:data.subject_guess,
         sourceType:"current_upload",
-        content:section.text,
-        pageNumber:null,
+        content:section.text.slice(0,8000),
+        pageNumber:attachment.file_type==='file'?section.index:null,
         similarity:1,
         evidenceType:"USER_UPLOAD",
         attachmentId:attachment.id,
         attachmentOrdinal:attachment.ordinal,
         sectionIndex:section.index,
       });
-    } else if (attachment.vision_extracted_text.trim()) {
+    } else if (attachment.file_type!=='file' && !resolved.selectedSectionIndex && attachment.vision_extracted_text.trim()) {
       chunks.push({
         id:`attachment:${attachment.id}`,
         title:`الصورة التي رفعتها (${attachment.ordinal})`,
         subjectName:data.subject_guess,
         sourceType:"current_upload",
-        content:attachment.vision_extracted_text,
+        content:attachment.vision_extracted_text.slice(0,8000),
         similarity:1,
         evidenceType:"USER_UPLOAD",
         attachmentId:attachment.id,
@@ -266,7 +276,7 @@ export function attachmentEvidence(resolved: ResolvedConversationQuery): Knowled
 export async function persistResolvedAttachmentState(input:{
   conversationId:string; userId:string; attachmentId:string|null; sectionIndex:number|null;
 }) {
-  await getPool().query(
+  await identityDb(input.userId).query(
     `update conversations set active_attachment_id=$1,active_attachment_section_index=$2,updated_at=now() where id=$3 and user_id=$4`,
     [input.attachmentId,input.sectionIndex,input.conversationId,input.userId]
   );
@@ -279,7 +289,7 @@ export async function saveAITrace(input: {
   selectedModel?:string|null; fallbackUsed:boolean; finalSourceIds:string[]; refusalReason?:string|null;
   diagnostics?:Record<string,unknown>;
 }) {
-  const pool=getPool();
+  const pool=identityDb(input.userId);
   const hasAvailableEvidence=input.retrievedSources.length>0 || input.attachmentIds.length>0;
   const diagnostics={...input.diagnostics,unnecessaryRefusalCandidate:input.evidenceCoverage==="UNSUPPORTED"&&hasAvailableEvidence};
   if(diagnostics.unnecessaryRefusalCandidate){

@@ -10,5 +10,10 @@ export async function register() {
   const HOUR_MS = 60 * 60 * 1000;
 
   sweep();
-  setInterval(sweep, HOUR_MS);
+  setInterval(sweep, HOUR_MS).unref();
+  const { runKnowledgeJobs }=await import('@/lib/tutor/ingestion');
+  const {runExamJobs}=await import('@/lib/tutor/exam-jobs');
+  let running=false;
+  const processJobs=async()=>{if(running)return;running=true;try{await runKnowledgeJobs();await runExamJobs();}catch{console.error('Knowledge worker unavailable');}finally{running=false;}};
+  const timer=setInterval(()=>void processJobs(),15_000);timer.unref();
 }

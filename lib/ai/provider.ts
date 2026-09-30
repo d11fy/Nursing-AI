@@ -30,6 +30,9 @@ export interface GenerateTextParams {
   /** Trusted server task instructions, never populated from request JSON. */
   taskPrompt?: string;
   jsonSchema?: { name: string; schema: Record<string, unknown> };
+  reasoningEffort?: 'none' | 'low' | 'medium' | 'high';
+  userId?: string;
+  feature?: string;
 }
 
 export interface GenerateResult {
@@ -37,6 +40,8 @@ export interface GenerateResult {
   inputTokens: number;
   outputTokens: number;
   model: string;
+  cachedInputTokens?: number;
+  reasoningEffort?: 'none' | 'low' | 'medium' | 'high';
 }
 
 export interface StreamChunk {
@@ -110,7 +115,7 @@ export interface AIResponse {
 
 /**
  * Provider-agnostic contract for AI operations.
- * Supports OpenAI, Gemini, Groq, and Cloudflare Workers AI.
+ * OpenAI execution contract. Legacy callers retain this shape during rollout.
  */
 export interface AIProvider {
   name: string;
@@ -139,6 +144,7 @@ export interface AIProvider {
     model: string;
     inputTokens: number;
     outputTokens: number;
+    cachedInputTokens?: number;
   }): number;
 
   healthCheck(): Promise<ProviderHealth>;

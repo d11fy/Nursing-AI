@@ -1,6 +1,23 @@
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import pg from "pg";
+import {verifyBackupReceipt} from "./backup-receipt.mjs";
+
+// Preserve the original migration digest for databases where it was applied.
+// Older releases reset core course data and removed vectors. Fresh upgrades
+// must retain those records; the new index is built alongside the old index.
+export function nonDestructiveMigration(version, migration) {
+  if (version === "0006") {
+    return migration.replace(/^delete from public\.(?:subject_academic_years|lectures|documents|subjects).*;$/gim, "")
+      .replace(/^update public\.conversations set subject_id = null;$/gim, "")
+      .replace(/(where y\.code = '[^']+' and s\.sort_order between \d+ and \d+);/g,
+        "$1 and s.course_code is not null on conflict do nothing;");
+  }
+  if (version === "0007") {
+    return migration.replace(/^delete from public\.(?:document_chunks|lecture_chunks).*;$/gim, "");
+  }
+  return migration;
+}
 
 export async function migrate(client) {
   const sql = await readFile(new URL("../database/0001_init.sql", import.meta.url), "utf8");
@@ -20,7 +37,7 @@ export async function migrate(client) {
       await client.query(seed);
       await client.query("INSERT INTO app_migrations(version,checksum) VALUES('0001',$1)", [checksum]);
     }
-    for (const file of ["0002_embedding_spaces.sql", "0003_academic_year_subjects.sql", "0004_lectures.sql", "0005_google_oauth.sql", "0006_nursing_curriculum_update.sql", "0007_openai_transition.sql", "0008_large_knowledge_uploads.sql", "0009_documents_updated_at.sql", "0010_student_memory.sql", "0011_curriculum_search.sql", "0012_multi_provider_router.sql", "0013_conversation_evidence.sql", "0014_exam_training_center.sql", "0015_trusted_practice_grading.sql"]) {
+    for (const file of ["0002_embedding_spaces.sql", "0003_academic_year_subjects.sql", "0004_lectures.sql", "0005_google_oauth.sql", "0006_nursing_curriculum_update.sql", "0007_openai_transition.sql", "0008_large_knowledge_uploads.sql", "0009_documents_updated_at.sql", "0010_student_memory.sql", "0011_curriculum_search.sql", "0012_multi_provider_router.sql", "0013_conversation_evidence.sql", "0014_exam_training_center.sql", "0015_trusted_practice_grading.sql", "0016_personal_tutor.sql"]) {
       const version = file.split("_")[0];
       const migration = await readFile(new URL(`../database/${file}`, import.meta.url), "utf8");
       const digest = createHash("sha256").update(migration).digest("hex");
@@ -36,8 +53,9 @@ export async function migrate(client) {
         // ALTER TYPE ... ADD VALUE cannot appear in a multi-statement command
         // string alongside other statements (a real PostgreSQL restriction),
         // so pull those lines out and run each as its own single statement.
-        const enumAdds = [...migration.matchAll(/^alter type .+ add value.*;$/gim)].map((m) => m[0]);
-        const rest = migration.replace(/^alter type .+ add value.*;$/gim, "").trim();
+        const safeMigration = nonDestructiveMigration(version, migration);
+        const enumAdds = [...safeMigration.matchAll(/^alter type .+ add value.*;$/gim)].map((m) => m[0]);
+        const rest = safeMigration.replace(/^alter type .+ add value.*;$/gim, "").trim();
         if (rest) await client.query(rest);
         for (const statement of enumAdds) await client.query(statement);
         await client.query("INSERT INTO app_migrations(version,checksum) VALUES($1,$2)", [version, digest]);
@@ -52,9 +70,15 @@ export async function migrate(client) {
 
 export async function runMigrations() {
   if (!process.env.DATABASE_URL) throw new Error("Set DATABASE_URL to the internal PostgreSQL connection URL");
-  const client = new pg.Client({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 10_000 });
+  const client = new pg.Client({ connectionString: process.env.MIGRATION_DATABASE_URL || process.env.DATABASE_URL, connectionTimeoutMillis: 10_000 });
   try {
     await client.connect();
+    const existing=(await client.query("select to_regclass('public.app_migrations') migrations,to_regclass('public.app_users') users")).rows[0];
+    if(existing.migrations&&existing.users){
+      const applied=(await client.query("select 1 from app_migrations where version='0016'")).rows.length;
+      const hasUsers=(await client.query('select 1 from app_users limit 1')).rows.length;
+      if(!applied&&hasUsers)await verifyBackupReceipt(process.env.DATABASE_URL);
+    }
     await migrate(client);
     console.log("PostgreSQL schema ready");
   } finally { await client.end(); }

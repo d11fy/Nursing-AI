@@ -9,6 +9,7 @@ export const sendMessageSchema = z.object({
   subjectId: z.string().uuid().optional().nullable(),
   lectureId: z.string().uuid().optional().nullable(),
   imagePath: z.string().min(1).optional().nullable(),
+  attachmentId: z.string().uuid().optional().nullable(),
 });
 
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;

@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { createSystemClient } from "@/lib/db/server";
+import {workerDb} from "@/lib/tutor/db";
 import { getPool } from "@/lib/db/pool";
 import { processDocument } from "@/lib/knowledge";
 import { logEvent } from "@/lib/log";
@@ -13,6 +14,8 @@ import { logEvent } from "@/lib/log";
  * keeps working for it exactly like any other document.
  */
 export async function approveContribution(contributionId: string, adminUserId: string): Promise<void> {
+  const actor=(await getPool().query("select 1 from profiles where user_id=$1 and role='admin' and status='active'",[adminUserId])).rows[0];
+  if(!actor)throw new Error('غير مصرح');
   const db = createSystemClient();
   const { data: contribution } = await db
     .from("knowledge_contributions")
@@ -22,20 +25,17 @@ export async function approveContribution(contributionId: string, adminUserId: s
   if (!contribution) throw new Error("المساهمة غير موجودة");
   if (contribution.status !== "pending") throw new Error("تمت مراجعة هذه المساهمة مسبقًا");
 
-  const { data: lecture } = await db.from("lectures").select("id, title").eq("id", contribution.lecture_id).single();
+  const { data: lecture } = await db.from("lectures").select("id, title, user_id, contribution_consent_at, contribution_ownership_confirmed_at").eq("id", contribution.lecture_id).single();
   if (!lecture) throw new Error("المحاضرة غير موجودة");
 
-  const { data: chunks } = await db
-    .from("lecture_chunks")
-    .select("content")
-    .eq("lecture_id", contribution.lecture_id)
-    .order("chunk_index", { ascending: true });
-  const text = (chunks ?? []).map((c) => c.content).join("\n\n").trim();
+  if(!lecture.contribution_consent_at||!lecture.contribution_ownership_confirmed_at)throw new Error('الموافقة الصريحة غير متوفرة');
+  const chunks=(await workerDb.query<{content:string}>(`select c.content from knowledge_chunks c join knowledge_documents d on d.id=c.document_id where d.lecture_id=$1 and d.owner_id=$2 and d.status='ready' order by c.chunk_index`,[lecture.id,lecture.user_id])).rows;
+  const text=chunks.map(c=>c.content).join('\n\n').trim();
   if (!text) throw new Error("لا يوجد محتوى لهذه المحاضرة");
 
   const path = `knowledge/${randomUUID()}`;
   const buffer = Buffer.from(text, "utf-8");
-  await getPool().query(
+  await workerDb.query(
     "INSERT INTO stored_files(path,bucket,owner_id,mime_type,content) VALUES($1,'knowledge-documents',$2,'text/plain',$3)",
     [path, adminUserId, buffer]
   );
@@ -58,6 +58,7 @@ export async function approveContribution(contributionId: string, adminUserId: s
   if (error || !document) throw new Error("تعذر إنشاء سجل المعرفة المشتركة");
 
   await processDocument(document.id);
+  await workerDb.query("update knowledge_documents set is_active=true where legacy_document_id=$1 and status='ready'",[document.id]);
 
   await db
     .from("knowledge_contributions")
@@ -68,6 +69,8 @@ export async function approveContribution(contributionId: string, adminUserId: s
 }
 
 export async function rejectContribution(contributionId: string, adminUserId: string): Promise<void> {
+  const actor=(await getPool().query("select 1 from profiles where user_id=$1 and role='admin' and status='active'",[adminUserId])).rows[0];
+  if(!actor)throw new Error('غير مصرح');
   const db = createSystemClient();
   const { data: contribution } = await db
     .from("knowledge_contributions")

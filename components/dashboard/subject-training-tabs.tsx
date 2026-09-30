@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState,type ComponentProps } from "react";
 import Link from "next/link";
 import {
   BookOpen,
@@ -58,7 +58,7 @@ export function SubjectTrainingTabs({
 }: {
   subjectId: string;
   subjectName: string;
-  lectures: any[];
+  lectures: ComponentProps<typeof LectureCard>["lecture"][];
   pastExams: PastExamItem[];
   repeatedTopics: TopicRecurrenceStat[];
   smartReviewRecommendations: SmartReviewItem[];
@@ -188,7 +188,7 @@ export function SubjectTrainingTabs({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-semibold text-foreground block mb-1.5">نمط توليد الأسئلة</label>
-                <Select value={practiceType} onValueChange={(val: any) => setPracticeType(val)}>
+                <Select value={practiceType} onValueChange={(val) => {if(val==="PAST_EXAM"||val==="UNIVERSITY_STYLE"||val==="MIXED")setPracticeType(val); }}>
                   <SelectTrigger className="h-9 text-xs">
                     <SelectValue />
                   </SelectTrigger>
@@ -202,7 +202,7 @@ export function SubjectTrainingTabs({
 
               <div>
                 <label className="text-xs font-semibold text-foreground block mb-1.5">طريقة الاختبار</label>
-                <Select value={examMode} onValueChange={(val: any) => setExamMode(val)}>
+                <Select value={examMode} onValueChange={(val) => {if(val==="STUDY"||val==="EXAM")setExamMode(val); }}>
                   <SelectTrigger className="h-9 text-xs">
                     <SelectValue />
                   </SelectTrigger>
@@ -230,7 +230,7 @@ export function SubjectTrainingTabs({
 
               <div>
                 <label className="text-xs font-semibold text-foreground block mb-1.5">مستوى الصعوبة</label>
-                <Select value={difficulty} onValueChange={(val: any) => { if (val) setDifficulty(val); }}>
+                <Select value={difficulty} onValueChange={(val) => { if (val==="EASY"||val==="MEDIUM"||val==="HARD") setDifficulty(val); }}>
                   <SelectTrigger className="h-9 text-xs">
                     <SelectValue />
                   </SelectTrigger>

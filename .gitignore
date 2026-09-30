@@ -12,6 +12,9 @@
 
 # testing
 /coverage
+/.evaluation/
+/backups/
+.*-results-local.log
 
 # next.js
 /.next/

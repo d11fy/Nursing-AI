@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminProfileOrNull } from "@/lib/auth";
-import { getPool } from "@/lib/db/pool";
+import {identityDb} from "@/lib/tutor/db";
 
 export async function POST(request: Request) {
   try {
@@ -14,8 +14,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "معرّف الرفع مطلوب" }, { status: 400 });
     }
 
-    const pool = getPool();
-    const { rows } = await pool.query(
+    const pool = identityDb(admin.user_id);
+    const { rows } = await pool.query<{id:string;admin_id:string;file_name:string;file_size:number;mime_type:string;total_chunks:number;title:string;subject_id:string|null;source_type:string;storage_path:string;status:string;document_id:string|null;metadata_json:Record<string,unknown>}>(
       `SELECT id, admin_id, file_name, file_size, mime_type, total_chunks,
               title, subject_id, source_type, storage_path, status, document_id, metadata_json
        FROM public.knowledge_upload_sessions
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     const meta = (session.metadata_json as Record<string, unknown>) || {};
 
     // Verify all chunks are accounted for
-    const chunkCheck = await pool.query(
+    const chunkCheck = await pool.query<{count:number}>(
       "SELECT count(*)::int AS count FROM public.knowledge_document_chunks WHERE path = $1",
       [session.storage_path]
     );
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     // Insert or reuse document record in public.documents
     let documentId = session.document_id;
     if (!documentId) {
-      const docRes = await pool.query(
+      const docRes = await pool.query<{id:string}>(
         `INSERT INTO public.documents (
           title, file_url, file_name, file_size, subject_id,
           source_type, status, created_by,
@@ -99,6 +99,7 @@ export async function POST(request: Request) {
     }
 
     // Insert a stub in stored_files so any legacy references or integrity queries are satisfied
+    if(meta.priority!=null) await pool.query('update documents set source_priority=$2 where id=$1',[documentId,meta.priority]);
     await pool.query(
       `INSERT INTO public.stored_files (path, bucket, owner_id, mime_type, content)
        VALUES ($1, 'knowledge-documents', $2, $3, E''::bytea)

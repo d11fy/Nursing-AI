@@ -6,6 +6,13 @@ types.setTypeParser(1082, (value) => value);
 types.setTypeParser(20, Number);
 types.setTypeParser(1700, Number);
 const globalDb = globalThis as unknown as { nursingPool?: Pool };
+let roleVerified:Promise<void>|undefined;
+export async function verifyRuntimeRole() {
+  if(process.env.NODE_ENV!=='production')return;
+  return roleVerified??=getPool().query<{rolsuper:boolean;rolbypassrls:boolean}>('select rolsuper,rolbypassrls from pg_roles where rolname=current_user').then(({rows})=>{
+    if(!rows[0]||rows[0].rolsuper||rows[0].rolbypassrls)throw new Error('Runtime DATABASE_URL must use a role without SUPERUSER or BYPASSRLS; use MIGRATION_DATABASE_URL for DDL');
+  });
+}
 
 export function getPool() {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
@@ -19,6 +26,7 @@ export function getPool() {
 }
 
 export async function transaction<T>(run: (client: PoolClient) => Promise<T>): Promise<T> {
+  await verifyRuntimeRole();
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");

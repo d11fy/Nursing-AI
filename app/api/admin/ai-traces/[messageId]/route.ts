@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { getAdminProfileOrNull } from "@/lib/auth";
-import { getPool } from "@/lib/db/pool";
+import {identityDb} from "@/lib/tutor/db";
+import {z} from "zod";
 
 export async function GET(_request:Request,{params}:{params:Promise<{messageId:string}>}){
   const admin=await getAdminProfileOrNull();
   if(!admin)return NextResponse.json({error:"غير مصرح"},{status:403});
   const {messageId}=await params;
-  const result=await getPool().query(
+  if(!z.string().uuid().safeParse(messageId).success)return NextResponse.json({error:"معرف غير صالح"},{status:400});
+  const result=await identityDb(admin.user_id).query(
     `select resolved_query,detected_subject,active_attachment_id,attachment_ids,retrieved_sources_json,
       reranked_sources_json,evidence_coverage,selected_provider,selected_model,fallback_used,
       final_source_ids_json,refusal_reason,diagnostics_json,created_at

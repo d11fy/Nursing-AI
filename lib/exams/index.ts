@@ -1,5 +1,4 @@
 import "server-only";
-import { getSourcePriority } from "./priorities";
 
 export * from "./priorities";
 export * from "./exam-parser";
