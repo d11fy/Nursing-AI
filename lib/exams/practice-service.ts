@@ -4,7 +4,10 @@ import { getPool } from "@/lib/db/pool";
 import { routeAIRequest, getProviderByName } from "@/lib/ai/router";
 import { executeWithFallback } from "@/lib/ai/fallback";
 import { extractJson } from "@/lib/ai/json";
-import type { QuestionType, ExamQuestion } from "@/types/database";
+import { validQuestionEvidence, verifyExamQuestion } from "./question-verifier";
+import { gradePracticeAnswer } from "./answer-grading";
+import { searchTerms } from "@/lib/ai/curriculum-search";
+import type { QuestionType } from "@/types/database";
 
 export interface GeneratePracticeExamOptions {
   userId: string;
@@ -76,7 +79,7 @@ export async function createPracticeExam(
   const pool = getPool();
   const count = Math.min(30, Math.max(3, options.questionCount || 10));
 
-  let selectedQuestions: PracticeQuestionView[] = [];
+  const selectedQuestions: PracticeQuestionView[] = [];
 
   // 1. Fetch from Past Exams if requested
   if (options.practiceType === "PAST_EXAM" || options.practiceType === "MIXED") {
@@ -91,6 +94,7 @@ export async function createPracticeExam(
       LEFT JOIN public.exams e ON e.id = eq.exam_id
       WHERE eq.subject_id = $1
         AND eq.status = 'VERIFIED'
+        AND eq.correct_answer_json IS NOT NULL
     `;
     const params: unknown[] = [options.subjectId];
 
@@ -191,10 +195,11 @@ export async function createPracticeExam(
        JOIN public.documents d ON d.id = dc.document_id
        WHERE d.subject_id = $1
          AND d.status = 'ready'
-         AND d.source_type IN ('BOOK', 'TEXTBOOK', 'UNIVERSITY_LECTURE', 'DOCTOR_SLIDES', 'book', 'lecture')
+         AND upper(d.source_type) NOT IN ('PAST_EXAM','QUESTION_BANK','QUESTIONS')
+         AND ($2::text = '' OR dc.search_vector @@ to_tsquery('simple',$2))
        ORDER BY random()
        LIMIT 8`,
-      [options.subjectId]
+      [options.subjectId, options.topic ? searchTerms(options.topic) : ""]
     );
 
     if (curriculumChunks.length > 0) {
@@ -225,7 +230,7 @@ STRICT INVARIANTS:
               messages: [
                 {
                   role: "user",
-                  content: `Official Curriculum Excerpts:\n${chunksContext}\n\nTarget Difficulty: ${options.difficulty || "MEDIUM"}\nTopic filter: ${options.topic || "All curriculum"}`,
+                  content: `Faculty-approved Course Excerpts:\n${chunksContext}\n\nPast exam style patterns: ${JSON.stringify(stylePatterns)}\nTarget Difficulty: ${options.difficulty || "MEDIUM"}\nTopic filter: ${options.topic || "All curriculum"}`,
                 },
               ],
               jsonSchema: {
@@ -241,27 +246,42 @@ STRICT INVARIANTS:
         const validated = generatedQuestionSchema.parse(parsed);
 
         for (const genQ of validated.questions) {
-          const matchedChunk = curriculumChunks[genQ.source_chunk_index] || curriculumChunks[0];
+          const matchedChunk = curriculumChunks[genQ.source_chunk_index];
+          if (!matchedChunk || !validQuestionEvidence(matchedChunk.content.slice(0, 1500), genQ.evidence_quote)) continue;
+          const verification = await verifyExamQuestion({
+            subjectId: options.subjectId,
+            questionText: genQ.question_text,
+            questionType: genQ.question_type,
+            options: genQ.options,
+            extractedAnswer: genQ.correct_answer,
+            answerOrigin: "generated",
+          });
+          const evidence = verification.evidence[0];
+          if (verification.status !== "VERIFIED" || !verification.verifiedAnswer || !evidence) continue;
+          const evidenceTitle = evidence.documentId === matchedChunk.document_id
+            ? matchedChunk.title
+            : (await pool.query<{ title: string }>("SELECT title FROM public.documents WHERE id=$1", [evidence.documentId])).rows[0]?.title ?? "المصدر المعتمد";
 
-          // Persist generated question into exam_questions so it has a real DB ID and verifiable evidence
+          // Publish a generated question only after independent evidence verification.
           const { rows: insQ } = await pool.query<{ id: string }>(
             `INSERT INTO public.exam_questions (
                subject_id, question_text, question_type, options_json,
                correct_answer_json, explanation, topic, difficulty,
                status, confidence, page_number, source_document_id
-             ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, 'VERIFIED', 0.95, $9, $10)
+              ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, 'VERIFIED', $9, $10, $11)
              RETURNING id`,
             [
               options.subjectId,
               genQ.question_text,
               genQ.question_type,
               JSON.stringify(genQ.options),
-              JSON.stringify(genQ.correct_answer),
-              genQ.explanation,
+              JSON.stringify(verification.verifiedAnswer),
+              verification.explanation || genQ.explanation,
               genQ.topic,
               genQ.difficulty,
-              matchedChunk.page_number,
-              matchedChunk.document_id,
+              Math.min(0.99, Math.max(0.1, verification.confidence)),
+              evidence.pageNumber,
+              evidence.documentId,
             ]
           );
 
@@ -274,10 +294,10 @@ STRICT INVARIANTS:
              ) VALUES ($1, $2, $3, $4, $5, 'DIRECT', 90)`,
             [
               qId,
-              matchedChunk.document_id,
-              matchedChunk.id,
-              matchedChunk.page_number,
-              genQ.evidence_quote,
+              evidence.documentId,
+              evidence.chunkId,
+              evidence.pageNumber,
+              evidence.quote,
             ]
           );
 
@@ -286,18 +306,18 @@ STRICT INVARIANTS:
             questionText: genQ.question_text,
             questionType: genQ.question_type,
             options: genQ.options,
-            correctAnswer: genQ.correct_answer,
-            explanation: genQ.explanation,
+            correctAnswer: verification.verifiedAnswer,
+            explanation: verification.explanation || genQ.explanation,
             topic: genQ.topic,
             difficulty: genQ.difficulty,
-            pageNumber: matchedChunk.page_number,
+            pageNumber: evidence.pageNumber,
             isPastExam: false,
             sources: [
               {
-                documentId: matchedChunk.document_id,
-                documentTitle: matchedChunk.title,
-                pageNumber: matchedChunk.page_number,
-                quote: genQ.evidence_quote,
+                documentId: evidence.documentId,
+                documentTitle: evidenceTitle,
+                pageNumber: evidence.pageNumber,
+                quote: evidence.quote,
                 supportType: "DIRECT",
               },
             ],
@@ -309,22 +329,34 @@ STRICT INVARIANTS:
     }
   }
 
-  // 3. Create the student attempt in database
-  const { rows: attemptRows } = await pool.query<{ id: string }>(
-    `INSERT INTO public.student_exam_attempts (
-       user_id, subject_id, mode, practice_type, total_questions
-     ) VALUES ($1, $2, $3, $4, $5)
-     RETURNING id`,
-    [
-      options.userId,
-      options.subjectId,
-      options.mode,
-      options.practiceType,
-      selectedQuestions.length,
-    ]
-  );
+  if (!selectedQuestions.length) {
+    throw new Error("لم تتوفر أسئلة بإجابات موثقة في مصادر المادة حاليًا");
+  }
 
-  const attemptId = attemptRows[0].id;
+  // 3. Create the student attempt in database
+  const client = await pool.connect();
+  let attemptId: string;
+  try {
+    await client.query("BEGIN");
+    const { rows: attemptRows } = await client.query<{ id: string }>(
+      `INSERT INTO public.student_exam_attempts
+       (user_id,subject_id,mode,practice_type,total_questions)
+       VALUES($1,$2,$3,$4,$5) RETURNING id`,
+      [options.userId, options.subjectId, options.mode, options.practiceType, selectedQuestions.length]
+    );
+    attemptId = attemptRows[0].id;
+    await client.query(
+      `INSERT INTO public.student_exam_attempt_questions(attempt_id,question_id)
+       SELECT $1, unnest($2::uuid[])`,
+      [attemptId, selectedQuestions.map((question) => question.id)]
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 
   return {
     attemptId,
@@ -342,69 +374,83 @@ export async function submitQuestionAnswer(input: {
   userId: string;
   questionId: string;
   selectedAnswer: unknown;
-  isCorrect: boolean;
-  topic: string;
 }): Promise<void> {
   const pool = getPool();
-
-  // 1. Record attempt answer
-  await pool.query(
-    `INSERT INTO public.student_exam_attempt_answers (
-       attempt_id, question_id, selected_answer, is_correct, topic
-     ) VALUES ($1, $2, $3::jsonb, $4, $5)`,
-    [
-      input.attemptId,
-      input.questionId,
-      JSON.stringify(input.selectedAnswer),
-      input.isCorrect,
-      input.topic,
-    ]
-  );
-
-  // 2. Fetch subject_id from attempt
-  const { rows: attRows } = await pool.query<{ subject_id: string }>(
-    `SELECT subject_id FROM public.student_exam_attempts WHERE id = $1`,
-    [input.attemptId]
-  );
-  const subjectId = attRows[0]?.subject_id || null;
-
-  // 3. Update student learning memory (student_topic_progress)
-  const cleanKey = input.topic.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").slice(0, 80) || "general";
-
-  await pool.query(
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<{subject_id:string;topic:string;correct_answer_json:unknown}>(
+      `SELECT a.subject_id,q.topic,q.correct_answer_json
+       FROM public.student_exam_attempts a
+       JOIN public.student_exam_attempt_questions aq ON aq.attempt_id=a.id
+       JOIN public.exam_questions q ON q.id=aq.question_id
+       WHERE a.id=$1 AND a.user_id=$2 AND a.completed_at IS NULL
+         AND q.id=$3 AND q.status='VERIFIED'
+       FOR UPDATE OF a`,
+      [input.attemptId,input.userId,input.questionId]
+    );
+    const question = rows[0];
+    if (!question || question.correct_answer_json == null) throw new Error("السؤال غير تابع لهذه المحاولة أو لا يملك إجابة معتمدة");
+    const existing = await client.query<{id:string}>(
+      "SELECT id FROM public.student_exam_attempt_answers WHERE attempt_id=$1 AND question_id=$2 LIMIT 1",
+      [input.attemptId,input.questionId]
+    );
+    if (existing.rows.length) { await client.query("COMMIT"); return; }
+    const isCorrect = gradePracticeAnswer(input.selectedAnswer, question.correct_answer_json);
+    await client.query(
+      `INSERT INTO public.student_exam_attempt_answers
+       (attempt_id,question_id,selected_answer,is_correct,topic)
+       VALUES($1,$2,$3::jsonb,$4,$5)`,
+      [input.attemptId,input.questionId,JSON.stringify(input.selectedAnswer ?? null),isCorrect,question.topic]
+    );
+    const cleanKey = question.topic.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").slice(0, 80) || "general";
+    await client.query(
     `INSERT INTO public.student_topic_progress (
        user_id, subject_id, topic_key, topic_name, questions_answered,
        correct_answers, wrong_answers, mastery_score, last_studied_at, updated_at
      ) VALUES (
        $1, $2, $3, $4, 1,
-       ${input.isCorrect ? 1 : 0}, ${input.isCorrect ? 0 : 1},
-       ${input.isCorrect ? 100 : 0}, now(), now()
+       ${isCorrect ? 1 : 0}, ${isCorrect ? 0 : 1},
+       ${isCorrect ? 100 : 0}, now(), now()
      )
      ON CONFLICT (user_id, subject_id, topic_key) DO UPDATE SET
        questions_answered = student_topic_progress.questions_answered + 1,
-       correct_answers = student_topic_progress.correct_answers + ${input.isCorrect ? 1 : 0},
-       wrong_answers = student_topic_progress.wrong_answers + ${input.isCorrect ? 0 : 1},
+       correct_answers = student_topic_progress.correct_answers + ${isCorrect ? 1 : 0},
+       wrong_answers = student_topic_progress.wrong_answers + ${isCorrect ? 0 : 1},
        mastery_score = round(
-         (student_topic_progress.correct_answers + ${input.isCorrect ? 1 : 0})::numeric * 100.0 /
+         (student_topic_progress.correct_answers + ${isCorrect ? 1 : 0})::numeric * 100.0 /
          (student_topic_progress.questions_answered + 1)
        ),
        last_studied_at = now(),
        updated_at = now()`,
-    [input.userId, subjectId, cleanKey, input.topic]
-  );
+      [input.userId, question.subject_id, cleanKey, question.topic]
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /**
  * Completes a practice exam and calculates final score and weak topics recommendation.
  */
-export async function completePracticeExam(attemptId: string): Promise<{
+export async function completePracticeExam(attemptId: string, userId: string): Promise<{
   totalQuestions: number;
   correctAnswers: number;
   wrongAnswers: number;
+  unansweredQuestions: number;
   scorePercentage: number;
   weakTopicsRecommendation: string[];
 }> {
   const pool = getPool();
+  const attempt = await pool.query<{id:string;total_questions:number}>(
+    "SELECT id,total_questions FROM public.student_exam_attempts WHERE id=$1 AND user_id=$2",
+    [attemptId,userId]
+  );
+  if (!attempt.rows.length) throw new Error("محاولة التدريب غير متاحة");
 
   const { rows: stats } = await pool.query<{
     total: number;
@@ -415,13 +461,16 @@ export async function completePracticeExam(attemptId: string): Promise<{
        count(*)::int AS total,
        count(*) filter (where is_correct = true)::int AS correct,
        count(*) filter (where is_correct = false)::int AS wrong
-     FROM public.student_exam_attempt_answers
-     WHERE attempt_id = $1`,
+     FROM public.student_exam_attempt_answers aa
+     JOIN public.student_exam_attempt_questions aq
+       ON aq.attempt_id=aa.attempt_id AND aq.question_id=aa.question_id
+     WHERE aa.attempt_id = $1`,
     [attemptId]
   );
 
   const row = stats[0] ?? { total: 0, correct: 0, wrong: 0 };
-  const score = row.total > 0 ? Math.round((row.correct / row.total) * 100) : 0;
+  const score = attempt.rows[0].total_questions > 0
+    ? Math.round((row.correct / attempt.rows[0].total_questions) * 100) : 0;
 
   await pool.query(
     `UPDATE public.student_exam_attempts
@@ -430,15 +479,17 @@ export async function completePracticeExam(attemptId: string): Promise<{
          wrong_answers = $4,
          score_percentage = $5,
          completed_at = now()
-     WHERE id = $1`,
-    [attemptId, row.total, row.correct, row.wrong, score]
+     WHERE id = $1 AND user_id=$6`,
+    [attemptId, row.total, row.correct, row.wrong, score, userId]
   );
 
   // Identify weak topics in this exam
   const { rows: weakRows } = await pool.query<{ topic: string; wrong_count: number }>(
     `SELECT topic, count(*)::int AS wrong_count
-     FROM public.student_exam_attempt_answers
-     WHERE attempt_id = $1 AND is_correct = false
+     FROM public.student_exam_attempt_answers aa
+     JOIN public.student_exam_attempt_questions aq
+       ON aq.attempt_id=aa.attempt_id AND aq.question_id=aa.question_id
+     WHERE aa.attempt_id = $1 AND aa.is_correct = false
      GROUP BY topic
      ORDER BY wrong_count DESC
      LIMIT 3`,
@@ -446,9 +497,10 @@ export async function completePracticeExam(attemptId: string): Promise<{
   );
 
   return {
-    totalQuestions: row.total,
+    totalQuestions: attempt.rows[0].total_questions,
     correctAnswers: row.correct,
     wrongAnswers: row.wrong,
+    unansweredQuestions: Math.max(0, attempt.rows[0].total_questions - row.total),
     scorePercentage: score,
     weakTopicsRecommendation: weakRows.map((r) => r.topic),
   };
@@ -464,7 +516,7 @@ export async function getSmartReviewRecommendations(
 ): Promise<Array<{
   topic: string;
   examFrequency: number;
-  studentMastery: number;
+  studentMastery: number | null;
   recommendationMessage: string;
 }>> {
   const pool = getPool();
@@ -472,17 +524,23 @@ export async function getSmartReviewRecommendations(
   const { rows } = await pool.query<{
     topic: string;
     frequency: number;
-    mastery_score: number;
+    mastery_score: number | null;
   }>(
     `SELECT
        ets.topic,
        ets.frequency,
-       coalesce(stp.mastery_score, 0)::int AS mastery_score
+       stp.mastery_score::int AS mastery_score
      FROM public.exam_topic_stats ets
-     LEFT JOIN public.student_topic_progress stp
-       ON stp.subject_id = ets.subject_id
-      AND lower(stp.topic_name) = lower(ets.topic)
-      AND stp.user_id = $1
+     LEFT JOIN (
+       SELECT a.subject_id,lower(aa.topic) AS topic,
+         round(100.0*count(*) filter (where aa.is_correct=true)/count(*))::int AS mastery_score
+       FROM public.student_exam_attempt_answers aa
+       JOIN public.student_exam_attempts a ON a.id=aa.attempt_id
+       JOIN public.student_exam_attempt_questions aq
+         ON aq.attempt_id=a.id AND aq.question_id=aa.question_id
+       WHERE a.user_id=$1
+       GROUP BY a.subject_id,lower(aa.topic)
+     ) stp ON stp.subject_id=ets.subject_id AND stp.topic=lower(ets.topic)
      WHERE ets.subject_id = $2
        AND ets.frequency >= 40
      ORDER BY (ets.frequency * (100 - coalesce(stp.mastery_score, 50))) DESC
@@ -493,7 +551,9 @@ export async function getSmartReviewRecommendations(
   return rows.map((r) => ({
     topic: r.topic,
     examFrequency: Number(r.frequency),
-    studentMastery: Number(r.mastery_score),
-    recommendationMessage: `موضوع "${r.topic}" يتكرر في ${r.frequency}% من الامتحانات، ونسبة إتقانك له حاليًا ${r.mastery_score}%. يُنصح بمراجعته بعناية.`,
+    studentMastery: r.mastery_score === null ? null : Number(r.mastery_score),
+    recommendationMessage: r.mastery_score === null
+      ? `موضوع "${r.topic}" تكرر في ${r.frequency}% من الامتحانات المتاحة، ولم يُقَس إتقانك له بعد.`
+      : `موضوع "${r.topic}" تكرر في ${r.frequency}% من الامتحانات المتاحة، وإتقانك المقاس له ${r.mastery_score}%.`,
   }));
 }

@@ -42,7 +42,7 @@ interface PastExamItem {
 interface SmartReviewItem {
   topic: string;
   examFrequency: number;
-  studentMastery: number;
+  studentMastery: number | null;
   recommendationMessage: string;
 }
 

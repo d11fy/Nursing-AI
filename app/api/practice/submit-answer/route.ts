@@ -6,14 +6,14 @@ export async function POST(request: Request) {
   try {
     const profile = await requireProfile();
     const body = await request.json();
-    const { action, attemptId, questionId, selectedAnswer, isCorrect, topic } = body;
+    const { action, attemptId, questionId, selectedAnswer } = body;
 
     if (!attemptId) {
       return NextResponse.json({ error: "معرّف المحاولة مطلوب" }, { status: 400 });
     }
 
     if (action === "COMPLETE") {
-      const summary = await completePracticeExam(attemptId);
+      const summary = await completePracticeExam(attemptId, profile.user_id);
       return NextResponse.json({ success: true, ...summary });
     }
 
@@ -26,8 +26,6 @@ export async function POST(request: Request) {
       userId: profile.user_id,
       questionId,
       selectedAnswer,
-      isCorrect: Boolean(isCorrect),
-      topic: topic || "General Nursing",
     });
 
     return NextResponse.json({ success: true });

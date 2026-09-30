@@ -42,6 +42,8 @@ before(async()=>{
   await document("Failed",subject,"failed","hypoglycemia failed SECRET",[1,0]);
   await document("Old model",subject,"ready","Old vector unrelated text.",[1,0],"other-model");
   await document("Different dimensions",subject,"ready","Different vector unrelated text.",[1,0,0]);
+  const unanswered=await document("Unanswered exam",subject,"ready","hypoglycemia question without a solution",[1,0]);
+  await db.query("UPDATE documents SET source_type='PAST_EXAM' WHERE id=$1",[unanswered]);
   async function privateLecture(owner:string) {
     const id=(await db.query<{id:string}>(`INSERT INTO lectures(user_id,subject_id,title,file_name,original_file_name,storage_path,mime_type,file_size_bytes,file_hash,status)
       VALUES($1,$2,'Private lecture','test.txt','test.txt',$3,'text/plain',100,'hash','ready') RETURNING id`,[owner,subject,`${owner}/test`])).rows[0].id;
@@ -61,6 +63,7 @@ test("hybrid search finds a question across books without naming a source, with 
   assert.equal(found.similarity,0); // Keyword path rescues a low semantic score.
   assert.ok(!result.some(c=>/SECRET|private lecture/.test(c.content)));
   assert.ok(!result.some(c=>/Old model|Different dimensions/.test(c.title??"")));
+  assert.ok(!result.some(c=>c.title==="Unanswered exam"));
 });
 test("Arabic title normalization is searchable without a manually specified book",async()=>{
   const result=await retrieveCurriculum(["التَّقييم الصحي"],{userId:alice,subjectId:null,lectureId:null});

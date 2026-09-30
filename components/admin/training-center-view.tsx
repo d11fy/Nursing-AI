@@ -179,8 +179,8 @@ export function TrainingCenterView({ subjects }: { subjects: SubjectReadinessMet
       {/* Subject Readiness Grid / Table */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-foreground">جاهزية المواد وتغطية المعرفة الحقيقية</h2>
-          <span className="text-xs text-muted-foreground">محسوبة بنسبة 100% من السجلات والمصادر الفعلية</span>
+          <h2 className="text-lg font-bold text-foreground">تجهيز المصادر والأسئلة</h2>
+          <span className="text-xs text-muted-foreground">هذا المؤشر للتجهيز والتغطية، وليس نسبة دقة الإجابات الطبية</span>
         </div>
 
         <div className="overflow-x-auto rounded-xl border border-border bg-card">

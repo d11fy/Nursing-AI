@@ -6,7 +6,8 @@ import { executeWithFallback } from "@/lib/ai/fallback";
 import { extractJson } from "@/lib/ai/json";
 import { getAIConfig } from "@/lib/ai/config.mjs";
 import { getAIProvider } from "@/lib/ai";
-import { getSourcePriority, SOURCE_HIERARCHY } from "./priorities";
+import { searchTerms } from "@/lib/ai/curriculum-search";
+import { getSourcePriority } from "./priorities";
 import type {
   QuestionVerificationStatus,
   SupportType,
@@ -45,7 +46,7 @@ const verificationResponseSchema = z.object({
 });
 
 const VERIFICATION_SYSTEM_PROMPT = `You are a clinical nursing academic verification auditor.
-Your job is to strictly verify the correct answer for an exam question using ONLY the provided official curriculum evidence excerpts (Textbook, Doctor Lecture, Official Syllabus).
+Your job is to solve and verify an exam question using ONLY the provided faculty-uploaded teaching materials. These materials, including textbooks, lectures, slides and summaries, are approved sources. An answer printed in the exam is supplied by the faculty; an unanswered question must be solved from the teaching evidence. A generated candidate answer is untrusted and must be checked independently.
 
 STRICT RULES:
 1. DO NOT GUESS OR INVENT ANSWERS. Do not rely on general pretraining knowledge if the provided curriculum excerpts do not explicitly state or directly imply the clinical fact.
@@ -54,8 +55,9 @@ STRICT RULES:
    - verified_answer must be null.
    - confidence must be low (< 0.6).
 3. If an extracted answer was provided with the question:
-   - If the official textbook/curriculum agrees: status = "VERIFIED".
-   - If the official textbook/curriculum CONTRADICTS the extracted answer:
+   - candidateOrigin=generated means an AI proposed it; independently solve before accepting it.
+   - If the teaching evidence agrees: status = "VERIFIED".
+   - If the teaching evidence CONTRADICTS the extracted answer:
      - status must be "CONFLICT".
      - Explain the discrepancy clearly in conflict_details.
      - Cite the exact textbook quote that disproves the extracted answer.
@@ -64,6 +66,13 @@ STRICT RULES:
 5. Exact Evidence:
    - Provide the exact continuous quote from the matched source (Source S1, S2...) that confirms the answer.
 6. Return only the required JSON schema.`;
+
+const normalizeQuote = (value: string) => value.normalize("NFC").replace(/\s+/g, " ").trim();
+
+export function validQuestionEvidence(sourceContent: string, quote: string | null | undefined): boolean {
+  const normalized = normalizeQuote(quote ?? "");
+  return normalized.length >= 8 && normalizeQuote(sourceContent).includes(normalized);
+}
 
 /**
  * Searches curriculum documents (Books, Lectures, Official Material) for the question.
@@ -89,18 +98,22 @@ async function retrieveCurriculumEvidence(
     // 1. Generate embedding for question
     let queryEmbedding: number[] = [];
     const config = getAIConfig();
+    let embeddingProvider = config.provider;
+    let embeddingModel = config.embeddingModel;
     try {
       const aiProvider = getAIProvider();
       const embResult = await aiProvider.createEmbeddings([queryText]);
       if (embResult.length && embResult[0].embedding.length) {
         queryEmbedding = embResult[0].embedding;
+        embeddingProvider = aiProvider.name;
+        embeddingModel = embResult[0].model;
       }
     } catch (err) {
       console.warn("[QuestionVerifier] Embedding retrieval error, using lexical fallback:", err);
     }
 
     const hasEmbedding = queryEmbedding.length > 0;
-    const safeSearchText = queryText.slice(0, 300);
+    const safeSearchText = searchTerms(questionText);
 
     let sql = "";
     let params: unknown[] = [];
@@ -115,23 +128,27 @@ async function retrieveCurriculumEvidence(
             d.source_type,
             dc.page_number,
             dc.content,
-            public.cosine_similarity(dc.embedding, $2::double precision[]) AS similarity,
-            ts_rank_cd(dc.search_vector, plainto_tsquery('simple', $3)) AS text_score
+            CASE WHEN dc.embedding_provider = $4 AND dc.embedding_model = $5
+              AND dc.embedding_dimensions = cardinality($2::double precision[])
+              THEN public.cosine_similarity(dc.embedding, $2::double precision[])
+              ELSE NULL END AS similarity,
+            ts_rank_cd(dc.search_vector, to_tsquery('simple', $3)) AS text_score
           FROM public.document_chunks dc
           JOIN public.documents d ON d.id = dc.document_id
           WHERE d.subject_id = $1
             AND d.status = 'ready'
-            AND d.source_type NOT IN ('PAST_EXAM', 'QUESTION_BANK', 'questions')
-            AND dc.embedding_provider = $4
-            AND dc.embedding_dimensions = cardinality($2::double precision[])
+            AND upper(d.source_type) NOT IN ('PAST_EXAM', 'QUESTION_BANK', 'QUESTIONS')
+            AND ((dc.embedding_provider = $4 AND dc.embedding_model = $5
+              AND dc.embedding_dimensions = cardinality($2::double precision[]))
+              OR ($3 <> '' AND dc.search_vector @@ to_tsquery('simple', $3)))
         )
         SELECT *
         FROM candidates
-        WHERE similarity > 0.35 OR text_score > 0.05
-        ORDER BY similarity DESC NULLS LAST, text_score DESC
-        LIMIT 6;
+        WHERE similarity > 0.25 OR text_score > 0
+        ORDER BY coalesce(similarity, 0) + text_score DESC, chunk_id
+        LIMIT 10;
       `;
-      params = [subjectId, queryEmbedding, safeSearchText, config.provider];
+      params = [subjectId, queryEmbedding, safeSearchText, embeddingProvider, embeddingModel];
     } else {
       sql = `
         WITH candidates AS (
@@ -143,18 +160,18 @@ async function retrieveCurriculumEvidence(
             dc.page_number,
             dc.content,
             0.5::double precision AS similarity,
-            ts_rank_cd(dc.search_vector, plainto_tsquery('simple', $2)) AS text_score
+            ts_rank_cd(dc.search_vector, to_tsquery('simple', $2)) AS text_score
           FROM public.document_chunks dc
           JOIN public.documents d ON d.id = dc.document_id
           WHERE d.subject_id = $1
             AND d.status = 'ready'
-            AND d.source_type NOT IN ('PAST_EXAM', 'QUESTION_BANK', 'questions')
+            AND upper(d.source_type) NOT IN ('PAST_EXAM', 'QUESTION_BANK', 'QUESTIONS')
         )
         SELECT *
         FROM candidates
-        WHERE text_score > 0.02
-        ORDER BY text_score DESC
-        LIMIT 6;
+        WHERE text_score > 0
+        ORDER BY text_score DESC, chunk_id
+        LIMIT 10;
       `;
       params = [subjectId, safeSearchText];
     }
@@ -195,6 +212,7 @@ export async function verifyExamQuestion(input: {
   questionType: string;
   options: string[];
   extractedAnswer?: string | null;
+  answerOrigin?: "exam" | "generated";
   examYear?: number | null;
 }): Promise<VerificationResult> {
   try {
@@ -223,7 +241,7 @@ export async function verifyExamQuestion(input: {
       sourceType: c.sourceType,
       pageNumber: c.pageNumber,
       priority: c.priority,
-      content: c.content.slice(0, 2000),
+      content: c.content.slice(0, 3000),
     }));
 
     // Route to the strongest available provider (e.g. OpenAI complex or Gemini flash fallback)
@@ -248,7 +266,8 @@ export async function verifyExamQuestion(input: {
                 question: input.questionText,
                 questionType: input.questionType,
                 options: input.options,
-                extractedAnswerFromExam: input.extractedAnswer || null,
+                candidateAnswer: input.extractedAnswer || null,
+                candidateOrigin: input.answerOrigin ?? "exam",
                 examYear: input.examYear || null,
                 curriculumEvidenceExcerpts: evidencePayload,
               }),
@@ -277,12 +296,12 @@ export async function verifyExamQuestion(input: {
     if (validated.matched_source_id) {
       const matchIdx = parseInt(validated.matched_source_id.replace(/^S/i, ""), 10) - 1;
       const matchedSource = candidates[matchIdx];
-      if (matchedSource && validated.evidence_quote) {
+      if (matchedSource && validQuestionEvidence(matchedSource.content.slice(0, 3000), validated.evidence_quote)) {
         evidenceList.push({
           documentId: matchedSource.documentId,
           chunkId: matchedSource.chunkId,
           pageNumber: matchedSource.pageNumber,
-          quote: validated.evidence_quote,
+          quote: validated.evidence_quote!,
           sourceType: matchedSource.sourceType,
           sourcePriority: matchedSource.priority,
           supportType: finalStatus === "CONFLICT" ? "CONFLICTING" : "DIRECT",
@@ -291,7 +310,7 @@ export async function verifyExamQuestion(input: {
     }
 
     // If no direct evidence was matched, status cannot be VERIFIED
-    if (finalStatus === "VERIFIED" && (!evidenceList.length || !validated.has_direct_evidence)) {
+    if (finalStatus === "VERIFIED" && (!evidenceList.length || !validated.has_direct_evidence || !validated.verified_answer?.trim())) {
       finalStatus = "NEEDS_REVIEW";
     }
 
@@ -308,7 +327,7 @@ export async function verifyExamQuestion(input: {
     return {
       status: "NEEDS_REVIEW",
       verifiedAnswer: null,
-      explanation: "حدث خطأ أثناء فحص الأدلة تلقائيًا؛ يتطلب السؤال مراجعة يدوية.",
+      explanation: "تعذر إكمال فحص الأدلة تلقائيًا؛ لم يُعتمد جواب لهذا السؤال.",
       confidence: 0.2,
       evidence: [],
       conflictDetails: null,

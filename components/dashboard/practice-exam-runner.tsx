@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { PracticeQuestionView } from "@/lib/exams/practice-service";
+import { gradePracticeAnswer } from "@/lib/exams/answer-grading";
 
 export function PracticeExamRunner({
   attemptId,
@@ -41,6 +42,7 @@ export function PracticeExamRunner({
     totalQuestions: number;
     correctAnswers: number;
     wrongAnswers: number;
+    unansweredQuestions: number;
     scorePercentage: number;
     weakTopicsRecommendation?: string[];
   } | null>(null);
@@ -56,28 +58,19 @@ export function PracticeExamRunner({
     setUserAnswers((prev) => ({ ...prev, [currentQ.id]: option }));
 
     // Check correctness
-    const correctVal = String(currentQ.correctAnswer || "").trim().toLowerCase();
-    const cleanOpt = option.trim().toLowerCase();
-    // Handles options like "A) Option" where correctVal might be "A" or the text
-    const isCorrect =
-      cleanOpt === correctVal ||
-      cleanOpt.startsWith(correctVal) ||
-      (correctVal.length === 1 && cleanOpt.charAt(0) === correctVal);
-
     if (mode === "STUDY") {
       setIsAnswerRevealed((prev) => ({ ...prev, [currentQ.id]: true }));
       // Save answer immediately in study mode
-      void fetch("/api/practice/submit-answer", {
+      const response = await fetch("/api/practice/submit-answer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           attemptId,
           questionId: currentQ.id,
           selectedAnswer: option,
-          isCorrect,
-          topic: currentQ.topic,
         }),
       });
+      if (!response.ok) toast.error("تعذر حفظ إجابتك؛ حاول مرة أخرى");
     }
   }
 
@@ -88,25 +81,16 @@ export function PracticeExamRunner({
       if (mode === "EXAM") {
         for (const q of questions) {
           const ans = userAnswers[q.id];
-          const correctVal = String(q.correctAnswer || "").trim().toLowerCase();
-          const cleanOpt = String(ans || "").trim().toLowerCase();
-          const isCorrect =
-            Boolean(ans) &&
-            (cleanOpt === correctVal ||
-              cleanOpt.startsWith(correctVal) ||
-              (correctVal.length === 1 && cleanOpt.charAt(0) === correctVal));
-
-          await fetch("/api/practice/submit-answer", {
+          const response = await fetch("/api/practice/submit-answer", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               attemptId,
               questionId: q.id,
               selectedAnswer: ans || null,
-              isCorrect,
-              topic: q.topic,
             }),
           });
+          if (!response.ok) throw new Error("تعذر حفظ إحدى الإجابات");
         }
       }
 
@@ -148,6 +132,11 @@ export function PracticeExamRunner({
               <span className="text-rose-600 dark:text-rose-400 font-semibold">
                 خاطئة: {scoreSummary.wrongAnswers}
               </span>
+              {scoreSummary.unansweredQuestions > 0 && (
+                <span className="text-muted-foreground font-semibold">
+                  غير مجاب: {scoreSummary.unansweredQuestions}
+                </span>
+              )}
               <span className="text-muted-foreground">
                 المجموع: {scoreSummary.totalQuestions}
               </span>
@@ -221,11 +210,7 @@ export function PracticeExamRunner({
   }
 
   const isOptionSelected = (opt: string) => selectedAnswer === opt;
-  const isOptionCorrect = (opt: string) => {
-    const correctVal = String(currentQ.correctAnswer || "").trim().toLowerCase();
-    const cleanOpt = opt.trim().toLowerCase();
-    return cleanOpt === correctVal || cleanOpt.startsWith(correctVal) || (correctVal.length === 1 && cleanOpt.charAt(0) === correctVal);
-  };
+  const isOptionCorrect = (opt: string) => gradePracticeAnswer(opt, currentQ.correctAnswer);
 
   return (
     <Card className="max-w-2xl mx-auto border-border shadow-md">

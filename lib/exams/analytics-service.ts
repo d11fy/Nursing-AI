@@ -27,7 +27,7 @@ export interface SubjectReadinessMetrics {
   verifiedQuestions: number;
   needsReviewQuestions: number;
   conflictQuestions: number;
-  retrievalSuccessRate: number;
+  retrievalSuccessRate: number | null;
   verifiedRatio: number;
   topRepeatedTopics: TopicRecurrenceStat[];
 }
@@ -44,7 +44,7 @@ export async function syncExamTopicStats(subjectId: string): Promise<TopicRecurr
     `SELECT count(*)::int AS count FROM public.exams WHERE subject_id = $1 AND status = 'READY'`,
     [subjectId]
   );
-  const totalExams = Math.max(1, examCountRows[0]?.count ?? 1);
+  const totalExams = examCountRows[0]?.count ?? 0;
 
   // 2. Aggregate topics from exam_questions
   const { rows: topicRows } = await pool.query<{
@@ -60,9 +60,10 @@ export async function syncExamTopicStats(subjectId: string): Promise<TopicRecurr
        count(eq.id)::int AS question_count,
        coalesce(avg(eq.difficulty_estimate), 0.5)::text AS avg_difficulty,
        array_agg(distinct eq.question_type) AS types
-     FROM public.exam_questions eq
-     WHERE eq.subject_id = $1
-       AND eq.status IN ('VERIFIED', 'EXTRACTED')
+      FROM public.exam_questions eq
+      JOIN public.exams e ON e.id=eq.exam_id AND e.status='READY'
+      WHERE eq.subject_id = $1
+        AND eq.status = 'VERIFIED'
      GROUP BY eq.topic
      ORDER BY question_count DESC`,
     [subjectId]
@@ -71,7 +72,7 @@ export async function syncExamTopicStats(subjectId: string): Promise<TopicRecurr
   const results: TopicRecurrenceStat[] = [];
 
   for (const t of topicRows) {
-    const frequency = Math.min(100, Math.round((t.appeared_in_exams / totalExams) * 100));
+    const frequency = totalExams > 0 ? Math.round((t.appeared_in_exams / totalExams) * 100) : 0;
     const phrasing = `تكرر هذا الموضوع في ${t.appeared_in_exams} من أصل ${totalExams} نماذج امتحانات متاحة (${frequency}%).`;
 
     results.push({
@@ -112,12 +113,16 @@ export async function syncExamTopicStats(subjectId: string): Promise<TopicRecurr
     );
   }
 
+  await pool.query(
+    `DELETE FROM public.exam_topic_stats WHERE subject_id=$1 AND NOT (topic=ANY($2::text[]))`,
+    [subjectId, results.map((result) => result.topic)]
+  );
+
   return results;
 }
 
 /**
- * Calculates strictly factual, deterministic Subject Readiness and Knowledge Coverage metrics.
- * No fake analytics, no hardcoded or fabricated AI numbers.
+ * Calculates operational source/question readiness. Evidence coverage is not answer accuracy.
  */
 export async function calculateSubjectReadiness(subjectId: string): Promise<SubjectReadinessMetrics> {
   const pool = getPool();
@@ -213,8 +218,8 @@ export async function calculateSubjectReadiness(subjectId: string): Promise<Subj
   const verifiedQuestionsScore = Math.round(verifiedRatio * 35);
 
   // 3. Retrieval Success Rate: up to 20%
-  const retrievalSuccessRate = rTrace.total > 0 ? Math.round((rTrace.supported / rTrace.total) * 100) : 85;
-  const retrievalScore = Math.round((retrievalSuccessRate / 100) * 20);
+  const retrievalSuccessRate = rTrace.total > 0 ? Math.round((rTrace.supported / rTrace.total) * 100) : null;
+  const retrievalScore = retrievalSuccessRate === null ? 0 : Math.round((retrievalSuccessRate / 100) * 20);
 
   // 4. Low Conflict / Review Penalty: up to 10%
   const conflictRatio = qCounts.total > 0 ? (qCounts.needs_review + qCounts.conflict) / qCounts.total : 0;

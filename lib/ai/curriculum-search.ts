@@ -28,7 +28,8 @@ export function candidateQuery(scope: SearchScope) {
   const parentKey = lecture ? "lecture_id" : "document_id";
   const access = lecture
     ? "d.id=$3 AND d.user_id=$1 AND c.user_id=$1"
-    : `($2::uuid IS NULL OR d.subject_id=$2) AND
+    : `upper(d.source_type) NOT IN ('PAST_EXAM','QUESTION_BANK','QUESTIONS') AND
+       ($2::uuid IS NULL OR d.subject_id=$2) AND
        (p.role='admin' OR d.subject_id IS NULL OR EXISTS (
          SELECT 1 FROM subject_academic_years sy JOIN academic_years ay ON ay.id=sy.academic_year_id AND ay.is_active=true
          WHERE sy.subject_id=d.subject_id AND sy.academic_year_id=p.academic_year_id))

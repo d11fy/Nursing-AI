@@ -7,6 +7,14 @@ import {
   formatSourceTypeArabic,
 } from "@/lib/exams/priorities";
 import { quickHeuristicQuestionCount } from "@/lib/exams/exam-parser";
+import { validQuestionEvidence } from "@/lib/exams/question-verifier";
+
+test("exam evidence must be an exact excerpt from the retrieved material", () => {
+  const source = "The intervention is documented before discharge. The dose is 5 mg.";
+  assert.equal(validQuestionEvidence(source, "The dose is 5 mg."), true);
+  assert.equal(validQuestionEvidence(source, "The dose is 50 mg."), false);
+  assert.equal(validQuestionEvidence(source, "5 mg"), false);
+});
 
 test("academic source hierarchy enforces strict truth priorities", () => {
   // 1. Official material has highest priority
