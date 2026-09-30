@@ -1,5 +1,4 @@
 import { PDFParse } from "pdf-parse";
-import mammoth from "mammoth";
 import JSZip from "jszip";
 import { downloadKnowledgeDocument } from "@/lib/storage";
 import { createSystemClient } from "@/lib/db/server";
@@ -21,7 +20,8 @@ export interface ExtractedPage {
 
 export async function extractPagesFromFile(
   buffer: Buffer,
-  fileName: string
+  fileName: string,
+  userId?: string
 ): Promise<ExtractedPage[]> {
   const ext = fileName.split(".").pop()?.toLowerCase();
 
@@ -30,7 +30,14 @@ export async function extractPagesFromFile(
     try {
       const result = await parser.getText();
       const pages: ExtractedPage[] = result.pages.map(p => ({pageNumber:p.num,text:p.text.trim()}));
-      const scanned = pages.filter(p => needsOcr(p.text));
+      const images = await parser.getImage({ imageThreshold:180, imageDataUrl:false, imageBuffer:false });
+      const diagramPages = new Set(images.pages.filter(p => p.images.length > 0).map(p => p.pageNumber));
+      const tables = await parser.getTable();
+      for (const page of pages) {
+        const pageTables = tables.pages.find(p => p.num === page.pageNumber)?.tables ?? [];
+        if (pageTables.length) page.text += '\n\n' + pageTables.map(table => table.map(row => row.join(' | ')).join('\n')).join('\n\n');
+      }
+      const scanned = pages.filter(p => needsOcr(p.text) || diagramPages.has(p.pageNumber!));
       const limit = Number(process.env.KNOWLEDGE_MAX_OCR_PAGES || 200);
       if (!Number.isInteger(limit) || limit < 0) throw new Error("KNOWLEDGE_MAX_OCR_PAGES must be a non-negative integer");
       if (scanned.length > limit) throw new Error(`يحتاج الملف قراءة بصرية لـ ${scanned.length} صفحة؛ قسّمه إلى أجزاء أو ارفع حد KNOWLEDGE_MAX_OCR_PAGES (${limit}). لم يتم اعتماد فهرس ناقص.`);
@@ -38,7 +45,7 @@ export async function extractPagesFromFile(
         const screenshot = await parser.getScreenshot({partial:[page.pageNumber!],desiredWidth:1600});
         const image = screenshot.pages[0];
         if (!image) throw new Error(`تعذر قراءة صفحة ${page.pageNumber}`);
-        const transcription = await transcribePage(image.dataUrl, getAIProvider());
+        const transcription = await transcribePage(image.dataUrl, getAIProvider(), userId);
         // Retain native text if the visual pass finds no additional content.
         if (transcription) page.text = transcription;
         page.ocr = true;
@@ -50,27 +57,47 @@ export async function extractPagesFromFile(
   }
 
   if (ext === "docx") {
-    const { value } = await mammoth.extractRawText({ buffer });
-    return [{ pageNumber: null, text: value.trim() }];
+    const zip = await JSZip.loadAsync(buffer);
+    const xml = await zip.file('word/document.xml')?.async('text');
+    if (!xml) throw new Error('DOCX has no document body');
+    const { docxText } = await import('@/lib/document-text');
+    return [{ pageNumber:null, text:docxText(xml) }];
   }
 
   if (ext === "pptx") {
-    try {
       const zip = await JSZip.loadAsync(buffer);
       const slideFiles = Object.keys(zip.files)
         .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
         .sort((a, b) => Number(a.match(/slide(\d+)\.xml/)![1]) - Number(b.match(/slide(\d+)\.xml/)![1]));
 
+      const {renderSlides}=await import('@/lib/tutor/slide-renderer');
+      const rendered=await renderSlides(buffer);
+      if(rendered){
+        const extracted=await extractPagesFromFile(rendered,'slides.pdf',userId);
+        for(const page of extracted){const notes=await zip.file(`ppt/notesSlides/notesSlide${page.pageNumber}.xml`)?.async('text');if(notes)page.text+='\n\nSpeaker notes:\n'+slideText(notes);}
+        return extracted;
+      }
+      const hasVisuals=Object.keys(zip.files).some(name=>/^ppt\/(?:media|charts|diagrams)\//.test(name));
+      if(hasVisuals)throw new Error('Visual PPTX slides need LibreOffice slide rendering. Configure LIBREOFFICE_PATH or upload an exported PDF; no incomplete visual index was published.');
+
       const pages: ExtractedPage[] = [];
       for (let i = 0; i < slideFiles.length; i++) {
         const xml = await zip.files[slideFiles[i]].async("text");
-        const text = slideText(xml);
+        let text = slideText(xml);
+        const notes = await zip.file(`ppt/notesSlides/notesSlide${i+1}.xml`)?.async('text');
+        if (notes) text += '\n\nSpeaker notes:\n' + slideText(notes);
+        const rels = await zip.file(`ppt/slides/_rels/slide${i+1}.xml.rels`)?.async('text') ?? '';
+        for (const relationship of rels.matchAll(/<Relationship\b[^>]*Type="[^"]*\/image"[^>]*Target="([^"]+)"[^>]*\/?\s*>/g)) {
+          const target = relationship[1].replace(/^\.\.\//,'ppt/');
+          const image = await zip.file(target)?.async('nodebuffer');
+          if (image) {
+            const { toVisionDataUri } = await import('@/lib/vision-image');
+            text += '\n\nSlide diagram:\n' + await transcribePage(await toVisionDataUri(image),getAIProvider(),userId);
+          }
+        }
         if (text) pages.push({ pageNumber: i + 1, text });
       }
       if (pages.length) return pages;
-    } catch {
-      // Fallback if not standard pptx xml structure
-    }
   }
 
   if (["txt", "md", "csv", "json"].includes(ext || "")) {
@@ -104,6 +131,10 @@ export async function extractPagesFromFile(
  * chunk -> embed -> store.
  */
 export async function processDocument(documentId: string): Promise<void> {
+  if (process.env.AI_ARCHITECTURE !== 'legacy') {
+    const { registerDocument,processKnowledgeDocument } = await import('@/lib/tutor/ingestion');
+    return processKnowledgeDocument(await registerDocument(documentId));
+  }
   const lock = await getPool().connect();
   let acquired = false;
   try {

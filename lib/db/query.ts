@@ -11,13 +11,13 @@ const columns: Record<Table, string[]> = {
   profiles: "id user_id full_name email university nursing_year academic_year_id role status created_at updated_at".split(" "),
   subjects: "id name_ar name_en description description_ar description_en icon icon_theme status sort_order created_at updated_at archived_at".split(" "),
   conversations: "id user_id title subject_id lecture_id active_attachment_id active_attachment_section_index created_at updated_at".split(" "),
-  messages: "id conversation_id role content image_url tokens_input tokens_output model created_at".split(" "),
+  messages: "id conversation_id role content image_url tokens_input tokens_output model answer_origin source_ids created_at".split(" "),
   conversation_attachments: "id conversation_id message_id user_id file_path file_type ordinal vision_extracted_text vision_structured_json subject_id lecture_id status provider model input_tokens output_tokens created_at".split(" "),
   message_ai_traces: "id message_id conversation_id user_id resolved_query detected_subject active_attachment_id attachment_ids retrieved_sources_json reranked_sources_json evidence_coverage selected_provider selected_model fallback_used final_source_ids_json refusal_reason diagnostics_json created_at".split(" "),
-  message_feedback: "id message_id user_id is_positive reason comment created_at".split(" "),
-  documents: "id title file_url file_name file_size subject_id source_type status vector_store_id file_id chunk_count error_message created_by contribution_id created_at updated_at extraction_page_count ocr_page_count index_version academic_year_id semester exam_year doctor_name exam_type notes file_hash content_hash processing_version".split(" "),
+  message_feedback: "id message_id user_id is_positive reason comment subject_id answer_origin source_ids created_at".split(" "),
+  documents: "id title file_url file_name file_size subject_id source_type source_priority status vector_store_id file_id chunk_count error_message created_by contribution_id created_at updated_at extraction_page_count ocr_page_count index_version academic_year_id semester exam_year doctor_name exam_type notes file_hash content_hash processing_version".split(" "),
   document_chunks: "id document_id subject_id content embedding embedding_provider embedding_model embedding_dimensions chapter page_number chunk_index created_at".split(" "),
-  usage_logs: "id user_id type model input_tokens output_tokens estimated_cost lecture_id created_at provider feature fallback_used fallback_from fallback_reason latency_ms success error_code is_free_tier".split(" "),
+  usage_logs: "id user_id type model input_tokens output_tokens cached_input_tokens reasoning_effort pricing_version estimated_cost lecture_id created_at provider feature fallback_used fallback_from fallback_reason latency_ms success error_code is_free_tier".split(" "),
   settings: "key value updated_at".split(" "),
   lectures: "id user_id subject_id title file_name original_file_name storage_path mime_type file_size_bytes file_hash status error_message uploaded_at processing_started_at processing_completed_at delete_after deleted_at contribution_status contribution_consent_at contribution_ownership_confirmed_at created_at updated_at".split(" "),
   lecture_chunks: "id lecture_id user_id subject_id content page_number chunk_index embedding embedding_provider embedding_model embedding_dimensions created_at".split(" "),
@@ -178,11 +178,11 @@ export class Query<T extends Table> implements PromiseLike<Result<Row<T>[]>> {
         values.length = 0;
         const tuples = this.rows.map((row) => `(${keys.map((key) => {
           const value = (row as Record<string, unknown>)[key];
-          return bind(key === "value" ? JSON.stringify(value) : value);
+          return bind(key === "value" || key === "source_ids" || key.endsWith("_json") ? JSON.stringify(value) : value);
         }).join(",")})`);
         sql = `INSERT INTO "${this.table}" (${keys.map((key) => this.column(key)).join(",")}) VALUES ${tuples.join(",")} RETURNING ${this.fields}`;
       } else if (this.operation === "update") {
-        const assignments = Object.entries(this.rows[0]).map(([key, value]) => `${this.column(key)}=${bind(key === "value" ? JSON.stringify(value) : value)}`);
+        const assignments = Object.entries(this.rows[0]).map(([key, value]) => `${this.column(key)}=${bind(key === "value" || key === "source_ids" || key.endsWith("_json") ? JSON.stringify(value) : value)}`);
         if (!assignments.length) throw new Error("Empty update");
         sql = `UPDATE "${this.table}" SET ${assignments.join(",")} WHERE ${predicates.join(" AND ")} RETURNING ${this.fields}`;
       } else if (this.operation === "delete") {

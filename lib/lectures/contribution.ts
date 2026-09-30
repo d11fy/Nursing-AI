@@ -1,6 +1,8 @@
 import "server-only";
 import { createSystemClient } from "@/lib/db/server";
 import { classifyLectureContent } from "@/lib/ai/classification";
+import {workerDb} from "@/lib/tutor/db";
+import {containsPii} from "@/lib/ai/classifier";
 import { logEvent } from "@/lib/log";
 
 /**
@@ -18,16 +20,13 @@ export async function submitContributionIfRequested(lectureId: string): Promise<
     .single();
   if (!lecture || !lecture.contribution_consent_at || !lecture.contribution_ownership_confirmed_at) return;
 
-  const { data: chunks } = await db
-    .from("lecture_chunks")
-    .select("content")
-    .eq("lecture_id", lectureId)
-    .order("chunk_index", { ascending: true })
-    .limit(10);
-  const sample = (chunks ?? []).map((c) => c.content).join("\n\n").trim();
-  if (!sample) return;
-
-  const result = await classifyLectureContent(sample);
+  const existing=await db.from('knowledge_contributions').select('id').eq('lecture_id',lectureId).limit(1);
+  if(existing.data?.length)return;
+  const sample=process.env.AI_ARCHITECTURE==='legacy'
+    ? ((await db.from('lecture_chunks').select('content').eq('lecture_id',lectureId).order('chunk_index',{ascending:true}).limit(10)).data??[]).map(c=>c.content).join('\n\n')
+    : (await workerDb.query<{content:string}>(`select c.content from knowledge_chunks c join knowledge_documents d on d.id=c.document_id where d.lecture_id=$1 and d.owner_id=$2 and d.status='ready' order by c.chunk_index limit 10`,[lectureId,lecture.user_id])).rows.map(c=>c.content).join('\n\n');
+  if(!sample.trim())return;
+  const result=process.env.AI_ARCHITECTURE==='legacy'?await classifyLectureContent(sample):{classification:'uncertain' as const,confidence:0,privacyFlagged:containsPii(sample)};
   const status = result.classification === "not_nursing" ? "rejected" : "pending";
 
   const { data: contribution, error } = await db

@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
-import { after } from "next/server";
 import { createHash } from "node:crypto";
 import { limitedFormData } from "@/lib/request-body";
 import { createClient } from "@/lib/db/server";
-import { getPool } from "@/lib/db/pool";
+import {identityDb} from "@/lib/tutor/db";
 import { getSettings } from "@/lib/usage";
 import { canStudentAccessSubject } from "@/lib/subjects";
 import { uploadLectureFile } from "@/lib/storage";
 import { lectureUploadMetaSchema, LECTURE_EXTENSION_MIME_MAP } from "@/lib/validations/lectures";
-import { processLecture } from "@/lib/lectures/processing";
+import {registerDocument,enqueueDocument} from "@/lib/tutor/ingestion";
 import { logEvent } from "@/lib/log";
 
 function sanitizeFileName(name: string): string {
@@ -69,7 +68,7 @@ export async function POST(request: Request) {
   const fileHash = createHash("sha256").update(Buffer.from(await file.arrayBuffer())).digest("hex");
 
   if (!forceDuplicate) {
-    const { rows: duplicates } = await getPool().query<{ id: string; title: string }>(
+    const { rows: duplicates } = await identityDb(user.id).query<{ id: string; title: string }>(
       "SELECT id,title FROM lectures WHERE user_id=$1 AND file_hash=$2 AND deleted_at IS NULL LIMIT 1",
       [user.id, fileHash]
     );
@@ -121,7 +120,7 @@ export async function POST(request: Request) {
 
   logEvent("FILE_UPLOAD_COMPLETED", { userId: user.id, lectureId: lecture.id });
 
-  after(() => processLecture(lecture.id).catch((err) => console.error("processLecture error", err)));
+  await enqueueDocument(await registerDocument(lecture.id,true));
 
   return NextResponse.json({ id: lecture.id, status: lecture.status, deleteAfter: lecture.delete_after });
 }

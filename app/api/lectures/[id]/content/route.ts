@@ -19,7 +19,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const lecture = await loadOwnedLecture(db, id);
   if (!lecture) return NextResponse.json({ error: "المحاضرة غير موجودة" }, { status: 404 });
 
-  return NextResponse.json(await getStudyContent(id));
+  return NextResponse.json(await getStudyContent(id,user.id));
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -39,7 +39,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     const content = await generateStudyContent(id, user.id, parsed.data.type, lecture.title);
     return NextResponse.json({ type: parsed.data.type, content });
-  } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "تعذر إنشاء المحتوى" }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "تعذر إنشاء المحتوى، حاول مرة أخرى" }, { status: 500 });
   }
 }

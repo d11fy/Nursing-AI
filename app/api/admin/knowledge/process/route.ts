@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminProfileOrNull } from "@/lib/auth";
-import { processDocument } from "@/lib/knowledge";
+import { enqueueDocument,registerDocument } from '@/lib/tutor/ingestion';
 import { getPool } from "@/lib/db/pool";
 
 export async function GET(request: Request) {
@@ -53,9 +53,7 @@ export async function POST(request: Request) {
 
     // Execute heavy RAG extraction, chunking, and embedding generation in the background.
     // This responds in milliseconds to the client, preventing reverse-proxy 502/504 Bad Gateway timeouts.
-    void processDocument(documentId).catch((err) => {
-      console.error(`[ProcessDocument] Background error for document ${documentId}:`, err);
-    });
+    await enqueueDocument(await registerDocument(documentId));
 
     return NextResponse.json({
       success: true,

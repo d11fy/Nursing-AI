@@ -1,4 +1,5 @@
 import "server-only";
+import {workerDb} from "@/lib/tutor/db";
 import { getPool } from "@/lib/db/pool";
 import { deleteLectureFile } from "@/lib/storage";
 import { logEvent } from "@/lib/log";
@@ -29,7 +30,7 @@ export async function runLectureCleanupSweep(): Promise<void> {
 }
 
 async function sweep(): Promise<void> {
-  const pool = getPool();
+  const pool = workerDb;
   const { rows } = await pool.query<{ id: string; storage_path: string }>(
     "SELECT id, storage_path FROM lectures WHERE delete_after <= now() AND deleted_at IS NULL"
   );

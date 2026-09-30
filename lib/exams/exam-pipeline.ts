@@ -1,13 +1,11 @@
 import "server-only";
-import { createHash } from "node:crypto";
+import {workerDb} from "@/lib/tutor/db";
+import {structureChunks} from "@/lib/tutor/chunking";
 import { getPool } from "@/lib/db/pool";
-import { downloadKnowledgeDocument } from "@/lib/storage";
-import { extractPagesFromFile } from "@/lib/knowledge";
 import { parseExamPage } from "./exam-parser";
 import { verifyExamQuestion } from "./question-verifier";
 import { assignQuestionToCluster } from "./cluster-service";
 import { syncExamTopicStats } from "./analytics-service";
-import { processSummaryDocument } from "./summary-processor";
 
 export interface ExamProcessingProgress {
   examId: string;
@@ -40,10 +38,11 @@ export async function processExamDocument(
     file_name: string;
     source_type: string;
     file_hash: string | null;
+    created_by:string;processing_hash:string|null;status:string;
   }>(
     `SELECT
        e.id, e.subject_id, e.title, e.exam_year, e.exam_type, e.document_id,
-       d.file_url, d.file_name, d.source_type, d.file_hash
+       d.file_url, d.file_name, d.source_type, d.file_hash, d.created_by, e.processing_hash, e.status
      FROM public.exams e
      JOIN public.documents d ON d.id = e.document_id
      WHERE e.id = $1`,
@@ -70,17 +69,11 @@ export async function processExamDocument(
       [exam.subject_id, exam.id, JSON.stringify({ title: exam.title, exam_year: exam.exam_year })]
     );
 
-    // 2. Download and extract pages
-    const buffer = await downloadKnowledgeDocument(exam.file_url);
-    const contentHash = createHash("sha256").update(buffer).digest("hex");
-
-    // Update document hash
-    await pool.query(
-      `UPDATE public.documents SET content_hash = $2, file_hash = coalesce(file_hash, $2) WHERE id = $1`,
-      [exam.document_id, contentHash]
-    );
-
-    const pages = await extractPagesFromFile(buffer, exam.file_name);
+    // Reuse the saved extraction, including visual pages, after original expiry.
+    const canonical=(await workerDb.query<{extracted_pages_json:Array<{pageNumber:number|null;text:string}>;file_hash:string}>("select extracted_pages_json,file_hash from knowledge_documents where legacy_document_id=$1 and owner_id is null and status='ready'",[exam.document_id])).rows[0];
+    if(!canonical)throw new Error('افهرس مصدر الامتحان في مركز المعرفة أولًا');
+    const pages=canonical.extracted_pages_json,contentHash=`exam-v2:${canonical.file_hash}`;
+    if(exam.status==='READY'&&exam.processing_hash===contentHash){await pool.query("update exams set status='READY' where id=$1",[examId]);return;}
     if (!pages.length) {
       throw new Error("لم يتم العثور على محتوى نصي داخل ملف الامتحان");
     }
@@ -95,8 +88,10 @@ export async function processExamDocument(
 
     // Parse each page
     for (const page of pages) {
-      const pageQuestions = await parseExamPage(page.text, page.pageNumber, exam.title);
-      allParsedQuestions.push(...pageQuestions);
+      for(const segment of structureChunks(page.text,800,900)){
+        const pageQuestions=await parseExamPage(segment.content,page.pageNumber,exam.title,exam.created_by);
+        allParsedQuestions.push(...pageQuestions);
+      }
     }
 
     if (!allParsedQuestions.length) {
@@ -122,14 +117,17 @@ export async function processExamDocument(
     let needsReviewCount = 0;
     let conflictCount = 0;
 
-    // Clean up any previously extracted questions for this exam if re-processing
-    await pool.query(`DELETE FROM public.exam_questions WHERE exam_id = $1`, [examId]);
+    // Preserve question IDs and existing student attempts during retries.
+    const existing=(await pool.query<{question_text:string}>("select question_text from exam_questions where exam_id=$1",[examId])).rows;
+    const known=new Set(existing.map(q=>q.question_text));
 
     // 4. Verify each question strictly against curriculum sources
     for (const [idx, q] of allParsedQuestions.entries()) {
       try {
+        if(known.has(q.question_text))continue;
+        known.add(q.question_text);
         const verification = await verifyExamQuestion({
-          subjectId: exam.subject_id,
+          userId:exam.created_by,subjectId: exam.subject_id,
           questionText: q.question_text,
           questionType: q.question_type,
           options: q.options,
@@ -182,7 +180,7 @@ export async function processExamDocument(
           for (const ev of verification.evidence) {
             await pool.query(
               `INSERT INTO public.question_sources (
-                 question_id, document_id, chunk_id, page_number, quote, support_type, source_priority
+                 question_id, document_id, knowledge_chunk_id, page_number, quote, support_type, source_priority
                ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
               [
                 questionId,
@@ -228,6 +226,9 @@ export async function processExamDocument(
       }
     }
 
+    const counts=(await pool.query<{verified:number;review:number;conflict:number;total:number}>(`select count(*)::int total,count(*) filter(where status='VERIFIED')::int verified,count(*) filter(where status='NEEDS_REVIEW')::int review,count(*) filter(where status='CONFLICT')::int conflict from exam_questions where exam_id=$1`,[examId])).rows[0];
+    verifiedCount=counts.verified;needsReviewCount=counts.review;conflictCount=counts.conflict;
+    await pool.query('update exams set total_questions=$2 where id=$1',[examId,counts.total]);
     // 6. Mark exam READY and update counts
     await pool.query(
       `UPDATE public.exams
@@ -235,10 +236,10 @@ export async function processExamDocument(
            verified_questions = $2,
            needs_review_questions = $3,
            conflict_questions = $4,
-           error_message = null,
+           error_message = null,processing_hash=$5,
            updated_at = now()
        WHERE id = $1`,
-      [examId, verifiedCount, needsReviewCount, conflictCount]
+      [examId, verifiedCount, needsReviewCount, conflictCount,contentHash]
     );
 
     // 7. Sync topic recurrence statistics

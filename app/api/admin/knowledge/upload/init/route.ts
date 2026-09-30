@@ -15,9 +15,9 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { title, subjectId, sourceType, fileName, fileSize, mimeType, totalChunks } = body;
+    const { fileName, fileSize, mimeType, totalChunks } = body;
 
-    const parsed = documentUploadSchema.safeParse({ title, subjectId, sourceType });
+    const parsed = documentUploadSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
         { error: parsed.error.issues[0]?.message ?? "بيانات الملف غير صالحة" },
@@ -73,6 +73,7 @@ export async function POST(request: Request) {
         storagePath,
         JSON.stringify({
           academicYearId: parsed.data.academicYearId || null,
+          priority:parsed.data.priority??null,
           semester: parsed.data.semester || null,
           examYear: parsed.data.examYear || null,
           doctorName: parsed.data.doctorName || null,

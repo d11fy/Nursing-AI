@@ -43,7 +43,10 @@ export function ChatView({
   const [input, setInput] = useState("");
   const [pendingImage, setPendingImage] = useState<PendingImage | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [uploadConversationId,setUploadConversationId]=useState(initialConversationId);
+  const [uploadSubjectId,setUploadSubjectId]=useState(subjectId);
   const conversationIdRef = useRef(initialConversationId);
+  const activeSubjectRef=useRef(subjectId);
   const abortRef = useRef<AbortController | null>(null);
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -51,7 +54,7 @@ export function ChatView({
     if (abortRef.current) return;
     const trimmed = text.trim();
     if (!trimmed && !pendingImage) return;
-    const messageContent = trimmed || (pendingImage ? DEFAULT_IMAGE_PROMPT : trimmed);
+    const messageContent = trimmed || (pendingImage ? (pendingImage.kind==='file'?'ساعدني أدرس هذا الملف واشرح أهم أقسامه.':DEFAULT_IMAGE_PROMPT) : trimmed);
 
     const userMessage: ChatMessageData = {
       id: localId(),
@@ -63,7 +66,10 @@ export function ChatView({
 
     setMessages((prev) => [...prev, userMessage, assistantMessage]);
     setInput("");
-    const imagePath = pendingImage?.path;
+    const imagePath = pendingImage?.kind==='file'?undefined:pendingImage?.path;
+    const attachmentId=pendingImage?.attachmentId;
+    const uploadedLecture=pendingImage?.lectureId;
+    if(pendingImage?.conversationId)conversationIdRef.current=pendingImage.conversationId;
     setPendingImage(null);
     setIsGenerating(true);
 
@@ -73,14 +79,15 @@ export function ChatView({
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json",Accept:'text/event-stream' },
         signal: controller.signal,
         body: JSON.stringify({
           conversationId: conversationIdRef.current ?? undefined,
           content: messageContent,
-          subjectId: subjectId ?? undefined,
-          lectureId: lectureId ?? undefined,
+          subjectId: activeSubjectRef.current ?? undefined,
+          lectureId: uploadedLecture??lectureId ?? undefined,
           imagePath: imagePath ?? undefined,
+          attachmentId,
         }),
       });
 
@@ -91,8 +98,11 @@ export function ChatView({
         return;
       }
 
+      activeSubjectRef.current=res.headers.get('X-Subject-Id')||activeSubjectRef.current;
+      setUploadSubjectId(activeSubjectRef.current);
       await consumeChatResponse(res, {
-        onConversationId: (id) => { conversationIdRef.current = id; },
+        onMessageIds:(assistantId,userId)=>setMessages(prev=>prev.map(message=>message.id===assistantMessage.id?{...message,id:assistantId}:message.id===userMessage.id?{...message,id:userId}:message)),
+        onConversationId: (id) => { conversationIdRef.current = id;setUploadConversationId(id); },
         onChunk: (chunk) => setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantMessage.id ? { ...m, content: m.content + chunk } : m
@@ -136,7 +146,7 @@ export function ChatView({
             {isGenerating && messages[messages.length - 1]?.content === "" && (
               <div className="flex items-center gap-2 text-sm text-slate-400">
                 <Loader2 className="size-4 animate-spin" />
-                جارٍ البحث في المصادر ومراجعة الإجابة...
+                جارٍ تجهيز الشرح من سياق دراستك...
               </div>
             )}
           </div>
@@ -153,6 +163,8 @@ export function ChatView({
           pendingImage={pendingImage}
           onImageChange={setPendingImage}
           maxImageSizeMb={maxImageSizeMb}
+          conversationId={pendingImage?.conversationId??uploadConversationId}
+          subjectId={uploadSubjectId}
         />
       </div>
     </div>

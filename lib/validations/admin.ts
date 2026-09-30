@@ -4,6 +4,7 @@ export const documentUploadSchema = z.object({
   title: z.string().trim().min(2, "عنوان الملف مطلوب"),
   subjectId: z.string().uuid("الرجاء اختيار مادة"),
   sourceType: z.enum([
+    'university_lecture','doctor_slides','official_course_material','required_textbook','lab_manual','exam_questions','approved_notes',
     "BOOK",
     "UNIVERSITY_LECTURE",
     "DOCTOR_SLIDES",
@@ -20,6 +21,7 @@ export const documentUploadSchema = z.object({
     "reference",
   ]),
   academicYearId: z.string().uuid().optional().nullable(),
+  priority:z.coerce.number().int().min(0).max(100).optional(),
   semester: z.coerce.number().int().min(1).max(2).optional().nullable(),
   examYear: z.coerce.number().int().min(1990).max(2100).optional().nullable(),
   doctorName: z.string().trim().optional().nullable(),

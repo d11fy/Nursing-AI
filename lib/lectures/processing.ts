@@ -37,6 +37,12 @@ async function extractLecturePages(buffer: Buffer, fileName: string, mimeType: s
  * a large file finishes processing.
  */
 export async function processLecture(lectureId: string): Promise<void> {
+  if (process.env.AI_ARCHITECTURE !== 'legacy') {
+    const { registerDocument,processKnowledgeDocument }=await import('@/lib/tutor/ingestion');
+    await processKnowledgeDocument(await registerDocument(lectureId,true));
+    await submitContributionIfRequested(lectureId);
+    return;
+  }
   const lock = await getPool().connect();
   let acquired = false;
   try {

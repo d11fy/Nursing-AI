@@ -107,6 +107,8 @@ export async function logUsage(params: {
   feature?: string | null;
   inputTokens: number;
   outputTokens: number;
+  cachedInputTokens?: number;
+  reasoningEffort?: string;
   estimatedCost: number;
   isFreeTier?: boolean;
   latencyMs?: number | null;
@@ -126,6 +128,9 @@ export async function logUsage(params: {
     feature: params.feature ?? params.type,
     input_tokens: params.inputTokens,
     output_tokens: params.outputTokens,
+    cached_input_tokens:params.cachedInputTokens??0,
+    reasoning_effort:params.reasoningEffort??null,
+    pricing_version:'openai-standard-2026-09-30',
     estimated_cost: params.estimatedCost,
     is_free_tier: params.isFreeTier ?? false,
     latency_ms: params.latencyMs ?? null,

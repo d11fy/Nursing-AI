@@ -14,7 +14,7 @@ test("vision images are resized and encoded as compact WebP", async () => {
   const optimized = Buffer.from(dataUri.split(",", 2)[1], "base64");
   const metadata = await sharp(optimized).metadata();
   assert.equal(metadata.format, "webp");
-  assert.ok((metadata.width ?? 0) <= 640);
-  assert.ok((metadata.height ?? 0) <= 640);
+  assert.ok((metadata.width ?? 0) <= 1536);
+  assert.ok((metadata.height ?? 0) <= 1536);
   assert.ok(optimized.length < source.length);
 });

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from '@electric-sql/pglite-pgvector';
 import { migrate } from "../scripts/migrate.mjs";
 import {
   saveKnowledgeChunk,
@@ -11,7 +12,7 @@ import {
 
 test("large knowledge chunked upload, assembly and purge lifecycle", async () => {
   process.env.DATABASE_URL = "postgresql://integration-test-only";
-  const db = new PGlite();
+  const db = new PGlite({extensions:{vector}});
   const executor = (sql: string, values?: unknown[]) => db.query(sql, values);
 
   const migrationClient = {

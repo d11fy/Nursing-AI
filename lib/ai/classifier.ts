@@ -1,7 +1,4 @@
 import type { ComplexityClass } from "@/lib/ai/provider";
-import { CloudflareProvider } from "@/lib/ai/providers/cloudflare";
-import { GeminiProvider } from "@/lib/ai/providers/gemini";
-import { extractJson } from "@/lib/ai/json";
 
 export interface QueryClassification {
   scope: "NURSING_IN_SCOPE" | "NURSING_OUT_OF_CURRICULUM" | "NON_NURSING" | "AMBIGUOUS";
@@ -120,75 +117,8 @@ export function classifyLocally(params: {
   return null;
 }
 
-const CLASSIFICATION_SYSTEM_PROMPT = `You are a curriculum scope and complexity classifier for Nursing AI.
-Analyze the user question and return a valid JSON object:
-{
-  "scope": "NURSING_IN_SCOPE" | "NURSING_OUT_OF_CURRICULUM" | "NON_NURSING" | "AMBIGUOUS",
-  "subject": "pharmacology" | "anatomy" | "fundamentals" | "pediatrics" | "maternity" | "medical_surgical" | "other",
-  "complexity": "SIMPLE" | "NORMAL" | "COMPLEX",
-  "contains_sensitive_data": false,
-  "reason": "..."
-}
-RULES:
-1. Clinical reasoning, drug doses, emergencies, or lab values are COMPLEX.
-2. Short definitions or summaries are SIMPLE.
-3. Standard nursing concepts are NORMAL.
-4. If question is sports, entertainment, or irrelevant, scope is NON_NURSING.
-Output ONLY JSON.`;
-
-/**
- * Full Classifier Pipeline:
- * 1. Fast Local rule-based check.
- * 2. Cloudflare Workers AI utility call (if credentials available).
- * 3. Fallback to Gemini or heuristic if Cloudflare fails.
- */
-export async function classifyRequest(params: {
-  question: string;
-  hasImage?: boolean;
-  feature?: string;
-  subjectId?: string | null;
-  signal?: AbortSignal;
-}): Promise<QueryClassification> {
-  // Step 1: Local Rule-Based Check (0 cost, instant)
-  const localResult = classifyLocally(params);
-  if (localResult) return localResult;
-
-  const hasPii = containsPii(params.question);
-  const sensitiveByRule = isMedicalSensitive(params.question);
-
-  // Step 2: Try Cloudflare Workers AI (fast & low cost utility)
-  const cloudflare = new CloudflareProvider();
-  if (await cloudflare.isAvailable()) {
-    try {
-      const res = await cloudflare.generateText({
-        taskPrompt: CLASSIFICATION_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: params.question }],
-        maxOutputTokens: 200,
-        signal: params.signal,
-      });
-
-      const parsed = JSON.parse(extractJson(res.content));
-      const complexity: ComplexityClass = sensitiveByRule
-        ? "COMPLEX"
-        : (parsed.complexity as ComplexityClass) || "NORMAL";
-
-      return {
-        scope: parsed.scope || "NURSING_IN_SCOPE",
-        subject: parsed.subject,
-        complexity,
-        containsSensitiveData: hasPii || parsed.contains_sensitive_data === true,
-        reason: parsed.reason || "Classified via Cloudflare Workers AI",
-      };
-    } catch (err) {
-      console.warn("[Classifier] Cloudflare classification failed, falling back to local/Gemini", err);
-    }
-  }
-
-  // Step 3: Fallback heuristic if external utility is unavailable
-  return {
-    scope: "NURSING_IN_SCOPE",
-    complexity: sensitiveByRule ? "COMPLEX" : "NORMAL",
-    containsSensitiveData: hasPii,
-    reason: "Fallback heuristic classification",
-  };
+// Retained for rollback callers only. The new tutor resolves scope in its final
+// Responses request using the student's assigned curriculum; no utility API call.
+export async function classifyRequest(params: {question:string;hasImage?:boolean;feature?:string;subjectId?:string|null;signal?:AbortSignal}):Promise<QueryClassification>{
+ return classifyLocally(params)??{scope:'NURSING_IN_SCOPE',complexity:isMedicalSensitive(params.question)?'COMPLEX':'NORMAL',containsSensitiveData:containsPii(params.question)};
 }

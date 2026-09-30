@@ -1,12 +1,13 @@
 import { before, after, test } from "node:test";
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from '@electric-sql/pglite-pgvector';
 import { migrate } from "../scripts/migrate.mjs";
 import { gradePracticeAnswer } from "../lib/exams/answer-grading";
 import { submitQuestionAnswer, completePracticeExam, getSmartReviewRecommendations } from "../lib/exams/practice-service";
 import { getStudentContext } from "../lib/student-memory";
 
-const db = new PGlite();
+const db = new PGlite({extensions:{vector}});
 const userId = "20000000-0000-4000-8000-000000000001";
 const strangerId = "20000000-0000-4000-8000-000000000002";
 const query = async (sql: string, values?: unknown[]) => {

@@ -1,5 +1,7 @@
 import "server-only";
 import { z } from "zod";
+import {identityDb} from "@/lib/tutor/db";
+import {logUsage} from "@/lib/usage";
 import { getPool } from "@/lib/db/pool";
 import { routeAIRequest, getProviderByName } from "@/lib/ai/router";
 import { executeWithFallback } from "@/lib/ai/fallback";
@@ -183,19 +185,19 @@ export async function createPracticeExam(
     );
 
     // Retrieve verified curriculum chunks to strictly anchor question generation
-    const { rows: curriculumChunks } = await pool.query<{
+    const { rows: curriculumChunks } = await identityDb(options.userId).query<{
       id: string;
       document_id: string;
       title: string;
       content: string;
       page_number: number | null;
     }>(
-      `SELECT dc.id, dc.document_id, d.title, dc.content, dc.page_number
-       FROM public.document_chunks dc
-       JOIN public.documents d ON d.id = dc.document_id
+      `SELECT dc.id, d.legacy_document_id document_id, d.title, dc.content, dc.page_number
+       FROM public.knowledge_chunks dc
+       JOIN public.knowledge_documents d ON d.id = dc.document_id
        WHERE d.subject_id = $1
          AND d.status = 'ready'
-         AND upper(d.source_type) NOT IN ('PAST_EXAM','QUESTION_BANK','QUESTIONS')
+         AND d.owner_id is null AND d.is_active AND d.source_type<>'exam_questions' AND d.legacy_document_id is not null
          AND ($2::text = '' OR dc.search_vector @@ to_tsquery('simple',$2))
        ORDER BY random()
        LIMIT 8`,
@@ -237,11 +239,12 @@ STRICT INVARIANTS:
                 name: "university_style_exam",
                 schema: z.toJSONSchema(generatedQuestionSchema),
               },
-              maxOutputTokens: 4000,
+              maxOutputTokens: 8000,reasoningEffort:"high",feature:"university_style_exam_gen",
             }),
           operationName: "Generate University Style Questions",
         });
 
+        await logUsage({userId:options.userId,type:'quiz',feature:'university_style_exam_gen',provider:'openai',model:executed.result.model,inputTokens:executed.result.inputTokens,cachedInputTokens:executed.result.cachedInputTokens,outputTokens:executed.result.outputTokens,reasoningEffort:'high',estimatedCost:primary.calculateCost(executed.result)});
         const parsed = JSON.parse(extractJson(executed.result.content));
         const validated = generatedQuestionSchema.parse(parsed);
 
@@ -249,7 +252,7 @@ STRICT INVARIANTS:
           const matchedChunk = curriculumChunks[genQ.source_chunk_index];
           if (!matchedChunk || !validQuestionEvidence(matchedChunk.content.slice(0, 1500), genQ.evidence_quote)) continue;
           const verification = await verifyExamQuestion({
-            subjectId: options.subjectId,
+            userId:options.userId,subjectId: options.subjectId,
             questionText: genQ.question_text,
             questionType: genQ.question_type,
             options: genQ.options,
@@ -290,7 +293,7 @@ STRICT INVARIANTS:
           // Record question_sources
           await pool.query(
             `INSERT INTO public.question_sources (
-               question_id, document_id, chunk_id, page_number, quote, support_type, source_priority
+               question_id, document_id, knowledge_chunk_id, page_number, quote, support_type, source_priority
              ) VALUES ($1, $2, $3, $4, $5, 'DIRECT', 90)`,
             [
               qId,
@@ -379,6 +382,7 @@ export async function submitQuestionAnswer(input: {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    await client.query("select set_config('app.user_id',$1,true),set_config('app.ai_worker','off',true)",[input.userId]);
     const { rows } = await client.query<{subject_id:string;topic:string;correct_answer_json:unknown}>(
       `SELECT a.subject_id,q.topic,q.correct_answer_json
        FROM public.student_exam_attempts a
@@ -403,15 +407,15 @@ export async function submitQuestionAnswer(input: {
        VALUES($1,$2,$3::jsonb,$4,$5)`,
       [input.attemptId,input.questionId,JSON.stringify(input.selectedAnswer ?? null),isCorrect,question.topic]
     );
-    const cleanKey = question.topic.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").slice(0, 80) || "general";
+    const cleanKey = "v2:"+question.topic.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").slice(0, 80) || "general";
     await client.query(
     `INSERT INTO public.student_topic_progress (
        user_id, subject_id, topic_key, topic_name, questions_answered,
-       correct_answers, wrong_answers, mastery_score, last_studied_at, updated_at
+       correct_answers, wrong_answers, mastery_score, generation, last_studied_at, updated_at
      ) VALUES (
        $1, $2, $3, $4, 1,
        ${isCorrect ? 1 : 0}, ${isCorrect ? 0 : 1},
-       ${isCorrect ? 100 : 0}, now(), now()
+       ${isCorrect ? 100 : 0}, 2, now(), now()
      )
      ON CONFLICT (user_id, subject_id, topic_key) DO UPDATE SET
        questions_answered = student_topic_progress.questions_answered + 1,
@@ -425,6 +429,7 @@ export async function submitQuestionAnswer(input: {
        updated_at = now()`,
       [input.userId, question.subject_id, cleanKey, question.topic]
     );
+    await client.query(`insert into learning_events(user_id,subject_id,topic,event_type,result,metadata) values($1,$2,$3,$4,$5,$6::jsonb)`,[input.userId,question.subject_id,question.topic,isCorrect?'quiz_correct':'quiz_incorrect',isCorrect,JSON.stringify({attemptId:input.attemptId,questionId:input.questionId})]);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");

@@ -18,7 +18,7 @@ export default async function LectureWorkspacePage({
   params: Promise<{ id: string; lectureId: string }>;
 }) {
   const { id: subjectId, lectureId } = await params;
-  await requireProfile();
+  const profile=await requireProfile();
   const db = await createClient();
 
   const { data: lecture } = await db
@@ -30,7 +30,7 @@ export default async function LectureWorkspacePage({
 
   const [settings, initialContent] = await Promise.all([
     getSettings(db),
-    lecture.status === "ready" ? getStudyContent(lectureId) : Promise.resolve({}),
+    lecture.status === "ready" ? getStudyContent(lectureId,profile.user_id) : Promise.resolve({}),
   ]);
 
   return (

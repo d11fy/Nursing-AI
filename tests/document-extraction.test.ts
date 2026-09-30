@@ -27,6 +27,8 @@ test("PDF pages with sparse text trigger OCR and retain real page numbers",async
   process.env.OPENAI_API_KEY="test-only";process.env.AI_PROVIDER="openai";
   const native="This text-based page already contains enough readable letters to avoid unnecessary visual extraction. ".repeat(3);
   t.mock.method(PDFParse.prototype,"getText",async()=>({pages:[{num:1,text:native},{num:2,text:""}],total:2}));
+  t.mock.method(PDFParse.prototype,'getImage',async()=>({pages:[],total:0}));
+  t.mock.method(PDFParse.prototype,'getTable',async()=>({pages:[],total:0}));
   let scanned:number[]=[];
   t.mock.method(PDFParse.prototype,"getScreenshot",async(options:{partial:number[]})=>{scanned=options.partial;return{pages:[{dataUrl:"data:image/png;base64,AA==",pageNumber:2}],total:2};});
   t.mock.method(getAIProvider(),"generateVisionResponse",async()=>({content:"Transcribed second page with visible labels.",inputTokens:1,outputTokens:1,model:"test"}));

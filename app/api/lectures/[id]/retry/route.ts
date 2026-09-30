@@ -1,6 +1,6 @@
-import { NextResponse, after } from "next/server";
+import { NextResponse } from "next/server";
 import { createClient, createSystemClient } from "@/lib/db/server";
-import { processLecture } from "@/lib/lectures/processing";
+import {registerDocument,enqueueDocument} from "@/lib/tutor/ingestion";
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -15,7 +15,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   }
 
   await createSystemClient().from("lectures").update({ status: "uploaded", error_message: null }).eq("id", id);
-  after(() => processLecture(id).catch((err) => console.error("processLecture retry error", err)));
+  await enqueueDocument(await registerDocument(id,true));
 
   return NextResponse.json({ ok: true });
 }

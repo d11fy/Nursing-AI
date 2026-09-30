@@ -1,7 +1,6 @@
 import "server-only";
 import { getPool } from "@/lib/db/pool";
 import { getSourcePriority, SOURCE_HIERARCHY, formatSourceTypeArabic } from "./priorities";
-import type { KnowledgeChunk } from "@/lib/ai/provider";
 
 export interface EvidenceBundleItem {
   id: string;

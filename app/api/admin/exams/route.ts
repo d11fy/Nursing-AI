@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAdminProfileOrNull } from "@/lib/auth";
 import { getPool } from "@/lib/db/pool";
-import { processExamDocument } from "@/lib/exams/exam-pipeline";
+import {enqueueExam} from "@/lib/tutor/exam-jobs";
+import {z} from "zod";
 
 export async function GET(request: Request) {
   try {
@@ -53,10 +54,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "معرّف الامتحان مطلوب" }, { status: 400 });
     }
 
-    // Trigger background processing
-    void processExamDocument(examId).catch((err) => {
-      console.error(`[AdminExamsAPI] Re-processing error for ${examId}:`, err);
-    });
+    if(!z.string().uuid().safeParse(examId).success)return NextResponse.json({error:'معرف غير صالح'},{status:400});
+    const exists=(await getPool().query('select id from exams where id=$1',[examId])).rows[0];
+    if(!exists)return NextResponse.json({error:'الامتحان غير موجود'},{status:404});
+    await enqueueExam(examId);
 
     return NextResponse.json({
       success: true,
