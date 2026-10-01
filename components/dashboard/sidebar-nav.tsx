@@ -15,7 +15,7 @@ export function SidebarNav({
   const pathname = usePathname();
 
   return (
-    <nav className="flex flex-col gap-1">
+    <nav className="flex flex-col gap-1" aria-label="التنقل الرئيسي">
       {items.map((item) => {
         const active =
           item.href === "/dashboard" || item.href === "/admin"
@@ -27,14 +27,15 @@ export function SidebarNav({
             key={item.href}
             href={item.href}
             onClick={onNavigate}
+            aria-current={active ? "page" : undefined}
             className={cn(
-              "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+              "group flex min-h-11 items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-sm font-semibold transition-[color,background-color,border-color] duration-200",
               active
-                ? "bg-blue-600 text-white shadow-sm"
-                : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                ? "border-primary/10 bg-sidebar-accent text-sidebar-accent-foreground"
+                : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
             )}
           >
-            <item.icon className="size-4 shrink-0" />
+            <item.icon className={cn("size-[18px] shrink-0 transition-colors", active ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
             {item.label}
           </Link>
         );

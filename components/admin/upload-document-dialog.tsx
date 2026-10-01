@@ -627,7 +627,7 @@ export function UploadDocumentDialog({
         }
       />
       <DialogContent
-        className="w-[95vw] sm:max-w-4xl md:max-w-5xl max-h-[92vh] flex flex-col p-0 overflow-hidden rounded-2xl border border-border shadow-2xl bg-card"
+        className="w-[95vw] sm:max-w-4xl md:max-w-5xl max-h-[92vh] flex flex-col p-0 overflow-hidden rounded-2xl border border-border shadow-lg bg-card"
         dir="rtl"
       >
         {/* Header */}
@@ -823,7 +823,7 @@ export function UploadDocumentDialog({
           {/* Drag & Drop Area */}
           <div
             onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed border-border hover:border-primary/60 transition-all rounded-2xl p-7 text-center cursor-pointer bg-muted/10 hover:bg-primary/5 group"
+            className="border-2 border-dashed border-border hover:border-primary/60 transition-colors duration-200 rounded-2xl p-7 text-center cursor-pointer bg-muted/10 hover:bg-primary/5 group"
           >
             <input
               ref={fileInputRef}

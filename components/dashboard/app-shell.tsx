@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { GraduationCap, Menu, LogOut } from "lucide-react";
+import { Menu, LogOut, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import {
@@ -16,6 +16,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { SidebarNav } from "@/components/dashboard/sidebar-nav";
 import { adminNavItems, studentNavItems } from "@/components/dashboard/nav-items";
 import { logoutAction } from "@/app/(auth)/actions";
+import { BrandMark } from "@/components/brand/brand-mark";
 
 function initials(name: string) {
   return name
@@ -42,33 +43,39 @@ export function AppShell({
   const navItems = area === "admin" ? adminNavItems : studentNavItems;
 
   return (
-    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
+    <div className="app-shell flex h-dvh min-h-0 bg-background">
       {/* Desktop sidebar */}
-      <aside className="hidden w-64 shrink-0 border-l border-border bg-white p-4 lg:flex lg:flex-col dark:bg-slate-900">
-        <Link href={homeHref} className="mb-6 flex items-center gap-2 px-2 font-bold text-slate-900 dark:text-white">
-          <span className="flex size-9 items-center justify-center rounded-xl bg-blue-600 text-white">
-            <GraduationCap className="size-5" />
-          </span>
-          Nursing AI
+      <aside className="hidden w-72 shrink-0 border-l border-sidebar-border bg-sidebar px-4 py-5 lg:flex lg:flex-col">
+        <Link href={homeHref} className="mb-7 rounded-xl px-2 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <BrandMark />
         </Link>
+        <p className="mb-2 px-3 text-[11px] font-bold tracking-wide text-muted-foreground">{area === "admin" ? "الإدارة" : "مساحة الدراسة"}</p>
         <SidebarNav items={navItems} />
+        <div className="mt-auto flex min-w-0 items-center gap-3 border-t border-border px-2 pt-5">
+          <Avatar><AvatarFallback className="bg-accent text-primary">{initials(fullName || "ط")}</AvatarFallback></Avatar>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-foreground">{fullName}</p>
+            <p className="text-xs text-muted-foreground">{area === "admin" ? "حساب إداري" : "طالب تمريض"}</p>
+          </div>
+        </div>
       </aside>
 
       {/* Mobile drawer */}
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="right" className="w-72 p-4">
-          <SheetTitle className="mb-6 flex items-center gap-2 px-2 font-bold text-slate-900 dark:text-white">
-            <span className="flex size-9 items-center justify-center rounded-xl bg-blue-600 text-white">
-              <GraduationCap className="size-5" />
-            </span>
-            Nursing AI
+        <SheetContent side="right" className="w-[min(20rem,88vw)] p-5">
+          <SheetTitle className="mb-6 px-2">
+            <BrandMark />
           </SheetTitle>
           <SidebarNav items={navItems} onNavigate={() => setOpen(false)} />
+          <div className="mt-auto flex items-center gap-3 border-t border-border pt-5">
+            <Avatar><AvatarFallback className="bg-accent text-primary">{initials(fullName || "ط")}</AvatarFallback></Avatar>
+            <span className="truncate text-sm font-medium">{fullName}</span>
+          </div>
         </SheetContent>
       </Sheet>
 
-      <div className="flex min-h-screen flex-1 flex-col overflow-hidden">
-        <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-white px-4 sm:px-6 dark:bg-slate-900">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-card/95 px-4 backdrop-blur sm:px-7">
           <Button
             variant="ghost"
             size="icon"
@@ -84,12 +91,14 @@ export function AppShell({
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
-                <button className="flex items-center gap-2 rounded-full outline-none">
+                <button className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-transparent px-1.5 py-1 outline-none transition-colors hover:border-border hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-primary">
                   <Avatar>
-                    <AvatarFallback className="bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                    <AvatarFallback className="bg-accent font-semibold text-primary">
                       {initials(fullName || "ط")}
                     </AvatarFallback>
                   </Avatar>
+                  <span className="hidden max-w-36 truncate text-sm font-medium sm:inline">{fullName}</span>
+                  <ChevronDown className="hidden size-3.5 text-muted-foreground sm:block" />
                 </button>
               }
             />
@@ -100,7 +109,7 @@ export function AppShell({
               <DropdownMenuItem
                 render={
                   <form action={logoutAction} className="w-full">
-                    <button type="submit" className="flex w-full items-center gap-2 text-red-600">
+                    <button type="submit" className="flex w-full items-center gap-2 text-destructive">
                       <LogOut className="size-4" />
                       تسجيل الخروج
                     </button>
@@ -111,7 +120,7 @@ export function AppShell({
           </DropdownMenu>
         </header>
 
-        <main className="flex-1 overflow-y-auto">{children}</main>
+        <main className="app-main min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain">{children}</main>
       </div>
     </div>
   );

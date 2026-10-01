@@ -1,9 +1,11 @@
 import Link from "next/link";
-import { MessageSquarePlus } from "lucide-react";
+import { MessageSquarePlus, History } from "lucide-react";
 import { requireProfile } from "@/lib/auth";
 import { createClient } from "@/lib/db/server";
 import { ConversationRow } from "@/components/dashboard/conversation-row";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function HistoryPage() {
   const profile = await requireProfile();
@@ -16,10 +18,13 @@ export default async function HistoryPage() {
     .order("updated_at", { ascending: false });
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-slate-900 dark:text-white">المحادثات السابقة</h1>
-        <Button
+    <div className="page-container mx-auto max-w-3xl space-y-6">
+      <PageHeader
+        icon={History}
+        eyebrow="سجل الدراسة"
+        title="المحادثات السابقة"
+        description="كل الشروحات والأسئلة التي حفظتها، مرتبة من الأحدث."
+        actions={<Button
           size="sm"
           nativeButton={false}
           render={
@@ -28,13 +33,11 @@ export default async function HistoryPage() {
               محادثة جديدة
             </Link>
           }
-        />
-      </div>
+        />}
+      />
 
       {!conversations || conversations.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border py-16 text-center text-slate-400">
-          لا توجد محادثات بعد
-        </div>
+        <EmptyState icon={MessageSquarePlus} title="لا توجد محادثات بعد" description="ابدأ محادثة جديدة، وستُحفظ هنا للرجوع إليها لاحقًا." action={<Button nativeButton={false} render={<Link href="/dashboard/chat">ابدأ محادثة</Link>} />} />
       ) : (
         <div className="space-y-2">
           {conversations.map((c) => (

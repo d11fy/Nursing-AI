@@ -52,7 +52,7 @@ export default async function AdminUsagePage() {
     stats.questions_month > 0 ? Number(stats.cost_month) / stats.questions_month : 0;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8 p-4 sm:p-6">
+    <div className="page-container mx-auto max-w-6xl space-y-8">
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">إحصائيات واستخدام الذكاء الاصطناعي (OpenAI)</h1>
         <p className="mt-1 text-sm text-muted-foreground">مراقبة التكاليف، النماذج المستخدمة، واستهلاك الطلاب للخدمة</p>

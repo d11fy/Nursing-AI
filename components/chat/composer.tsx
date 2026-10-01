@@ -102,16 +102,16 @@ export function Composer({
   }
 
   return (
-    <div className="border-t border-border bg-white p-3 sm:p-4 dark:bg-slate-900">
+    <div className="rounded-2xl border border-border bg-card p-2.5 shadow-[0_10px_30px_rgb(16_42_58/0.08)] sm:p-3">
       {pendingImage && (
         <div className="mb-2 flex items-center gap-3">
           <div className="relative inline-block shrink-0">
             <div className="relative size-20 overflow-hidden rounded-lg border border-border">
-              {pendingImage.kind==='file'?<FileText className="m-5 size-10 text-blue-600"/>:<Image src={pendingImage.previewUrl} alt="معاينة" fill className="object-cover" unoptimized />}
+              {pendingImage.kind==='file'?<FileText className="m-5 size-10 text-primary"/>:<Image src={pendingImage.previewUrl} alt="معاينة" fill className="object-contain" unoptimized />}
             </div>
             <button
               onClick={() => onImageChange(null)}
-              className="absolute -left-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-slate-900 text-white"
+              className="absolute -left-1.5 -top-1.5 flex size-8 cursor-pointer items-center justify-center rounded-full bg-foreground text-background focus-visible:ring-2 focus-visible:ring-primary"
               aria-label="إزالة الصورة"
             >
               <X className="size-3" />
@@ -143,6 +143,8 @@ export function Composer({
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading||isGenerating}
           aria-label="رفع صورة أو ملف دراسي"
+          title="رفع صورة أو ملف دراسي"
+          className="border-transparent text-muted-foreground hover:bg-accent hover:text-primary"
         >
           {uploading ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
         </Button>
@@ -151,9 +153,10 @@ export function Composer({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="اكتب سؤالك هنا..."
+          placeholder="اسأل عن موضوع، حالة، أو محاضرة..."
           rows={1}
-          className="max-h-40 min-h-11 flex-1 resize-none"
+          dir="auto"
+          className="max-h-40 min-h-11 min-w-0 flex-1 resize-none border-transparent bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"
         />
 
         {isGenerating ? (

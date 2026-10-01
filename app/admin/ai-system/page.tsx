@@ -4,7 +4,7 @@ import { getAdminProfileOrNull } from '@/lib/auth';
 import { tutorUsage } from '@/lib/tutor/admin-usage';
 export default async function AISystemPage() {
   const admin=await getAdminProfileOrNull();if(!admin)redirect('/dashboard');const stats=await tutorUsage(admin.user_id);
-  return <div className="mx-auto max-w-6xl space-y-6 p-6"><h1 className="text-xl font-bold">AI System</h1><div className="rounded-xl border bg-card p-5">
+  return <div className="page-container mx-auto max-w-6xl space-y-6"><h1 className="text-xl font-bold">AI System</h1><div className="rounded-xl border bg-card p-5">
     <p className="font-semibold">GPT-6 Luna · OpenAI Responses API</p><p className="text-sm">Embeddings: text-embedding-3-small · PostgreSQL / pgvector / Full Text Search</p>
     <p className="mt-2 text-sm">الحالة: {stats.summary.last_success?'آخر طلب ناجح مسجل':process.env.OPENAI_API_KEY?'المفتاح مضبوط؛ يلزم طلب ناجح للتحقق':'OPENAI_API_KEY غير مضبوط'}</p>
     <p className="text-xs text-muted-foreground">آخر نجاح: {stats.summary.last_success??'—'} · وضع المحادثة: {process.env.AI_ARCHITECTURE==='legacy'?'Legacy rollback':'Personal tutor'}</p></div>

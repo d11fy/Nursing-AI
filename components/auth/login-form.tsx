@@ -26,13 +26,14 @@ export function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
 
   return (
     <div>
-      <h1 className="text-xl font-bold text-slate-900 dark:text-white">تسجيل الدخول</h1>
-      <p className="mt-1 text-sm text-slate-500">
+      <p className="eyebrow mb-1">مرحبًا بعودتك</p>
+      <h1 className="text-2xl font-extrabold tracking-tight text-foreground">تسجيل الدخول</h1>
+      <p className="mt-1.5 text-sm leading-7 text-muted-foreground">
         أهلًا بعودتك، سجّل الدخول لمتابعة دراستك
       </p>
 
       {googleEnabled && <div className="mt-6"><GoogleButton redirectTo={redirectTo} /><AuthDivider /></div>}
-      {googleError && <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/40">{googleError}</p>}
+      {googleError && <p role="alert" className="mt-4 rounded-xl border border-destructive/15 bg-destructive/10 px-3.5 py-3 text-sm text-destructive">{googleError}</p>}
 
       <form action={formAction} className={googleEnabled ? "space-y-4" : "mt-6 space-y-4"}>
         <input type="hidden" name="redirectTo" value={redirectTo} />
@@ -45,7 +46,7 @@ export function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <Label htmlFor="password">كلمة المرور</Label>
-            <Link href="/forgot-password" className="text-xs text-blue-600 hover:underline">
+            <Link href="/forgot-password" className="text-xs font-semibold text-primary hover:underline">
               نسيت كلمة المرور؟
             </Link>
           </div>
@@ -59,7 +60,7 @@ export function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
         </div>
 
         {state.error && (
-          <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/40">
+          <p role="alert" className="rounded-xl border border-destructive/15 bg-destructive/10 px-3.5 py-3 text-sm text-destructive">
             {state.error}
           </p>
         )}
@@ -69,9 +70,9 @@ export function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
         </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-slate-500">
+      <p className="mt-6 text-center text-sm text-muted-foreground">
         ليس لديك حساب؟{" "}
-        <Link href="/register" className="font-medium text-blue-600 hover:underline">
+        <Link href="/register" className="font-semibold text-primary hover:underline">
           إنشاء حساب جديد
         </Link>
       </p>

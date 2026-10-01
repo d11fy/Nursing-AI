@@ -18,22 +18,23 @@ const features = [
 
 export function Features() {
   return (
-    <section id="features" className="bg-slate-50 py-20 dark:bg-slate-900/40">
+    <section id="features" className="border-y border-border bg-muted/45 py-20 sm:py-24">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        <h2 className="text-center text-3xl font-bold text-slate-900 dark:text-white">كل ما تحتاجه لتفهم أكثر</h2>
-        <p className="mt-3 text-center text-slate-500">مصمم ليكون رفيقك في كل مرحلة من دراستك</p>
+        <p className="eyebrow text-center">مصمم للدراسة اليومية</p>
+        <h2 className="mt-2 text-center text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">كل ما تحتاجه لتفهم أكثر</h2>
+        <p className="mx-auto mt-3 max-w-xl text-center leading-7 text-muted-foreground">أدوات واضحة تساعدك على الانتقال من السؤال إلى الفهم والمراجعة داخل مساحة واحدة.</p>
 
         <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {features.map((f) => (
             <div
               key={f.title}
-              className="rounded-2xl border border-border bg-card p-6 shadow-sm transition hover:shadow-md"
+              className="interactive-card rounded-2xl border border-border bg-card p-6"
             >
-              <div className="mb-4 flex size-11 items-center justify-center rounded-xl bg-teal-50 text-teal-600 dark:bg-teal-950 dark:text-teal-300">
+              <div className="icon-tile mb-4">
                 <f.icon className="size-5" />
               </div>
-              <h3 className="font-semibold text-slate-900 dark:text-white">{f.title}</h3>
-              <p className="mt-2 text-sm text-slate-500">{f.desc}</p>
+              <h3 className="font-bold text-foreground">{f.title}</h3>
+              <p className="mt-2 text-sm leading-7 text-muted-foreground">{f.desc}</p>
             </div>
           ))}
         </div>

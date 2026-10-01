@@ -1,20 +1,18 @@
 import Link from "next/link";
-import { GraduationCap } from "lucide-react";
+import { BrandMark } from "@/components/brand/brand-mark";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12 dark:bg-slate-950">
-      <div className="w-full max-w-md">
+    <div className="landing-grid relative flex min-h-dvh items-center justify-center overflow-hidden bg-background px-4 py-8 sm:py-12">
+      <div className="pointer-events-none absolute inset-0 bg-card/45" />
+      <div className="relative w-full max-w-md">
         <Link
           href="/"
-          className="mb-8 flex items-center justify-center gap-2 text-lg font-bold text-slate-900 dark:text-white"
+          className="mb-8 flex justify-center rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <span className="flex size-9 items-center justify-center rounded-xl bg-blue-600 text-white">
-            <GraduationCap className="size-5" />
-          </span>
-          Nursing AI
+          <BrandMark />
         </Link>
-        <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="section-surface p-5 shadow-[0_20px_60px_rgb(16_42_58/0.08)] sm:p-8">
           {children}
         </div>
       </div>

@@ -55,8 +55,8 @@ export function FeedbackDialog({
               className={cn(
                 "rounded-lg border px-3 py-2 text-sm transition",
                 reason === r.value
-                  ? "border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950"
-                  : "border-border hover:bg-slate-50 dark:hover:bg-slate-800"
+                  ? "border-primary bg-accent text-primary"
+                  : "border-border hover:bg-muted"
               )}
             >
               {r.label}

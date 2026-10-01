@@ -3,6 +3,8 @@ import { createClient } from "@/lib/db/server";
 import { StatCard } from "@/components/admin/stat-card";
 import { UsageChart } from "@/components/admin/usage-chart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import { LayoutDashboard } from "lucide-react";
 
 export default async function AdminDashboardPage() {
   const db = await createClient();
@@ -23,8 +25,8 @@ export default async function AdminDashboardPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
-      <h1 className="text-xl font-bold text-slate-900 dark:text-white">لوحة التحكم</h1>
+    <div className="page-container mx-auto max-w-6xl space-y-6">
+      <PageHeader icon={LayoutDashboard} eyebrow="الإدارة" title="لوحة التحكم" description="نظرة سريعة على الطلاب والاستخدام وأداء المنصة." />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard icon={Users} label="إجمالي الطلاب" value={stats.total_students} />

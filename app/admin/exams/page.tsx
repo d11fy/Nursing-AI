@@ -45,7 +45,7 @@ export default async function AdminExamsPage() {
   ]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
+    <div className="page-container mx-auto max-w-6xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-foreground">
           نماذج الامتحانات وبنوك الأسئلة (Past Exams & Question Banks)

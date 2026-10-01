@@ -61,7 +61,7 @@ export default async function AdminLecturesPage({
   ]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
+    <div className="page-container mx-auto max-w-6xl space-y-6">
       <h1 className="text-xl font-bold text-slate-900 dark:text-white">محاضرات الطلاب</h1>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">

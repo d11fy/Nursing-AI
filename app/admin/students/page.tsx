@@ -11,13 +11,16 @@ import { StudentActions } from "@/components/admin/student-actions";
 import { getAcademicYears, getAdminStudents } from "@/lib/subjects";
 import { setStudentAcademicYearAction } from "@/app/admin/actions";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Users } from "lucide-react";
 
 export default async function AdminStudentsPage() {
   const [students, years] = await Promise.all([getAdminStudents(), getAcademicYears(false)]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
-      <h1 className="text-xl font-bold text-slate-900 dark:text-white">الطلاب</h1>
+    <div className="page-container mx-auto max-w-6xl space-y-6">
+      <PageHeader icon={Users} eyebrow="إدارة المستخدمين" title="الطلاب" description="تابع الحسابات، السنوات الدراسية، النشاط، وحدود الوصول." />
 
       <div className="overflow-x-auto rounded-xl border border-border bg-card">
         <Table>
@@ -42,7 +45,7 @@ export default async function AdminStudentsPage() {
                 <TableCell>{s.university ?? "—"}</TableCell>
                 <TableCell><form action={setStudentAcademicYearAction} className="flex min-w-56 items-center gap-2">
                   <input type="hidden" name="userId" value={s.user_id} />
-                  <select name="academicYearId" defaultValue={s.academic_year_id ?? ""} className="h-8 flex-1 rounded-lg border border-input bg-transparent px-2 text-sm" required>
+                  <select name="academicYearId" defaultValue={s.academic_year_id ?? ""} className="h-11 flex-1 rounded-xl border border-input bg-card px-2 text-sm" required>
                     <option value="" disabled>اختر السنة</option>{years.map(year => <option key={year.id} value={year.id}>{year.name_ar}</option>)}
                   </select><Button size="sm" variant="outline">حفظ</Button>
                 </form></TableCell>
@@ -65,7 +68,7 @@ export default async function AdminStudentsPage() {
         </Table>
 
         {students.length === 0 && (
-          <div className="py-16 text-center text-slate-400">لا يوجد طلاب مسجلون بعد</div>
+          <EmptyState icon={Users} title="لا يوجد طلاب مسجلون بعد" description="ستظهر حسابات الطلاب هنا بعد إتمام التسجيل." />
         )}
       </div>
     </div>

@@ -23,8 +23,9 @@ export function RegisterForm({ googleEnabled }: { googleEnabled: boolean }) {
 
   return (
     <div>
-      <h1 className="text-xl font-bold text-slate-900 dark:text-white">إنشاء حساب جديد</h1>
-      <p className="mt-1 text-sm text-slate-500">انضم لمنصة Nursing AI وابدأ رحلتك الدراسية</p>
+      <p className="eyebrow mb-1">ابدأ رحلتك الدراسية</p>
+      <h1 className="text-2xl font-extrabold tracking-tight text-foreground">إنشاء حساب جديد</h1>
+      <p className="mt-1.5 text-sm leading-7 text-muted-foreground">انضم لمنصة Nursing AI وابدأ رحلتك الدراسية</p>
 
       {googleEnabled && <div className="mt-6"><GoogleButton /><AuthDivider /></div>}
 
@@ -75,7 +76,7 @@ export function RegisterForm({ googleEnabled }: { googleEnabled: boolean }) {
         </div>
 
         {state.error && (
-          <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/40">
+          <p role="alert" className="rounded-xl border border-destructive/15 bg-destructive/10 px-3.5 py-3 text-sm text-destructive">
             {state.error}
           </p>
         )}
@@ -85,9 +86,9 @@ export function RegisterForm({ googleEnabled }: { googleEnabled: boolean }) {
         </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-slate-500">
+      <p className="mt-6 text-center text-sm text-muted-foreground">
         لديك حساب بالفعل؟{" "}
-        <Link href="/login" className="font-medium text-blue-600 hover:underline">
+        <Link href="/login" className="font-semibold text-primary hover:underline">
           تسجيل الدخول
         </Link>
       </p>

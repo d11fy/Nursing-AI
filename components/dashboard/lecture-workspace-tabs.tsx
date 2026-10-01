@@ -18,8 +18,8 @@ export function LectureWorkspaceTabs({
   const [tab, setTab] = useState("summary");
 
   return (
-    <Tabs value={tab} onValueChange={(value) => setTab(String(value))}>
-      <TabsList>
+    <Tabs value={tab} onValueChange={(value) => setTab(String(value))} className="gap-4">
+      <TabsList className="h-auto max-w-full justify-start overflow-x-auto border border-border bg-muted/60 p-1 [&_[data-slot=tabs-trigger]]:min-h-11">
         <TabsTrigger value="summary">الملخص</TabsTrigger>
         <TabsTrigger value="key_points">أهم النقاط</TabsTrigger>
         <TabsTrigger value="ask">اسأل AI</TabsTrigger>
