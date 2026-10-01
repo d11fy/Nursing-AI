@@ -8,10 +8,12 @@ import type { StudyContentType } from "@/types/database";
 
 export function LectureWorkspaceTabs({
   lectureId,
+  subjectId,
   initialContent,
   maxImageSizeMb,
 }: {
   lectureId: string;
+  subjectId: string;
   initialContent: Partial<Record<StudyContentType, unknown>>;
   maxImageSizeMb: number;
 }) {
@@ -38,6 +40,7 @@ export function LectureWorkspaceTabs({
           conversationId={null}
           initialMessages={[]}
           lectureId={lectureId}
+          subjectId={subjectId}
           maxImageSizeMb={maxImageSizeMb}
           containerClassName="h-[70vh]"
         />

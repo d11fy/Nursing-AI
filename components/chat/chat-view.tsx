@@ -7,7 +7,7 @@ import { Loader2, MessageSquareText, BookOpen } from "lucide-react";
 import Link from "next/link";
 import { MessageBubble, type ChatMessageData } from "@/components/chat/message-bubble";
 import { Suggestions } from "@/components/chat/suggestions";
-import { Composer, type PendingImage } from "@/components/chat/composer";
+import { Composer, type ChatSubjectOption, type PendingImage } from "@/components/chat/composer";
 import { consumeChatResponse } from "@/lib/chat/stream";
 
 let localIdCounter = 0;
@@ -26,6 +26,7 @@ export function ChatView({
   subjectName,
   lectureId,
   maxImageSizeMb,
+  availableSubjects = [],
   containerClassName = "h-[calc(100vh-4rem)]",
   showAITrace = false,
 }: {
@@ -35,6 +36,7 @@ export function ChatView({
   subjectName?: string | null;
   lectureId?: string | null;
   maxImageSizeMb?: number;
+  availableSubjects?: ChatSubjectOption[];
   containerClassName?: string;
   showAITrace?: boolean;
 }) {
@@ -176,6 +178,11 @@ export function ChatView({
           maxImageSizeMb={maxImageSizeMb}
           conversationId={pendingImage?.conversationId??uploadConversationId}
           subjectId={uploadSubjectId}
+          availableSubjects={availableSubjects}
+          onSubjectChange={(nextSubjectId) => {
+            activeSubjectRef.current = nextSubjectId;
+            setUploadSubjectId(nextSubjectId);
+          }}
         />
       </div>
     </div>

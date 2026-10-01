@@ -1,10 +1,18 @@
 "use client";
 
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import Image from "next/image";
-import { FileText, ImagePlus, Loader2, Send, Square, X } from "lucide-react";
+import { BookOpen, Check, FileText, ImagePlus, Loader2, Send, Square, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 
 export interface PendingImage {
@@ -16,6 +24,11 @@ export interface PendingImage {
   conversationId?: string;
   lectureId?: string;
   kind?: "image" | "file";
+}
+
+export interface ChatSubjectOption {
+  id: string;
+  name: string;
 }
 
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
@@ -37,6 +50,8 @@ export function Composer({
   maxImageSizeMb = 8,
   conversationId,
   subjectId,
+  availableSubjects = [],
+  onSubjectChange,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -48,11 +63,53 @@ export function Composer({
   maxImageSizeMb?: number;
   conversationId?:string|null;
   subjectId?:string|null;
+  availableSubjects?: ChatSubjectOption[];
+  onSubjectChange?: (subjectId: string) => void;
 }) {
   const [uploadingKind, setUploadingKind] = useState<"image" | "file" | null>(null);
+  const [subjectPickerOpen, setSubjectPickerOpen] = useState(false);
+  const [selectedSubjectId, setSelectedSubjectId] = useState(subjectId ?? "");
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadSubjectRef = useRef(subjectId);
   const isUploading = uploadingKind !== null;
+
+  useEffect(() => {
+    uploadSubjectRef.current = subjectId;
+  }, [subjectId]);
+
+  function selectUploadSubject(nextSubjectId: string) {
+    uploadSubjectRef.current = nextSubjectId;
+    setSelectedSubjectId(nextSubjectId);
+    onSubjectChange?.(nextSubjectId);
+  }
+
+  function openFilePicker() {
+    if (uploadSubjectRef.current) {
+      fileInputRef.current?.click();
+      return;
+    }
+    if (availableSubjects.length === 0) {
+      toast.error("لا توجد مادة متاحة لربط الملف بها");
+      return;
+    }
+    if (availableSubjects.length === 1) {
+      selectUploadSubject(availableSubjects[0].id);
+      fileInputRef.current?.click();
+      return;
+    }
+    setSubjectPickerOpen(true);
+  }
+
+  function confirmSubjectSelection() {
+    if (!selectedSubjectId) {
+      toast.error("اختر المادة أولًا");
+      return;
+    }
+    selectUploadSubject(selectedSubjectId);
+    setSubjectPickerOpen(false);
+    fileInputRef.current?.click();
+  }
 
   async function handleFileSelect(file: File, kind: "image" | "file") {
     if (kind === "file") {
@@ -70,7 +127,7 @@ export function Composer({
         const form = new FormData();
         form.append("file", file);
         if (conversationId) form.append("conversationId", conversationId);
-        if (subjectId) form.append("subjectId", subjectId);
+        if (uploadSubjectRef.current) form.append("subjectId", uploadSubjectRef.current);
         const response = await fetch("/api/chat/files", { method: "POST", body: form });
         let data = await response.json();
         if (!response.ok) throw new Error(data.error ?? "تعذر رفع الملف");
@@ -197,7 +254,7 @@ export function Composer({
           type="button"
           variant="ghost"
           size="sm"
-          onClick={() => fileInputRef.current?.click()}
+          onClick={openFilePicker}
           disabled={isUploading || isGenerating}
           aria-label={`رفع ملف دراسي حتى ${CHAT_FILE_MAX_SIZE_MB}MB`}
           title={`PDF أو DOCX أو PPTX أو TXT حتى ${CHAT_FILE_MAX_SIZE_MB}MB`}
@@ -241,6 +298,44 @@ export function Composer({
           </Button>
         )}
       </div>
+
+      <Dialog open={subjectPickerOpen} onOpenChange={setSubjectPickerOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>اختر مادة الملف</DialogTitle>
+            <DialogDescription>
+              سنربط الملف بالمادة حتى يشرح المساعد محتواه ضمن سياقك الدراسي الصحيح.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-64 space-y-2 overflow-y-auto" role="radiogroup" aria-label="المادة الدراسية">
+            {availableSubjects.map((subject) => {
+              const selected = selectedSubjectId === subject.id;
+              return (
+                <button
+                  key={subject.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => setSelectedSubjectId(subject.id)}
+                  className={`flex min-h-12 w-full cursor-pointer items-center gap-3 rounded-xl border px-3 text-start transition-colors focus-visible:ring-2 focus-visible:ring-primary ${selected ? "border-primary bg-accent text-primary" : "border-border bg-card hover:bg-muted"}`}
+                >
+                  <BookOpen className="size-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate font-medium">{subject.name}</span>
+                  {selected && <Check className="size-4 shrink-0" />}
+                </button>
+              );
+            })}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setSubjectPickerOpen(false)}>
+              إلغاء
+            </Button>
+            <Button type="button" onClick={confirmSubjectSelection} disabled={!selectedSubjectId}>
+              اختيار الملف
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

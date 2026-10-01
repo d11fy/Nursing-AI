@@ -3,7 +3,7 @@ import { forbidden } from "next/navigation";
 import { requireProfile } from "@/lib/auth";
 import { createClient } from "@/lib/db/server";
 import { getSettings } from "@/lib/usage";
-import { canStudentAccessSubject, getSubjectById } from "@/lib/subjects";
+import { canStudentAccessSubject, getStudentSubjects, getSubjectById } from "@/lib/subjects";
 
 export default async function NewChatPage({ searchParams }: PageProps<"/dashboard/chat">) {
   const profile = await requireProfile();
@@ -15,7 +15,10 @@ export default async function NewChatPage({ searchParams }: PageProps<"/dashboar
     if (!await canStudentAccessSubject(profile.user_id, subjectId)) forbidden();
     subjectName = (await getSubjectById(subjectId))?.name_ar ?? null;
   }
-  const { maxImageSizeMb } = await getSettings(await createClient());
+  const [{ maxImageSizeMb }, { subjects }] = await Promise.all([
+    getSettings(await createClient()),
+    getStudentSubjects(profile.user_id),
+  ]);
 
   return (
     <ChatView
@@ -24,6 +27,7 @@ export default async function NewChatPage({ searchParams }: PageProps<"/dashboar
       subjectId={subjectId ?? null}
       subjectName={subjectName}
       maxImageSizeMb={maxImageSizeMb}
+      availableSubjects={subjects.map((subject) => ({ id: subject.id, name: subject.name_ar }))}
       showAITrace={profile.role === "admin"}
     />
   );

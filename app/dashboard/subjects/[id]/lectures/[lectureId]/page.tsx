@@ -50,7 +50,7 @@ export default async function LectureWorkspacePage({
       {lecture.status !== "ready" ? (
         <LectureStatusBanner lectureId={lecture.id} status={lecture.status} errorMessage={lecture.error_message} />
       ) : (
-        <LectureWorkspaceTabs lectureId={lecture.id} initialContent={initialContent} maxImageSizeMb={settings.maxImageSizeMb} />
+        <LectureWorkspaceTabs subjectId={subjectId} lectureId={lecture.id} initialContent={initialContent} maxImageSizeMb={settings.maxImageSizeMb} />
       )}
     </div>
   );
