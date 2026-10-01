@@ -14,9 +14,10 @@ export function GoogleCompleteForm({ name, email }: { name: string; email: strin
   const [state, action, pending] = useActionState(completeGoogleRegistrationAction, initialState);
   return (
     <div>
-      <h1 className="text-xl font-bold text-slate-900 dark:text-white">أكمل بيانات حسابك</h1>
-      <p className="mt-1 text-sm text-slate-500">مرحبًا {name}، بقي تحديد بياناتك الدراسية فقط.</p>
-      <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800" dir="ltr">{email}</p>
+      <p className="eyebrow mb-1">الخطوة الأخيرة</p>
+      <h1 className="text-2xl font-extrabold tracking-tight text-foreground">أكمل بيانات حسابك</h1>
+      <p className="mt-1.5 text-sm leading-7 text-muted-foreground">مرحبًا {name}، بقي تحديد بياناتك الدراسية فقط.</p>
+      <p className="mt-3 rounded-xl border border-border bg-muted/50 px-3.5 py-2.5 text-sm" dir="ltr">{email}</p>
       <form action={action} className="mt-5 space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="university">الجامعة</Label>
@@ -33,7 +34,7 @@ export function GoogleCompleteForm({ name, email }: { name: string; email: strin
             </SelectContent>
           </Select>
         </div>
-        {state.error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/40">{state.error}</p>}
+        {state.error && <p role="alert" className="rounded-xl border border-destructive/15 bg-destructive/10 px-3.5 py-3 text-sm text-destructive">{state.error}</p>}
         <Button type="submit" className="w-full" disabled={pending}>{pending ? "جارٍ إنشاء الحساب..." : "إكمال وإنشاء الحساب"}</Button>
       </form>
     </div>

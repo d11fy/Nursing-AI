@@ -7,6 +7,7 @@ import { getSettings } from "@/lib/usage";
 import { getStudyContent } from "@/lib/lectures/study-content";
 import { LectureStatusBanner } from "@/components/dashboard/lecture-status-banner";
 import { LectureWorkspaceTabs } from "@/components/dashboard/lecture-workspace-tabs";
+import { PageHeader } from "@/components/ui/page-header";
 
 function formatSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -34,22 +35,17 @@ export default async function LectureWorkspacePage({
   ]);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
+    <div className="page-container mx-auto max-w-4xl space-y-6">
       <Link href={`/dashboard/subjects/${subjectId}`} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
         <ArrowRight className="size-4" />العودة إلى المادة
       </Link>
 
-      <div className="flex items-start gap-3">
-        <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950">
-          <FileText />
-        </div>
-        <div>
-          <h1 className="text-xl font-bold text-foreground">{lecture.title}</h1>
-          <p className="text-sm text-muted-foreground">
-            {formatSize(lecture.file_size_bytes)} · {new Date(lecture.uploaded_at).toLocaleDateString("ar-EG")}
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        icon={FileText}
+        eyebrow="مساحة المحاضرة"
+        title={lecture.title}
+        description={`${formatSize(lecture.file_size_bytes)} · ${new Date(lecture.uploaded_at).toLocaleDateString("ar-EG")}`}
+      />
 
       {lecture.status !== "ready" ? (
         <LectureStatusBanner lectureId={lecture.id} status={lecture.status} errorMessage={lecture.error_message} />

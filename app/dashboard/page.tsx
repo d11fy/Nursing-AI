@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MessageSquare, History, BookOpen } from "lucide-react";
+import { MessageSquare, History, BookOpen, ArrowLeft, Gauge, Clock3 } from "lucide-react";
 import { requireProfile } from "@/lib/auth";
 import { createClient } from "@/lib/db/server";
 import { checkDailyLimit } from "@/lib/usage";
@@ -12,6 +12,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function DashboardHomePage() {
   const profile = await requireProfile();
@@ -26,81 +28,96 @@ export default async function DashboardHomePage() {
     .limit(5);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8 p-4 sm:p-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-          مرحبًا، {profile.full_name.split(" ")[0]} 👋
-        </h1>
-        <p className="mt-1 text-slate-500">شو حابب تدرس اليوم؟</p>
-      </div>
+    <div className="page-container mx-auto max-w-5xl space-y-8">
+      <PageHeader
+        eyebrow="لوحة الدراسة"
+        title={<>مرحبًا، {profile.full_name.split(" ")[0]}</>}
+        description="ابدأ جلسة جديدة أو تابع من حيث توقفت في موادك ومحادثاتك."
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">استخدامك اليوم</CardTitle>
+      <Card className="border-primary/10 bg-card">
+        <CardHeader className="grid grid-cols-[1fr_auto] items-center">
+          <div>
+          <CardTitle className="flex items-center gap-2 text-base"><Gauge className="size-4 text-primary" /> استخدامك اليوم</CardTitle>
           <CardDescription>
             {used} / {limit} سؤال اليوم
           </CardDescription>
+          </div>
+          <span className="rounded-full bg-accent px-3 py-1 text-xs font-bold text-primary">{Math.max(0, limit - used)} متبقٍ</span>
         </CardHeader>
         <CardContent>
           <Progress value={Math.min(100, (used / limit) * 100)} />
         </CardContent>
       </Card>
 
+      <section aria-labelledby="quick-actions-title">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 id="quick-actions-title" className="text-lg font-extrabold text-foreground">ابدأ الدراسة</h2>
+          <span className="text-xs text-muted-foreground">وصول سريع</span>
+        </div>
       <div className="grid gap-4 sm:grid-cols-3">
         <Link href="/dashboard/chat">
-          <Card className="h-full transition hover:shadow-md">
-            <CardContent className="flex flex-col items-center gap-3 pt-6 text-center">
-              <span className="flex size-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-300">
+          <Card className="interactive-card h-full">
+            <CardContent className="flex min-h-40 flex-col items-start gap-3 pt-6 text-start">
+              <span className="icon-tile">
                 <MessageSquare className="size-6" />
               </span>
-              <span className="font-medium text-slate-900 dark:text-white">محادثة جديدة</span>
+              <span className="font-bold text-foreground">محادثة جديدة</span>
+              <span className="text-xs leading-6 text-muted-foreground">اسأل عن موضوع أو ارفع ملفًا دراسيًا.</span>
             </CardContent>
           </Card>
         </Link>
         <Link href="/dashboard/history">
-          <Card className="h-full transition hover:shadow-md">
-            <CardContent className="flex flex-col items-center gap-3 pt-6 text-center">
-              <span className="flex size-12 items-center justify-center rounded-xl bg-teal-50 text-teal-600 dark:bg-teal-950 dark:text-teal-300">
+          <Card className="interactive-card h-full">
+            <CardContent className="flex min-h-40 flex-col items-start gap-3 pt-6 text-start">
+              <span className="icon-tile">
                 <History className="size-6" />
               </span>
-              <span className="font-medium text-slate-900 dark:text-white">المحادثات السابقة</span>
+              <span className="font-bold text-foreground">المحادثات السابقة</span>
+              <span className="text-xs leading-6 text-muted-foreground">ارجع إلى الشروحات والأسئلة السابقة.</span>
             </CardContent>
           </Card>
         </Link>
         <Link href="/dashboard/subjects">
-          <Card className="h-full transition hover:shadow-md">
-            <CardContent className="flex flex-col items-center gap-3 pt-6 text-center">
-              <span className="flex size-12 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-300">
+          <Card className="interactive-card h-full">
+            <CardContent className="flex min-h-40 flex-col items-start gap-3 pt-6 text-start">
+              <span className="icon-tile">
                 <BookOpen className="size-6" />
               </span>
-              <span className="font-medium text-slate-900 dark:text-white">المواد</span>
+              <span className="font-bold text-foreground">المواد الدراسية</span>
+              <span className="text-xs leading-6 text-muted-foreground">تصفّح مساقاتك ومحاضرات كل مادة.</span>
             </CardContent>
           </Card>
         </Link>
       </div>
+      </section>
 
       {recentConversations && recentConversations.length > 0 && (
-        <div>
-          <h2 className="mb-3 text-lg font-semibold text-slate-900 dark:text-white">
+        <section>
+          <h2 className="mb-3 flex items-center gap-2 text-lg font-extrabold text-foreground">
+            <Clock3 className="size-5 text-primary" />
             آخر محادثاتك
           </h2>
           <div className="space-y-2">
             {recentConversations.map((c) => (
               <Link key={c.id} href={`/dashboard/chat/${c.id}`}>
-                <Card className="transition hover:shadow-sm">
+                <Card className="interactive-card">
                   <CardContent className="flex items-center justify-between py-3">
-                    <span className="text-sm font-medium text-slate-800 dark:text-slate-100">
+                    <span className="min-w-0 truncate text-sm font-semibold text-foreground">
                       {c.title}
                     </span>
-                    <Button variant="ghost" size="sm">
-                      فتح
+                    <Button variant="ghost" size="sm" className="shrink-0 text-primary">
+                      فتح <ArrowLeft className="size-3.5" />
                     </Button>
                   </CardContent>
                 </Card>
               </Link>
             ))}
           </div>
-        </div>
+        </section>
+      )}
+      {(!recentConversations || recentConversations.length === 0) && (
+        <EmptyState icon={MessageSquare} title="لا توجد محادثات بعد" description="ابدأ أول سؤال لك وستظهر محادثاتك الحديثة هنا." action={<Button nativeButton={false} render={<Link href="/dashboard/chat">ابدأ محادثة</Link>} />} />
       )}
     </div>
   );

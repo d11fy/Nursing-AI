@@ -3,6 +3,8 @@ import { ProfileForm } from "@/components/dashboard/profile-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAcademicYears } from "@/lib/subjects";
 import { StudyPreferences } from "@/components/dashboard/study-preferences";
+import { PageHeader } from "@/components/ui/page-header";
+import { UserRound } from "lucide-react";
 
 export default async function ProfilePage() {
   const profile = await requireProfile();
@@ -10,8 +12,8 @@ export default async function ProfilePage() {
   const academicYearName = years.find((year) => year.id === profile.academic_year_id)?.name_ar ?? null;
 
   return (
-    <div className="mx-auto max-w-xl space-y-6 p-4 sm:p-6">
-      <h1 className="text-xl font-bold text-slate-900 dark:text-white">حسابي</h1>
+    <div className="page-container mx-auto max-w-2xl space-y-6">
+      <PageHeader icon={UserRound} eyebrow="إعدادات الحساب" title="حسابي" description="حدّث بياناتك واضبط طريقة الشرح التي تناسب دراستك." />
       <Card>
         <CardHeader>
           <CardTitle className="text-base">المعلومات الشخصية</CardTitle>

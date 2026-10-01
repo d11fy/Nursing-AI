@@ -136,7 +136,7 @@ export function SubjectTrainingTabs({
 
   return (
     <Tabs defaultValue="lectures" className="space-y-4">
-      <TabsList className="grid grid-cols-2 sm:grid-cols-4 h-11 p-1 bg-muted/60 border">
+      <TabsList className="grid w-full grid-cols-2 gap-1 sm:grid-cols-4 group-data-horizontal/tabs:h-auto p-1 bg-muted/60 border [&_[data-slot=tabs-trigger]]:min-h-11">
         <TabsTrigger value="lectures" className="text-xs sm:text-sm font-semibold">
           المحاضرات ({lectures.length})
         </TabsTrigger>
@@ -148,14 +148,14 @@ export function SubjectTrainingTabs({
           نماذج سابقة ({pastExams.length})
         </TabsTrigger>
         <TabsTrigger value="exam-insights" className="text-xs sm:text-sm font-semibold flex items-center gap-1.5">
-          <BarChart3 className="size-3.5 text-blue-600 dark:text-blue-400" />
+          <BarChart3 className="size-3.5 text-primary" />
           تحليل الامتحانات
         </TabsTrigger>
       </TabsList>
 
       {/* Tab 1: Lectures (Original Feature preserved 100%) */}
       <TabsContent value="lectures" className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-base font-bold text-foreground">محاضراتي الخاصة في {subjectName}</h3>
           <LectureUploadDialog subjectId={subjectId} largeFileMb={lectureLargeFileMb} maxFileMb={lectureMaxFileMb} />
         </div>

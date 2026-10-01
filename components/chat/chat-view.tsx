@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Loader2, MessageSquareText, BookOpen } from "lucide-react";
 import Link from "next/link";
 import { MessageBubble, type ChatMessageData } from "@/components/chat/message-bubble";
 import { Suggestions } from "@/components/chat/suggestions";
@@ -131,20 +131,31 @@ export function ChatView({
   const showSuggestions = messages.length === 0;
 
   return (
-    <div className={`flex flex-col ${containerClassName}`}>
-      {!lectureId && subjectId && subjectName && <div className="border-b border-border bg-card px-4 py-2 text-sm"><span className="text-muted-foreground">المادة: </span><Link href={`/dashboard/subjects/${subjectId}`} className="font-medium text-blue-600 hover:underline">{subjectName}</Link></div>}
-      <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
+    <div className={`chat-layout flex min-h-0 min-w-0 flex-col ${containerClassName}`}>
+      {!lectureId && (
+        <div className="flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4 py-3 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="icon-tile size-10 shrink-0"><MessageSquareText className="size-[18px]" /></span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold text-foreground">المساعد الدراسي</p>
+              <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted-foreground"><span className="size-1.5 shrink-0 rounded-full bg-success" /> جاهز لمساعدتك في الدراسة</p>
+            </div>
+          </div>
+          {subjectId && subjectName && <Link href={`/dashboard/subjects/${subjectId}`} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl bg-accent px-3 text-xs font-bold text-primary hover:bg-accent/70"><BookOpen className="size-3.5" /><span className="hidden sm:inline">{subjectName}</span></Link>}
+        </div>
+      )}
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-y-contain bg-background px-3 py-5 sm:px-6 sm:py-8">
         {showSuggestions ? (
           <div className="flex h-full items-center justify-center">
             <Suggestions onPick={(text) => send(text)} />
           </div>
         ) : (
-          <div className="mx-auto max-w-3xl space-y-4">
+          <div className="mx-auto max-w-[920px] space-y-6 pb-6">
             {messages.map((m) => (
               <MessageBubble key={m.id} message={m} showAITrace={showAITrace} />
             ))}
             {isGenerating && messages[messages.length - 1]?.content === "" && (
-              <div className="flex items-center gap-2 text-sm text-slate-400">
+              <div role="status" aria-live="polite" className="flex min-h-10 items-center gap-3 px-2 text-xs text-muted-foreground sm:text-sm">
                 <Loader2 className="size-4 animate-spin" />
                 جارٍ تجهيز الشرح من سياق دراستك...
               </div>
@@ -153,7 +164,7 @@ export function ChatView({
         )}
       </div>
 
-      <div className="mx-auto w-full max-w-3xl">
+      <div className="chat-composer-dock mx-auto w-full max-w-[920px] shrink-0">
         <Composer
           value={input}
           onChange={setInput}

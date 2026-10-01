@@ -16,7 +16,7 @@ export default async function AdminSubjectsPage({ searchParams }: PageProps<"/ad
   const [years, subjects] = await Promise.all([
     getAcademicYears(true), getAdminSubjects({ academicYearId: year || undefined, status, search }),
   ]);
-  return <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
+  return <div className="page-container mx-auto max-w-7xl space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div><h1 className="text-xl font-bold">إدارة المواد الدراسية</h1><p className="text-sm text-muted-foreground">إضافة المواد وربطها بسنة أو أكثر</p></div>
       <Button nativeButton={false} render={<a href="/admin/academic-years">إدارة السنوات الدراسية</a>} variant="outline" />

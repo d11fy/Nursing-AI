@@ -185,7 +185,7 @@ export function LectureUploadDialog({
               onDragLeave={() => setDragging(false)}
               onDrop={handleDrop}
               onClick={() => !uploading && fileInputRef.current?.click()}
-              className={`flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed p-6 text-center text-sm transition-colors ${
+              className={`flex cursor-pointer flex-col items-center gap-3 rounded-2xl border-2 border-dashed bg-muted/30 p-6 text-center text-sm leading-7 transition-colors duration-200 hover:border-primary/40 hover:bg-accent/40 ${
                 dragging ? "border-primary bg-primary/5" : "border-border"
               }`}
             >
@@ -214,7 +214,7 @@ export function LectureUploadDialog({
                 </div>
               ) : (
                 <>
-                  <Upload className="size-6 text-muted-foreground" />
+                  <Upload className="size-9 text-primary" />
                   <p>اسحب الملف هنا أو اضغط للاختيار</p>
                   <p className="text-xs text-muted-foreground">PDF, DOCX, PPTX, TXT, JPG, PNG, WEBP — حتى {maxFileMb}MB</p>
                 </>

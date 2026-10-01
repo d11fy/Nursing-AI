@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { FileText, Loader2 } from "lucide-react";
+import { FileText, Loader2, TriangleAlert } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { daysUntil } from "@/lib/lectures/retention-display";
 import type { LectureStatus } from "@/types/database";
 
@@ -9,7 +10,7 @@ const STATUS_LABEL: Record<LectureStatus, string> = {
   uploading: "جارٍ الرفع",
   uploaded: "جارٍ التجهيز",
   processing: "جاري تجهيزها للدراسة...",
-  ready: "جاهزة للدراسة ✓",
+  ready: "جاهزة للدراسة",
   failed: "تعذر تجهيز المحاضرة",
   expired: "منتهية",
   deleted: "محذوفة",
@@ -39,22 +40,22 @@ export function LectureCard({
 
   return (
     <Link href={`/dashboard/subjects/${subjectId}/lectures/${lecture.id}`}>
-      <Card className="transition-colors hover:border-primary">
+      <Card className="interactive-card">
         <CardContent className="flex items-start gap-3 p-4">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950">
+          <div className="icon-tile size-10 shrink-0 rounded-xl">
             <FileText className="size-5" />
           </div>
           <div className="min-w-0 flex-1 space-y-1.5">
             <p className="truncate font-medium text-foreground">{lecture.title}</p>
             <p className="text-xs text-muted-foreground">{formatSize(lecture.file_size_bytes)}</p>
             <div className="flex flex-wrap items-center gap-1.5">
-              <Badge variant={lecture.status === "ready" ? "secondary" : lecture.status === "failed" ? "destructive" : "outline"}>
+              <StatusBadge status={lecture.status}>
                 {isBusy && <Loader2 className="size-3 animate-spin" />}
                 {STATUS_LABEL[lecture.status]}
-              </Badge>
+              </StatusBadge>
               {daysLeft !== null && (
                 <Badge variant="outline" className="border-amber-300 text-amber-700 dark:border-amber-800 dark:text-amber-400">
-                  ⚠ سيتم حذف الملف الأصلي بعد {daysLeft} {daysLeft === 1 ? "يوم" : "أيام"}
+                  <TriangleAlert className="size-3" /> سيتم حذف الملف الأصلي بعد {daysLeft} {daysLeft === 1 ? "يوم" : "أيام"}
                 </Badge>
               )}
               {lecture.deleted_at && (

@@ -8,8 +8,9 @@ import { getSettings } from "@/lib/usage";
 import { canStudentAccessSubject, getSubjectById } from "@/lib/subjects";
 import { getSmartReviewRecommendations } from "@/lib/exams/practice-service";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { SubjectTrainingTabs } from "@/components/dashboard/subject-training-tabs";
+import { PageHeader } from "@/components/ui/page-header";
 
 export default async function SubjectDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -78,27 +79,26 @@ export default async function SubjectDetailsPage({ params }: { params: Promise<{
   }));
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
+    <div className="page-container mx-auto max-w-4xl space-y-6">
       <Link href="/dashboard/subjects" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
         <ArrowRight className="size-4" />
         العودة إلى المواد
       </Link>
-      <Card>
-        <CardHeader>
-          <div className="flex size-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950">
-            <BookOpen />
-          </div>
-          <CardTitle>{subject.name_ar}</CardTitle>
-          <p dir="ltr" className="text-sm text-muted-foreground">{subject.name_en}</p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {subject.description_ar && <p className="leading-7 text-muted-foreground">{subject.description_ar}</p>}
+      <PageHeader
+        icon={BookOpen}
+        eyebrow="مساحة المادة"
+        title={subject.name_ar}
+        description={<><span dir="ltr" className="block text-start">{subject.name_en}</span>{subject.description_ar && <span className="mt-2 block">{subject.description_ar}</span>}</>}
+        actions={<Button nativeButton={false} render={<Link href={`/dashboard/chat?subject=${subject.id}`}>ابدأ محادثة للمادة</Link>} />}
+      />
+      <Card className="bg-muted/35">
+        <CardContent className="space-y-3 pt-5">
+          <p className="text-xs font-bold text-muted-foreground">السنوات الدراسية المتاحة</p>
           <div className="flex flex-wrap gap-2 text-sm">
             {subject.academic_years.map(y => (
-              <span key={y.id} className="rounded-full bg-muted px-3 py-1 text-xs">{y.name_ar}</span>
+              <span key={y.id} className="rounded-full border border-border bg-card px-3 py-1 text-xs font-semibold text-foreground">{y.name_ar}</span>
             ))}
           </div>
-          <Button nativeButton={false} render={<Link href={`/dashboard/chat?subject=${subject.id}`}>ابدأ محادثة مع المساعد للمادة</Link>} />
         </CardContent>
       </Card>
 
@@ -115,4 +115,3 @@ export default async function SubjectDetailsPage({ params }: { params: Promise<{
     </div>
   );
 }
-

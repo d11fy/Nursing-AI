@@ -39,14 +39,14 @@ export function ConversationRow({
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
-    <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3">
+    <div className="flex min-w-0 items-center gap-3 rounded-2xl border border-border bg-card px-4 py-4 transition-colors duration-200 hover:border-primary/25 hover:bg-accent/30">
       {editing ? (
         <form
           action={async (formData) => {
             await renameConversationAction(formData);
             setEditing(false);
           }}
-          className="flex flex-1 items-center gap-2"
+          className="flex min-w-0 flex-1 flex-wrap items-center gap-2"
         >
           <input type="hidden" name="conversationId" value={id} />
           <Input name="title" defaultValue={title} autoFocus className="h-8" />
@@ -59,16 +59,16 @@ export function ConversationRow({
         </form>
       ) : (
         <>
-          <Link href={`/dashboard/chat/${id}`} className="flex-1 truncate text-sm font-medium text-slate-800 dark:text-slate-100">
+          <Link href={`/dashboard/chat/${id}`} className="flex-1 truncate text-sm font-semibold text-foreground">
             {title}
           </Link>
-          <span className="hidden shrink-0 text-xs text-slate-400 sm:block">
+          <span className="shrink-0 text-[11px] text-muted-foreground sm:text-xs">
             {new Date(updatedAt).toLocaleDateString("ar-EG")}
           </span>
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
-                <Button variant="ghost" size="icon" className="size-8 shrink-0">
+                <Button variant="ghost" size="icon" className="size-11 shrink-0" aria-label="خيارات المحادثة">
                   <MoreVertical className="size-4" />
                 </Button>
               }
@@ -80,7 +80,7 @@ export function ConversationRow({
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => setConfirmDelete(true)}
-                className="text-red-600 focus:text-red-600"
+                className="text-destructive focus:text-destructive"
               >
                 <Trash2 className="size-4" />
                 حذف

@@ -6,7 +6,7 @@ import { getAcademicYears } from "@/lib/subjects";
 
 export default async function AcademicYearsPage() {
   const years = await getAcademicYears(true);
-  return <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
+  return <div className="page-container mx-auto max-w-5xl space-y-6">
     <div><h1 className="text-xl font-bold">السنوات الدراسية</h1><p className="text-sm text-muted-foreground">يمكن تعديل الاسم والترتيب أو تعطيل السنة. السنوات المرتبطة بطلاب لا تُحذف.</p></div>
     <form action={createAcademicYearAction} className="grid gap-3 rounded-xl border border-border bg-card p-4 sm:grid-cols-4">
       <Input name="nameAr" placeholder="اسم المستوى بالعربية" required /><Input name="nameEn" dir="ltr" placeholder="English name" required /><Input name="code" dir="ltr" pattern="[a-z0-9_]+" placeholder="level_code" required /><div className="flex gap-2"><Input name="sortOrder" type="number" min={0} defaultValue={years.length + 1} required /><Button>إضافة</Button></div>
