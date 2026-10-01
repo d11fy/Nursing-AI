@@ -3,21 +3,21 @@ import { z } from 'zod';
 import { createClient } from '@/lib/db/server';
 import { identityDb } from '@/lib/tutor/db';
 import { registerDocument, enqueueDocument } from '@/lib/tutor/ingestion';
-import { getSettings } from '@/lib/usage';
 import { canStudentAccessSubject } from '@/lib/subjects';
 import { limitedFormData } from '@/lib/request-body';
 import { uploadLectureFile } from '@/lib/storage';
 import { LECTURE_EXTENSION_MIME_MAP } from '@/lib/validations/lectures';
 import { attachProcessedLecture } from '@/lib/tutor/file-attachment';
-const schema=z.object({conversationId:z.string().uuid().nullable(),subjectId:z.string().uuid().nullable(),largeFileAcknowledged:z.boolean()});
+const CHAT_FILE_MAX_SIZE_MB=10;
+const CHAT_FILE_MAX_SIZE_BYTES=CHAT_FILE_MAX_SIZE_MB*1024*1024;
+const schema=z.object({conversationId:z.string().uuid().nullable(),subjectId:z.string().uuid().nullable()});
 export async function POST(request:Request) {
   const db=await createClient(),user=db.actor;
   if(!user||user.status!=='active') return Response.json({error:'يجب تسجيل الدخول'},{status:401});
-  const settings=await getSettings(db),max=settings.lectureMaxFileMb*1024*1024;
-  let form:FormData;try{form=await limitedFormData(request,max+65536);}catch{return Response.json({error:'حجم الملف كبير أو الطلب غير صالح'},{status:413});}
-  const file=form.get('file'),meta=schema.safeParse({conversationId:form.get('conversationId')||null,subjectId:form.get('subjectId')||null,
-    largeFileAcknowledged:form.get('largeFileAcknowledged')==='true'});
+  let form:FormData;try{form=await limitedFormData(request,CHAT_FILE_MAX_SIZE_BYTES+65536);}catch{return Response.json({error:`الحد الأقصى لملف المحادثة ${CHAT_FILE_MAX_SIZE_MB}MB`},{status:413});}
+  const file=form.get('file'),meta=schema.safeParse({conversationId:form.get('conversationId')||null,subjectId:form.get('subjectId')||null});
   if(!(file instanceof File)||!meta.success) return Response.json({error:'بيانات الملف غير صالحة'},{status:400});
+  if(file.size>CHAT_FILE_MAX_SIZE_BYTES)return Response.json({error:`الحد الأقصى لملف المحادثة ${CHAT_FILE_MAX_SIZE_MB}MB`},{status:413});
   let cid=meta.data.conversationId,subject=meta.data.subjectId;
   if(cid) {
     const owned=(await identityDb(user.user_id).query<{subject_id:string|null}>('select subject_id from conversations where id=$1 and user_id=$2',[cid,user.user_id])).rows[0];
@@ -28,8 +28,6 @@ export async function POST(request:Request) {
   if(!await canStudentAccessSubject(user.user_id,subject))return Response.json({error:'المادة غير متاحة لك'},{status:403});
   const extension=file.name.split('.').pop()?.toLowerCase()??'';
   if(!LECTURE_EXTENSION_MIME_MAP[extension]||LECTURE_EXTENSION_MIME_MAP[extension]!==file.type)return Response.json({error:'استخدم PDF أو DOCX أو PPTX أو TXT'},{status:400});
-  const large=file.size>20*1024*1024;
-  if(large&&!meta.data.largeFileAcknowledged)return Response.json({error:'الملف الأصلي الأكبر من 20MB يحذف بعد 10 أيام؛ المحتوى المستخرج يبقى للدراسة. أكد الاطلاع على التنويه.',requiresAcknowledgement:true},{status:400});
   const buffer=Buffer.from(await file.arrayBuffer()),hash=createHash('sha256').update(buffer).digest('hex');
   if(!cid) {
     const created=await db.from('conversations').insert({user_id:user.user_id,title:file.name.slice(0,60),subject_id:subject}).select('id').single();
@@ -40,14 +38,14 @@ export async function POST(request:Request) {
     const attachmentId=await attachProcessedLecture(user.user_id,cid,duplicate.id);
     return Response.json({conversationId:cid,lectureId:duplicate.id,attachmentId,status:'ready'});
   }
-  const {path}=await uploadLectureFile(db,user.user_id,file,max);
+  const {path}=await uploadLectureFile(db,user.user_id,file,CHAT_FILE_MAX_SIZE_BYTES);
   const lecture=await db.from('lectures').insert({user_id:user.user_id,subject_id:subject,title:file.name.slice(0,180),file_name:file.name.replace(/[/\\\x00-\x1f]/g,'_'),
     original_file_name:file.name,storage_path:path,mime_type:file.type,file_size_bytes:file.size,file_hash:hash,status:'uploaded',
-    delete_after:large?new Date(Date.now()+10*86400000).toISOString():null}).select('id').single();
+    delete_after:null}).select('id').single();
   if(!lecture.data)return Response.json({error:'تعذر حفظ الملف'},{status:503});
   const lectureId=lecture.data.id,conversationId=cid;
   await enqueueDocument(await registerDocument(lectureId,true));
-  return Response.json({conversationId,lectureId,status:'processing',deleteAfter:large?new Date(Date.now()+10*86400000).toISOString():null},{status:202});
+  return Response.json({conversationId,lectureId,status:'processing',deleteAfter:null},{status:202});
 }
 export async function GET(request:Request) {
   const db=await createClient(),user=db.actor;if(!user)return Response.json({error:'يجب تسجيل الدخول'},{status:401});

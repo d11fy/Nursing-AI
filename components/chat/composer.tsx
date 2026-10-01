@@ -2,7 +2,7 @@
 
 import { useRef, useState, type KeyboardEvent } from "react";
 import Image from "next/image";
-import { Paperclip, FileText, Send, Square, X, Loader2 } from "lucide-react";
+import { FileText, ImagePlus, Loader2, Send, Square, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,13 +12,15 @@ export interface PendingImage {
   previewUrl: string;
   name: string;
   size: number;
-  attachmentId?:string;
-  conversationId?:string;
-  lectureId?:string;
-  kind?:'image'|'file';
+  attachmentId?: string;
+  conversationId?: string;
+  lectureId?: string;
+  kind?: "image" | "file";
 }
 
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+const ACCEPTED_FILE_EXTENSIONS = ["pdf", "docx", "pptx", "txt"];
+const CHAT_FILE_MAX_SIZE_MB = 10;
 
 function formatFileSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} ميجابايت`;
@@ -47,30 +49,57 @@ export function Composer({
   conversationId?:string|null;
   subjectId?:string|null;
 }) {
-  const [uploading, setUploading] = useState(false);
+  const [uploadingKind, setUploadingKind] = useState<"image" | "file" | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isUploading = uploadingKind !== null;
 
-  async function handleFileSelect(file: File) {
-    if(!file.type.startsWith('image/')) {
-      if(file.size>50*1024*1024){toast.error('الحد الأقصى للملف 50MB');return;}
-      const large=file.size>20*1024*1024;
-      if(large&&!window.confirm('سيحذف الملف الأصلي بعد 10 أيام. يبقى المحتوى المستخرج متاحًا للدراسة. متابعة؟'))return;
-      setUploading(true);
+  async function handleFileSelect(file: File, kind: "image" | "file") {
+    if (kind === "file") {
+      const extension = file.name.split(".").pop()?.toLowerCase();
+      if (!extension || !ACCEPTED_FILE_EXTENSIONS.includes(extension)) {
+        toast.error("استخدم PDF أو DOCX أو PPTX أو TXT");
+        return;
+      }
+      if (file.size > CHAT_FILE_MAX_SIZE_MB * 1024 * 1024) {
+        toast.error(`الحد الأقصى لملف المحادثة ${CHAT_FILE_MAX_SIZE_MB}MB`);
+        return;
+      }
+      setUploadingKind("file");
       try {
-        const form=new FormData();form.append('file',file);if(conversationId)form.append('conversationId',conversationId);
-        if(subjectId)form.append('subjectId',subjectId);form.append('largeFileAcknowledged',String(large));
-        const response=await fetch('/api/chat/files',{method:'POST',body:form});let data=await response.json();
-        if(!response.ok)throw new Error(data.error??'تعذر رفع الملف');
-        const cid=data.conversationId,lecture=data.lectureId;
-        for(let attempt=0;data.status!=='ready'&&attempt<300;attempt++) {
-          await new Promise(resolve=>setTimeout(resolve,2000));
+        const form = new FormData();
+        form.append("file", file);
+        if (conversationId) form.append("conversationId", conversationId);
+        if (subjectId) form.append("subjectId", subjectId);
+        const response = await fetch("/api/chat/files", { method: "POST", body: form });
+        let data = await response.json();
+        if (!response.ok) throw new Error(data.error ?? "تعذر رفع الملف");
+        const cid = data.conversationId;
+        const lecture = data.lectureId;
+        for (let attempt = 0; data.status !== "ready" && attempt < 300; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
           const status=await fetch(`/api/chat/files?conversationId=${cid}&lectureId=${lecture}`);data=await status.json();
-          if(!status.ok||data.status==='failed')throw new Error(data.error??'تعذرت معالجة الملف');
+          if (!status.ok || data.status === "failed") throw new Error(data.error ?? "تعذرت معالجة الملف");
         }
-        if(data.status!=='ready')throw new Error('الملف ما زال يعالج؛ افتحه من صفحة المادة بعد قليل');
-        onImageChange({path:'',previewUrl:'',name:file.name,size:file.size,kind:'file',conversationId:cid,lectureId:lecture,attachmentId:data.attachmentId});
-      } catch(error){toast.error(error instanceof Error?error.message:'تعذر رفع الملف');}finally{setUploading(false);}return;
+        if (data.status !== "ready") throw new Error("الملف ما زال يعالج؛ افتحه من صفحة المادة بعد قليل");
+        onImageChange({
+          path: "",
+          previewUrl: "",
+          name: file.name,
+          size: file.size,
+          kind: "file",
+          conversationId: cid,
+          lectureId: lecture,
+          attachmentId: data.attachmentId,
+        });
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "تعذر رفع الملف");
+      } finally {
+        setUploadingKind(null);
+      }
+      return;
     }
+
     if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
       toast.error("نوع الملف غير مدعوم");
       return;
@@ -79,7 +108,7 @@ export function Composer({
       toast.error(`حجم الصورة أكبر من الحد المسموح. الحد الأقصى ${maxImageSizeMb}MB.`);
       return;
     }
-    setUploading(true);
+    setUploadingKind("image");
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -90,7 +119,7 @@ export function Composer({
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "تعذر رفع الصورة");
     } finally {
-      setUploading(false);
+      setUploadingKind(null);
     }
   }
 
@@ -107,12 +136,16 @@ export function Composer({
         <div className="mb-2 flex items-center gap-3">
           <div className="relative inline-block shrink-0">
             <div className="relative size-20 overflow-hidden rounded-lg border border-border">
-              {pendingImage.kind==='file'?<FileText className="m-5 size-10 text-primary"/>:<Image src={pendingImage.previewUrl} alt="معاينة" fill className="object-contain" unoptimized />}
+              {pendingImage.kind === "file" ? (
+                <FileText className="m-5 size-10 text-primary" />
+              ) : (
+                <Image src={pendingImage.previewUrl} alt="معاينة" fill className="object-contain" unoptimized />
+              )}
             </div>
             <button
               onClick={() => onImageChange(null)}
               className="absolute -left-1.5 -top-1.5 flex size-8 cursor-pointer items-center justify-center rounded-full bg-foreground text-background focus-visible:ring-2 focus-visible:ring-primary"
-              aria-label="إزالة الصورة"
+              aria-label="إزالة المرفق"
             >
               <X className="size-3" />
             </button>
@@ -124,31 +157,64 @@ export function Composer({
         </div>
       )}
 
-      <div className="flex items-end gap-2">
+      <div className="mb-2 flex flex-wrap items-center gap-1.5 border-b border-border/70 pb-2">
         <input
-          ref={fileInputRef}
+          ref={imageInputRef}
           type="file"
-          accept="image/jpeg,image/jpg,image/png,image/webp,.pdf,.docx,.pptx,.txt"
+          accept="image/jpeg,image/jpg,image/png,image/webp"
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
-            if (file) handleFileSelect(file);
+            if (file) handleFileSelect(file, "image");
+            e.target.value = "";
+          }}
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.docx,.pptx,.txt"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleFileSelect(file, "file");
             e.target.value = "";
           }}
         />
         <Button
           type="button"
-          variant="outline"
-          size="icon"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading||isGenerating}
-          aria-label="رفع صورة أو ملف دراسي"
-          title="رفع صورة أو ملف دراسي"
-          className="border-transparent text-muted-foreground hover:bg-accent hover:text-primary"
+          variant="ghost"
+          size="sm"
+          onClick={() => imageInputRef.current?.click()}
+          disabled={isUploading || isGenerating}
+          aria-label="رفع صورة"
+          title={`رفع صورة حتى ${maxImageSizeMb}MB`}
+          className="text-muted-foreground hover:text-primary"
         >
-          {uploading ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
+          {uploadingKind === "image" ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}
+          صورة
         </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isUploading || isGenerating}
+          aria-label={`رفع ملف دراسي حتى ${CHAT_FILE_MAX_SIZE_MB}MB`}
+          title={`PDF أو DOCX أو PPTX أو TXT حتى ${CHAT_FILE_MAX_SIZE_MB}MB`}
+          className="text-muted-foreground hover:text-primary"
+        >
+          {uploadingKind === "file" ? <Loader2 className="size-4 animate-spin" /> : <FileText className="size-4" />}
+          ملف
+          <span className="text-[10px] font-normal text-muted-foreground">حتى {CHAT_FILE_MAX_SIZE_MB}MB</span>
+        </Button>
+        {isUploading && (
+          <span role="status" className="text-xs text-muted-foreground">
+            {uploadingKind === "file" ? "جارٍ رفع الملف وتجهيزه..." : "جارٍ رفع الصورة..."}
+          </span>
+        )}
+      </div>
 
+      <div className="flex items-end gap-2">
         <Textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -168,7 +234,7 @@ export function Composer({
             type="button"
             size="icon"
             onClick={onSend}
-            disabled={uploading||(!value.trim() && !pendingImage)}
+            disabled={isUploading || (!value.trim() && !pendingImage)}
             aria-label="إرسال"
           >
             <Send className="size-4" />
