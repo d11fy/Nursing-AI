@@ -4,6 +4,8 @@ const nextConfig: NextConfig = {
   // Keep page-generation concurrency low on the shared 4 GB VPS.
   experimental: {
     authInterrupts: true,
+    // Allow the 50MB lecture upload plus multipart fields through Proxy.
+    proxyClientMaxBodySize: "64mb",
     cpus: 1,
     webpackMemoryOptimizations: true,
     webpackBuildWorker: true,
