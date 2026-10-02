@@ -4,27 +4,22 @@ import { useState } from "react";
 import {
   CheckCircle2,
   XCircle,
-  Clock,
   ArrowRight,
   ArrowLeft,
   BookOpen,
   Award,
-  Sparkles,
   RotateCcw,
-  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { PracticeQuestionView } from "@/lib/exams/practice-service";
 import { gradePracticeAnswer } from "@/lib/exams/answer-grading";
 
 export function PracticeExamRunner({
   attemptId,
   mode,
-  practiceType,
   questions,
   onClose,
 }: {
@@ -165,7 +160,7 @@ export function PracticeExamRunner({
                 const correctVal = String(q.correctAnswer || "");
                 return (
                   <div key={q.id} className="p-2.5 rounded-lg border bg-card text-xs space-y-1.5">
-                    <p className="font-medium text-foreground">{idx + 1}. {q.questionText}</p>
+                    <p dir="auto" className="font-medium text-foreground [unicode-bidi:plaintext]">{idx + 1}. {q.questionText}</p>
                     <div className="flex flex-wrap gap-2 text-[11px]">
                       <span className="text-muted-foreground">إجابتك: {String(ans || "لم تُجب")}</span>
                       <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
@@ -173,7 +168,7 @@ export function PracticeExamRunner({
                       </span>
                     </div>
                     {q.explanation && (
-                      <p className="text-muted-foreground text-[11px] bg-muted/30 p-1.5 rounded">
+                      <p dir="auto" className="text-muted-foreground text-[11px] bg-muted/30 p-1.5 rounded [unicode-bidi:plaintext]">
                         {q.explanation}
                       </p>
                     )}
@@ -235,7 +230,7 @@ export function PracticeExamRunner({
 
       <CardContent className="space-y-4 pt-4">
         {/* Question Text */}
-        <p className="text-base font-semibold text-foreground leading-relaxed">
+        <p dir="auto" className="text-base font-semibold text-foreground leading-relaxed [unicode-bidi:plaintext]">
           {currentQ.questionText}
         </p>
 
@@ -261,7 +256,8 @@ export function PracticeExamRunner({
                 key={i}
                 type="button"
                 onClick={() => handleSelectOption(opt)}
-                className={`w-full text-right p-3 rounded-xl border text-sm transition-all flex items-center justify-between ${btnStyle}`}
+                dir="auto"
+                className={`w-full text-start p-3 rounded-xl border text-sm transition-all flex items-center justify-between [unicode-bidi:plaintext] ${btnStyle}`}
               >
                 <span>{opt}</span>
                 {mode === "STUDY" && revealed && isCorr && (
@@ -283,7 +279,7 @@ export function PracticeExamRunner({
               <span>الشرح والمصدر المعتمد:</span>
             </div>
             {currentQ.explanation && (
-              <p className="text-foreground/90 leading-relaxed">{currentQ.explanation}</p>
+              <p dir="auto" className="text-foreground/90 leading-relaxed [unicode-bidi:plaintext]">{currentQ.explanation}</p>
             )}
             {currentQ.sources.length > 0 && (
               <div className="text-muted-foreground pt-1 border-t border-border/40 space-y-1">

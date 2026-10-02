@@ -19,8 +19,14 @@ test("generated answer receives an independent evidence review and server-owned 
   assert.equal(result.evidenceCoverage,"SUPPORTED");assert.deepEqual(result.finalSourceIds,["c1"]);
 });
 
-test("no source means no academic model call",async()=>{
-  const ai=fake([]);const result=await answerFromCurriculum(input,{provider:ai.provider,retrieve:async()=>[]});
+test("safe established knowledge is answered even when curriculum retrieval is empty",async()=>{
+  const ai=fake([{answer:"### Assessment — التقييم\n\nAssessment is a structured process.\n\n**بمعنى بسيط:** هو جمع المعلومات بطريقة منظمة.",clarification_needed:false,out_of_scope:false}]);
+  const result=await answerFromCurriculum(input,{provider:ai.provider,retrieve:async()=>[]});
+  assert.equal(ai.calls,1);assert.equal(result.reason,undefined);assert.match(result.content,/Assessment/);assert.match(result.content,/بمعنى بسيط/);
+});
+
+test("an unsupported high-risk dose request does not call the model or guess",async()=>{
+  const ai=fake([]);const result=await answerFromCurriculum({...input,question:"What dose should I administer to this patient?",resolvedQuestion:"What dose should I administer to this patient?"},{provider:ai.provider,retrieve:async()=>[]});
   assert.equal(ai.calls,0);assert.equal(result.reason,"NO_SOURCE");assert.equal(result.content,GROUNDED_RESPONSES.missing);
 });
 
@@ -34,9 +40,10 @@ test("invalid evidence quote gets only one repair attempt",async()=>{
 test("a matching quote cannot excuse an unsupported clinical claim",async()=>{
   const invented={coverage:"SUPPORTED",paragraphs:[{text:"الجرعة 900 mg.",evidence:[{sourceId:"S1",quote:source.content}]}],unsupported_parts:[]};
   const rejected={supported:false,unsupportedParagraphs:[0]};
-  const ai=fake([invented,rejected,invented,rejected]);
+  const safeFallback={answer:"### Assessment — التقييم\n\nAssessment is a structured process.\n\n**بمعنى بسيط:** هو جمع المعلومات بطريقة منظمة.",clarification_needed:false,out_of_scope:false};
+  const ai=fake([invented,rejected,invented,rejected,safeFallback]);
   const result=await answerFromCurriculum(input,{provider:ai.provider,retrieve:async()=>[source]});
-  assert.equal(result.reason,"LOW_CONFIDENCE");
+  assert.equal(ai.calls,5);assert.equal(result.reason,undefined);
   assert.doesNotMatch(result.content,/900 mg/);
 });
 

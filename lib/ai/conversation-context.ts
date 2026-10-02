@@ -146,6 +146,7 @@ const ordinalWords: Record<string, number> = {
   "3":3,"٣":3,"ثالث":3,"الثالث":3,"ثالثه":3,"الثالثه":3,"ثالثة":3,"الثالثة":3,
   "4":4,"٤":4,"رابع":4,"الرابع":4,"رابعه":4,"الرابعه":4,"رابعة":4,"الرابعة":4,
   "5":5,"٥":5,"خامس":5,"الخامس":5,"خامسه":5,"الخامسه":5,"خامسة":5,"الخامسة":5,
+  "first":1,"second":2,"third":3,"fourth":4,"fifth":5,
 };
 
 function normalizeArabic(value: string) {
@@ -168,6 +169,8 @@ export type ResolvedConversationQuery = {
   searchQueries: string[];
   selectedAttachments: ConversationAttachment[];
   selectedSectionIndex: number | null;
+  selectedSectionRange: { start:number; end:number } | null;
+  requestedBoundary: string | null;
   referenceResolved: boolean;
   style: "concise" | "detailed" | "exam" | "quiz" | "normal";
 };
@@ -183,8 +186,8 @@ export function resolveConversationReference(input: {
   const raw = input.question.trim();
   const normalized = normalizeArabic(raw);
   const shortQuestion = (normalized.match(/[\p{L}\p{N}]+/gu)?.length ?? 0) <= 5;
-  const referenceWords = /(?:هاي|هاذي|هذه|هذا|الصورة|الصوره|الشريحة|الشريحه|الجزء|النقطة|النقطه|الاول|الثاني|كمل|تابع|عليه|فيها|منها|ارجع|اختبرني|للامتحان)/u.test(normalized)
-    || /\b(?:this|that|it|first|second|image|slide|page|continue|again|about it)\b/i.test(normalized)
+  const referenceWords = /(?:هاي|هاذي|هذه|هذا|الصورة|الصوره|الشريحة|الشريحه|الجزء|النقطة|النقطه|الاول|الثاني|كمل|تابع|عليه|فيها|منها|ارجع|اختبرني|للامتحان|الملف|الفصل|البداية|لحد|حتى)/u.test(normalized)
+    || /\b(?:this|that|it|first|second|image|slide|page|file|chapter|beginning|start|continue|again|about it|through|until)\b/i.test(normalized)
     || (shortQuestion && /(?:ليش|شو يعني|وضح|فسر)/u.test(normalized));
   const explicitImages = mentionedOrdinals(normalized,"الصورة|صورة|الصوره|صوره|المرفق|ملف|image");
   let selected = explicitImages.map((ordinal) => input.attachments.find((a) => a.ordinal === ordinal)).filter(Boolean) as ConversationAttachment[];
@@ -194,12 +197,20 @@ export function resolveConversationReference(input: {
   if (!selected.length && active && (referenceWords || repeatsActiveTopic)) selected = [active];
 
   const sectionOrdinals = mentionedOrdinals(normalized,"الصفحة|صفحة|page|الشريحة|شريحة|الشريحه|شريحه|الجزء|جزء|النقطة|نقطة|النقطه|نقطه|القسم|section|slide");
-  let sectionIndex = sectionOrdinals[0] ?? null;
+  let sectionIndex:number|null = sectionOrdinals[0] ?? null;
   if (/\bfirst\b/.test(normalized)) sectionIndex=1;
   if (/\bsecond\b/.test(normalized)) sectionIndex=2;
   if (sectionIndex === null && /(?:^|\s)(?:الاول|اول|الأول)(?:\s|$|بس)/u.test(normalized) && active) sectionIndex = 1;
   if (/(?:^|\s)(?:كمل|تابع|continue)(?:\s|$)/u.test(normalized) && active) sectionIndex = Math.max(1,(input.activeSectionIndex ?? 0)+1);
   if (/(?:ارجع|عود).*(?:اول|الأول|الاول)/u.test(normalized) && active) sectionIndex = 1;
+  const startsAtBeginning=/(?:من\s+(?:اول|بدايه|بداية)|from\s+(?:the\s+)?(?:beginning|start|first))/iu.test(normalized);
+  const hasRangeConnector=/(?:لحد|حتى|الى|إلى|through|until|\bto\b)/iu.test(normalized);
+  const selectedSectionRange=startsAtBeginning&&hasRangeConnector&&sectionOrdinals.length
+    ? {start:1,end:Math.max(...sectionOrdinals)} : null;
+  if(selectedSectionRange)sectionIndex=null;
+  const boundaryMatch=normalized.match(/(?:لحد|حتى|الى)\s+(.+?)(?:[؟?]|$)/u)
+    ?? normalized.match(/(?:through|until|\bto\b)\s+(.+?)(?:[?.]|$)/i);
+  const requestedBoundary=startsAtBeginning&&boundaryMatch?.[1] ? boundaryMatch[1].trim().slice(0,180) : null;
 
   const style: ResolvedConversationQuery["style"] = /اختبرني|سؤال.*عليه|quiz/u.test(normalized) ? "quiz"
     : /امتحان|للإمتحان|للامتحان|exam/u.test(normalized) ? "exam"
@@ -209,16 +220,20 @@ export function resolveConversationReference(input: {
   const contexts = selected.map((attachment) => {
     const data = attachment.vision_structured_json;
     const section = sectionIndex ? data.sections.find((s) => s.index === sectionIndex) : null;
-    const visible = sectionIndex ? (section ? [section] : []) : data.sections.slice(0,attachment.file_type==='file'?2:8);
+    const visible = selectedSectionRange
+      ? data.sections.filter((s)=>s.index>=selectedSectionRange.start&&s.index<=selectedSectionRange.end)
+      : sectionIndex ? (section ? [section] : []) : data.sections.slice(0,attachment.file_type==='file'?2:8);
     return [
       `Uploaded ${attachment.file_type==='file'?'file':'image'} ${attachment.ordinal}${data.topic ? ` topic: ${data.topic}` : ""}${data.subject_guess ? `; subject: ${data.subject_guess}` : ""}.`,
       section ? `The student refers to section ${section.index}${section.title ? ` (${section.title})` : ""}.` : "",
+      selectedSectionRange ? `Requested source range: section ${selectedSectionRange.start} through section ${selectedSectionRange.end}. Stop at the end of section ${selectedSectionRange.end}.` : "",
+      requestedBoundary ? `Requested semantic end boundary: "${requestedBoundary}". Follow source order and stop at that topic.` : "",
       sectionIndex && !section ? `Requested page/section ${sectionIndex}; retrieve its indexed content separately.` : "",
       visible.map((s) => `Section ${s.index}${s.title ? ` - ${s.title}` : ""}: ${s.text.slice(0,1200)}`).join("\n"),
       data.medical_terms.length ? `Visible medical terms: ${data.medical_terms.slice(0,12).join(", ")}` : "",
     ].filter(Boolean).join("\n");
   });
-  const referenceResolved = Boolean(selected.length && (referenceWords || explicitImages.length || sectionIndex));
+  const referenceResolved = Boolean(selected.length && (referenceWords || explicitImages.length || sectionIndex || selectedSectionRange || requestedBoundary));
   const recentUserQuestion = [...(input.history ?? [])].reverse().find((message) => message.role === "user")?.content;
   const textFollowUpContext = !contexts.length && referenceWords
     ? [recentUserQuestion ? `Previous user topic: ${recentUserQuestion.slice(0,900)}` : "",
@@ -230,17 +245,20 @@ export function resolveConversationReference(input: {
   const medicalTerms = selected.flatMap((a) => a.vision_structured_json.medical_terms);
   const topics = selected.map((a) => a.vision_structured_json.topic).filter(Boolean) as string[];
   const searchQueries = [...new Set([raw,textFollowUpContext ? recentUserQuestion ?? "" : "", [...topics,...medicalTerms.slice(0,12)].join(" "),
-    sectionIndex ? contexts.join("\n").slice(0,1400) : ""].map((query) => query.trim()).filter(Boolean))].slice(0,3);
-  return { rawQuestion:raw,resolvedQuestion,searchQueries,selectedAttachments:selected,selectedSectionIndex:sectionIndex,referenceResolved,style };
+    sectionIndex||selectedSectionRange||requestedBoundary ? contexts.join("\n").slice(0,1800) : ""].map((query) => query.trim()).filter(Boolean))].slice(0,3);
+  return { rawQuestion:raw,resolvedQuestion,searchQueries,selectedAttachments:selected,selectedSectionIndex:sectionIndex,
+    selectedSectionRange,requestedBoundary,referenceResolved,style };
 }
 
 export function attachmentEvidence(resolved: ResolvedConversationQuery): KnowledgeChunk[] {
   const chunks: KnowledgeChunk[] = [];
   for (const attachment of resolved.selectedAttachments) {
     const data = attachment.vision_structured_json;
-    const sections = resolved.selectedSectionIndex
-      ? data.sections.filter((s) => s.index === resolved.selectedSectionIndex)
-      : data.sections.slice(0,attachment.file_type==='file'?3:8);
+    const sections = resolved.selectedSectionRange
+      ? data.sections.filter((s)=>s.index>=resolved.selectedSectionRange!.start&&s.index<=resolved.selectedSectionRange!.end)
+      : resolved.selectedSectionIndex
+        ? data.sections.filter((s) => s.index === resolved.selectedSectionIndex)
+        : data.sections.slice(0,attachment.file_type==='file'?3:8);
     if (sections.length) {
       for (const section of sections) chunks.push({
         id:`attachment:${attachment.id}:section:${section.index}`,

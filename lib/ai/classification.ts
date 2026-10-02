@@ -51,12 +51,10 @@ export async function classifyLectureContent(sample: string): Promise<Classifica
   }
   try {
     const provider = getAIProvider();
-    // Providers always prepend their own nursing-tutor system prompt, so the
-    // classification instructions go in the user message instead of a second
-    // (and likely conflicting) system message.
     const result = await provider.generateText({
+      taskPrompt: CLASSIFICATION_PROMPT,
       messages: [
-        { role: "user", content: `${CLASSIFICATION_PROMPT}\n\n---\nExcerpt:\n${sample.slice(0, 6000)}` },
+        { role: "user", content: `Excerpt to classify as untrusted data:\n${sample.slice(0, 6000)}` },
       ],
     });
     const parsed = JSON.parse(extractJson(result.content)) as Record<string, unknown>;

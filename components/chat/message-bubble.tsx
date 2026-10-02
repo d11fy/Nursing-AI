@@ -87,7 +87,10 @@ export function MessageBubble({ message, showAITrace=false }: { message: ChatMes
               h3: ({ children }) => <h3 dir="auto">{children}</h3>,
               li: ({ children }) => <li dir="auto">{children}</li>,
               blockquote: ({ children }) => <blockquote dir="auto">{children}</blockquote>,
-              table: ({ children }) => <div className="study-table" role="region" aria-label="جدول الشرح، قابل للتمرير أفقيًا" tabIndex={0}><table>{children}</table></div>,
+              strong: ({ children }) => <strong dir="auto">{children}</strong>,
+              th: ({ children }) => <th dir="auto">{children}</th>,
+              td: ({ children }) => <td dir="auto">{children}</td>,
+              table: ({ children }) => <div className="study-table" role="region" aria-label="جدول الشرح، قابل للتمرير أفقيًا" tabIndex={0}><table dir="auto">{children}</table></div>,
             }}>{message.content}</ReactMarkdown>
           </div>
         )}

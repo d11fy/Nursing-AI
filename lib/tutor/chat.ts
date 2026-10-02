@@ -92,7 +92,8 @@ export async function handleTutorChat(request:Request,db:DatabaseClient,schedule
           activeAttachmentId:attachments.activeAttachmentId,activeSectionIndex:attachments.activeSectionIndex,
           history:history as ChatMessageInput[],conversationSummary:context.summary?.summary});
         const active=resolved.selectedAttachments[0]??null;
-        if(active) await persistResolvedAttachmentState({conversationId:cid,userId:uid,attachmentId:active.id,sectionIndex:resolved.selectedSectionIndex});
+        if(active) await persistResolvedAttachmentState({conversationId:cid,userId:uid,attachmentId:active.id,
+          sectionIndex:resolved.selectedSectionIndex??resolved.selectedSectionRange?.end??null});
         const imageEvidence=attachmentEvidence(resolved);
         let documentId=subjectChanged?null:context.summary?.current_document_id??null;
         if(active?.lecture_id) activeLecture=active.lecture_id;
@@ -101,7 +102,8 @@ export async function handleTutorChat(request:Request,db:DatabaseClient,schedule
           const accessible=(await scoped.query('select id from knowledge_documents where id=$1 and (owner_id=$2 or owner_id is null)',[documentId,uid])).rows.length;
           if(!accessible) documentId=null;
         }
-        const page=content.match(/(?:page|صفحة|الصفحة)\s*(\d+)/i)?.[1];
+        const explicitPage=content.match(/(?:page|صفحة|الصفحة)\s*(\d+)/i)?.[1];
+        const page=explicitPage??(active?.file_type==='file'&&resolved.selectedSectionIndex ? String(resolved.selectedSectionIndex) : undefined);
         const searchQuestion=[content,resolved.searchQueries.slice(1).join(' '),resolved.referenceResolved||context.resumes?context.summary?.current_topic??'':''].filter(Boolean).join(' ').slice(0,1800);
         logEvent('CONTEXT_RESOLVED',{userId:uid,conversationId:cid,subjectId:activeSubject,attachmentId:active?.id??null});
         const retrieval=await retrieveKnowledge(searchQuestion,{userId:uid,subjectId:activeSubject,documentId,pageNumber:page?Number(page):null});
@@ -109,7 +111,7 @@ export async function handleTutorChat(request:Request,db:DatabaseClient,schedule
         logEvent('RETRIEVAL_COMPLETED',{userId:uid,candidates:retrieval.candidates.length,selected:sources.length});
         const pending=subjectChanged?null:context.summary?.pending_quiz_json??null;
         const result=await streamTutorAnswer({question:resolved.resolvedQuestion,originalQuestion:content,history:history as ChatMessageInput[],
-          context:`${context.text}\nCURRENT SUBJECT: ${context.subjects.find(s=>s.id===activeSubject)?.name_en??''} (semester ${context.subjects.find(s=>s.id===activeSubject)?.semester??'unspecified'})\nACTIVE PAGE: ${page??''}`,sources,pendingQuiz:pending,signal,onDelta:emit});
+          context:`${context.text}\nCURRENT SUBJECT: ${context.subjects.find(s=>s.id===activeSubject)?.name_en??''} (semester ${context.subjects.find(s=>s.id===activeSubject)?.semester??'unspecified'})\nACTIVE PAGE: ${page??''}\nREQUESTED SOURCE RANGE: ${resolved.selectedSectionRange?`${resolved.selectedSectionRange.start}-${resolved.selectedSectionRange.end}`:''}\nREQUESTED END BOUNDARY: ${resolved.requestedBoundary??''}`,sources,pendingQuiz:pending,signal,onDelta:emit});
         emit(result.references);
         const sourceIds=result.answer.source_ids.map(id=>sources[Number(id.slice(1))-1].id??id);
         const ai=getAIProvider(),cost=ai.calculateCost(result.usage),latency=Date.now()-start;
@@ -122,12 +124,12 @@ export async function handleTutorChat(request:Request,db:DatabaseClient,schedule
           cachedInputTokens:result.usage.cachedInputTokens,outputTokens:result.usage.outputTokens,reasoningEffort:result.reasoningEffort,estimatedCost:cost,latencyMs:latency});
         await saveAITrace({messageId:answer.data.id,conversationId:cid,userId:uid,resolvedQuery:resolved.resolvedQuestion,
           activeAttachmentId:active?.id,attachmentIds:resolved.selectedAttachments.map(a=>a.id),retrievedSources:retrieval.candidates,
-          rerankedSources:sources,evidenceCoverage:sourceIds.length?'SUPPORTED':'UNSUPPORTED',selectedProvider:'openai',selectedModel:result.usage.model,
+          rerankedSources:sources,evidenceCoverage:result.answer.answer_origin==='mixed'?'PARTIALLY_SUPPORTED':sourceIds.length?'SUPPORTED':'UNSUPPORTED',selectedProvider:'openai',selectedModel:result.usage.model,
           fallbackUsed:false,finalSourceIds:sourceIds,refusalReason:result.answer.clarification_needed?'CLARIFICATION':null,
           diagnostics:{architecture:'personal_tutor_v2',answer_origin:result.answer.answer_origin,subjectId:activeSubject,documentId,
             user_query:content,resolved_context:resolved.resolvedQuestion,reasoning_effort:result.reasoningEffort,input_tokens:result.usage.inputTokens,cached_input_tokens:result.usage.cachedInputTokens??0,
             output_tokens:result.usage.outputTokens,estimated_cost:cost,latency_ms:latency,visionCacheHit,clarification:result.answer.clarification_needed,
-            sourceCount:sourceIds.length,query:retrieval.query}});
+             sourceCount:sourceIds.length,sectionRange:resolved.selectedSectionRange,requestedBoundary:resolved.requestedBoundary,query:retrieval.query}});
         if(result.answer.answer_origin==='general_nursing_knowledge'&&!result.answer.out_of_scope) logEvent('GENERAL_FALLBACK_USED',{userId:uid,subjectId:activeSubject});
         logEvent('ANSWER_GENERATED',{userId:uid,conversationId:cid,latencyMs:latency});
         memoryReady=recordTutorTurn({userId:uid,conversationId:cid,messageId:answer.data.id,subjectId:activeSubject,documentId,attachmentId:active?.id??null,

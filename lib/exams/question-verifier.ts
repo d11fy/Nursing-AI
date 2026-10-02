@@ -7,6 +7,7 @@ import { routeAIRequest, getProviderByName } from "@/lib/ai/router";
 import { executeWithFallback } from "@/lib/ai/fallback";
 import { extractJson } from "@/lib/ai/json";
 import { getAIProvider } from "@/lib/ai";
+import { getNursingTutorInstructions } from "@/lib/ai/prompts/nursing-tutor";
 import type {
   QuestionVerificationStatus,
   SupportType,
@@ -148,7 +149,7 @@ export async function verifyExamQuestion(input: {
       fallbackProviders: fallbacks,
       operation: (p) =>
         p.generateText({
-          taskPrompt: VERIFICATION_SYSTEM_PROMPT,
+          taskPrompt: `${getNursingTutorInstructions({purpose:"exam_rationale"})}\n\n${VERIFICATION_SYSTEM_PROMPT}\nThe explanation field is student-facing: write the verified English rationale first, followed by concise natural Arabic clarification.`,
           messages: [
             {
               role: "user",
