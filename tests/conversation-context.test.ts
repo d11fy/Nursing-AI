@@ -15,6 +15,20 @@ test("هاي resolves to the active uploaded image before classification",()=>{
   assert.equal(result.selectedAttachments[0].id,first.id);assert.equal(result.referenceResolved,true);
   assert.match(result.resolvedQuestion,/Heart Failure/);assert.ok(result.searchQueries.some((query)=>query.includes("Dyspnea")));
 });
+
+test("a file range from the beginning through section three is preserved and bounded",()=>{
+  const file={...first,file_type:"file",vision_structured_json:{...first.vision_structured_json,sections:[
+    {index:1,title:"Matter",text:"Matter has mass and occupies space."},
+    {index:2,title:"Pure Substance",text:"Elements and compounds are pure substances."},
+    {index:3,title:"Mixtures",text:"Homogeneous and heterogeneous mixtures."},
+    {index:4,title:"Solutions",text:"This later section must not be included."},
+  ]}};
+  const result=resolveConversationReference({question:"اشرحلي من أول الملف لحد القسم الثالث",attachments:[file],activeAttachmentId:file.id,activeSectionIndex:null});
+  assert.deepEqual(result.selectedSectionRange,{start:1,end:3});
+  assert.equal(attachmentEvidence(result).length,3);
+  assert.doesNotMatch(result.resolvedQuestion,/later section/);
+  assert.match(result.resolvedQuestion,/Stop at the end of section 3/);
+});
 test("الأول resolves to section one of the active image",()=>{
   const result=resolveConversationReference({question:"طيب الأول بس",attachments:[first],activeAttachmentId:first.id,activeSectionIndex:null});
   assert.equal(result.selectedSectionIndex,1);assert.match(result.resolvedQuestion,/Definition of Heart Failure/);

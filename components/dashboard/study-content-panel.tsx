@@ -75,7 +75,7 @@ function ContentRenderer({ type, content }: { type: StudyContentType; content: u
   if (type === "summary") {
     return (
       <div className="space-y-4 text-sm leading-7">
-        {typeof data.overview === "string" && <p>{data.overview}</p>}
+        {typeof data.overview === "string" && <p dir="auto" className="[unicode-bidi:plaintext]">{data.overview}</p>}
         <Section title="أهم المفاهيم" items={data.key_concepts} />
         <Section title="Medical Terminology" items={data.terminology} />
         <Section title="معلومات يجب فهمها" items={data.must_know} />
@@ -93,9 +93,9 @@ function Section({ title, items }: { title: string; items: unknown }) {
   if (!Array.isArray(items) || items.length === 0) return null;
   return (
     <div className="space-y-1.5">
-      {title && <h3 className="font-semibold text-foreground">{title}</h3>}
+      {title && <h3 dir="auto" className="font-semibold text-foreground [unicode-bidi:plaintext]">{title}</h3>}
       <ul className="list-inside list-disc space-y-1 text-sm leading-6">
-        {items.map((item, i) => <li key={i}>{String(item)}</li>)}
+        {items.map((item, i) => <li dir="auto" className="[unicode-bidi:plaintext]" key={i}>{String(item)}</li>)}
       </ul>
     </div>
   );
@@ -113,14 +113,15 @@ function QuizRenderer({ questions }: { questions: Record<string, unknown>[] }) {
         const answer = String(q.answer ?? "");
         return (
           <div key={i} className="space-y-2 rounded-xl border border-border p-4">
-            <p className="font-medium">{i + 1}. {String(q.question ?? "")}</p>
+            <p dir="auto" className="font-medium [unicode-bidi:plaintext]">{i + 1}. {String(q.question ?? "")}</p>
             {options.length > 0 ? (
               <div className="space-y-1.5">
                 {options.map((opt) => (
                   <button
                     key={opt}
                     onClick={() => { setSelected((s) => ({ ...s, [i]: opt })); setRevealed((r) => ({ ...r, [i]: true })); }}
-                    className={`block w-full rounded-lg border px-3 py-2 text-right text-sm transition-colors ${
+                    dir="auto"
+                    className={`block w-full rounded-lg border px-3 py-2 text-start text-sm [unicode-bidi:plaintext] transition-colors ${
                       revealed[i] && opt === answer ? "border-green-500 bg-green-50 dark:bg-green-950" :
                       revealed[i] && opt === selected[i] ? "border-red-500 bg-red-50 dark:bg-red-950" : "border-border hover:bg-muted"
                     }`}
@@ -136,8 +137,8 @@ function QuizRenderer({ questions }: { questions: Record<string, unknown>[] }) {
             )}
             {revealed[i] && (
               <div className="rounded-lg bg-muted p-2 text-sm">
-                <p className="font-medium">الإجابة الصحيحة: {answer}</p>
-                {typeof q.explanation === "string" && <p className="text-muted-foreground">{q.explanation}</p>}
+                <p dir="auto" className="font-medium [unicode-bidi:plaintext]">الإجابة الصحيحة: {answer}</p>
+                {typeof q.explanation === "string" && <p dir="auto" className="text-muted-foreground [unicode-bidi:plaintext]">{q.explanation}</p>}
               </div>
             )}
           </div>
@@ -157,7 +158,8 @@ function FlashcardsRenderer({ cards }: { cards: Record<string, unknown>[] }) {
         <button
           key={i}
           onClick={() => setFlipped((f) => ({ ...f, [i]: !f[i] }))}
-          className="flex min-h-28 flex-col items-center justify-center rounded-xl border border-border p-4 text-center text-sm hover:bg-muted"
+          dir="auto"
+          className="flex min-h-28 flex-col items-center justify-center rounded-xl border border-border p-4 text-center text-sm [unicode-bidi:plaintext] hover:bg-muted"
         >
           {flipped[i] ? String(card.back ?? "") : String(card.front ?? "")}
         </button>

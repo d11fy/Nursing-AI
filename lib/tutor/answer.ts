@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { getAIProvider } from '@/lib/ai';
-import { NURSING_SYSTEM_PROMPT } from '@/lib/ai/system-prompt';
+import { buildTutorContext, getNursingTutorInstructions, requiresVerifiedClinicalEvidence } from '@/lib/ai/prompts/nursing-tutor';
 import type { ChatMessageInput, KnowledgeChunk, GenerateResult } from '@/lib/ai/provider';
 import { AnswerStreamDecoder } from './stream-json';
 import { reasoningFor } from './reasoning';
@@ -38,7 +38,7 @@ Preference is null unless the student explicitly states a durable learning prefe
 Topic is the concept studied, not a transcript of the query. Do not record non-study conversation as learning.`;
 
 export function requiresClinicalEvidence(question:string) {
-  return /\b(?:dos(?:e|age)|mg\b|mcg\b|infusion rate|normal(?:\s+[\w-]+){0,3}\s+(?:range|levels?|values?)|reference range|hospital policy|clinical policy|protocol)\b|جرع|معدل.*تسريب|المعدل الطبيعي|القيم.*الطبيعية|بروتوكول|سياسة.*مستشفى/i.test(question);
+  return requiresVerifiedClinicalEvidence(question);
 }
 const normalizeQuote=(text:string)=>text.normalize('NFKC').replace(/\s+/g,' ').trim();
 export function confirmedClinicalSupport(answer:TutorAnswer,sources:KnowledgeChunk[]):boolean {
@@ -64,9 +64,10 @@ export async function streamTutorAnswer(input:{question:string;originalQuestion?
   const previousQuestion=[...input.history].reverse().find(message=>message.role==='user')?.content??'';
   const followUp=/\b(?:it|that|this|what about|why|continue)\b|ليش|هذا|هاي|كمل|ماذا عن/i.test(original)&&original.length<180;
   const deterministic=gradeQuizOption(original,input.pendingQuiz),clinical=requiresClinicalEvidence(original)||(followUp&&requiresClinicalEvidence(previousQuestion));
-  const messages:ChatMessageInput[]=[{role:'user',content:JSON.stringify({student_context:input.context,evidence:sourceData,
-    pendingQuiz:input.pendingQuiz,deterministicQuizResult:deterministic})},...input.history.slice(-14),{role:'user',content:input.question}];
-  const generator=ai.generateStream({taskPrompt:NURSING_SYSTEM_PROMPT+CONTRACT+`\nclinical_support is [] for ordinary concepts. For dosage, ranges, infusion rates or local protocols, include exact continuous supporting quotes with S IDs. Every numerical value must appear in a quote. Unanswered exam stems cannot establish clinical facts. If support is absent, ask for the relevant lecture or context.`,messages,reasoningEffort,
+  const messages:ChatMessageInput[]=[buildTutorContext({studentContext:input.context,evidence:sourceData,
+    currentStudyContext:{current_request:original,follow_up:followUp,high_risk_clinical_request:clinical},
+    pendingQuiz:input.pendingQuiz,deterministicQuizResult:deterministic}),...input.history.slice(-14),{role:'user',content:input.question}];
+  const generator=ai.generateStream({taskPrompt:getNursingTutorInstructions({purpose:'student_answer'})+CONTRACT+`\nclinical_support is [] for ordinary concepts. For drug dosage or administration, contraindications, variable ranges, patient-specific decisions, or local protocols, include exact continuous supporting quotes with S IDs. Every numerical clinical value must appear in a quote. Unanswered exam stems cannot establish clinical facts. If support or necessary context is absent, ask specifically for the relevant lecture, drug, patient context, or local protocol.`,messages,reasoningEffort,
     jsonSchema:{name:'nursing_tutor_turn',schema:z.toJSONSchema(tutorAnswerSchema)},maxOutputTokens:9000,signal:input.signal,feature:'chat'});
   let usage:GenerateResult;
   while(true) {const next=await generator.next();if(next.done){usage=next.value;break;}const delta=decoder.push(next.value.delta);if(delta&&!clinical)input.onDelta(delta);}

@@ -1,7 +1,8 @@
 import OpenAI from 'openai';
 import type { ResponseCreateParamsNonStreaming, ResponseInput, Response } from 'openai/resources/responses/responses';
 import type { AIProvider, GenerateTextParams, GenerateResult, EmbeddingResult, ProviderHealth, StreamChunk } from '../provider';
-import { NURSING_SYSTEM_PROMPT, buildKnowledgeContext } from '../system-prompt';
+import { buildKnowledgeContext } from '../system-prompt';
+import { getNursingTutorInstructions } from '../prompts/nursing-tutor';
 import { getAIConfig } from '../config.mjs';
 import { calculateAICost } from '../cost';
 
@@ -33,7 +34,7 @@ export function responseRequest(params: GenerateTextParams): ResponseCreateParam
   for (const message of params.messages) input.push({ role: message.role === 'system' ? 'user' : message.role, content: message.imageUrl ? [
     { type: 'input_text', text: message.content }, { type: 'input_image', image_url: message.imageUrl, detail: 'high' },
   ] : message.content });
-  return { model: getAIConfig().chatModel, instructions: params.taskPrompt ?? NURSING_SYSTEM_PROMPT,
+  return { model: getAIConfig().chatModel, instructions: params.taskPrompt ?? getNursingTutorInstructions({purpose:'student_answer'}),
     input, store: false, reasoning: { effort: params.reasoningEffort ?? 'medium' },
     max_output_tokens: params.maxOutputTokens ?? 7000, prompt_cache_key: `nursing-ai:${params.feature ?? 'tutor'}:v2`,
     text: params.jsonSchema ? { format: { type: 'json_schema', strict: true, name:params.jsonSchema.name,schema:strictResponseSchema(params.jsonSchema.schema) } } : undefined };

@@ -9,6 +9,7 @@ import { extractJson } from "@/lib/ai/json";
 import { validQuestionEvidence, verifyExamQuestion } from "./question-verifier";
 import { gradePracticeAnswer } from "./answer-grading";
 import { searchTerms } from "@/lib/ai/curriculum-search";
+import { getNursingTutorInstructions } from "@/lib/ai/prompts/nursing-tutor";
 import type { QuestionType } from "@/types/database";
 
 export interface GeneratePracticeExamOptions {
@@ -220,7 +221,7 @@ export async function createPracticeExam(
           fallbackProviders: fallbacks,
           operation: (p) =>
             p.generateText({
-              taskPrompt: `You are a clinical nursing university exam creator.
+              taskPrompt: `${getNursingTutorInstructions({purpose:"exam_generation"})}
 Generate ${needed} NEW questions in the realistic style of university nursing exams.
 
 STRICT INVARIANTS:
@@ -228,7 +229,8 @@ STRICT INVARIANTS:
 2. Formulate realistic clinical vignettes, priority scenarios, or medication questions matching university difficulty.
 3. For MCQ, provide exactly 4 clear plausible options, with only ONE definitively correct choice according to the source.
 4. Set source_chunk_index to the index of the source used (0 to ${curriculumChunks.length - 1}), and provide an exact quote in evidence_quote.
-5. Return JSON adhering to schema.`,
+5. Write question_text and options in English by default. explanation must give an English rationale followed by concise natural Arabic clarification.
+6. Return JSON adhering to schema.`,
               messages: [
                 {
                   role: "user",

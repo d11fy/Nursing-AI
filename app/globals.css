@@ -273,6 +273,9 @@
 }
 .study-prose > :first-child { margin-top: 0; }
 .study-prose > :last-child { margin-bottom: 0; }
+.study-prose :is(p, h1, h2, h3, li, blockquote, th, td, strong) {
+  unicode-bidi: plaintext;
+}
 .study-prose :is(h1, h2, h3) { line-height: 1.6; margin-block: 1.4em .6em; }
 .study-prose h1 { font-size: 1.5rem; }
 .study-prose h2 { font-size: 1.25rem; }
@@ -301,7 +304,7 @@
 .study-prose a { text-underline-offset: 3px; }
 .study-prose img { max-height: 22rem; object-fit: contain; border-radius: 1rem; }
 .study-table { max-width: 100%; overflow-x: auto; margin-block: 1.25rem; border: 1px solid var(--border); border-radius: .75rem; }
-.study-table table { margin: 0; min-width: 100%; }
+.study-table table { margin: 0; min-width: 100%; width: max-content; }
 .study-table :is(th, td) { padding: .75rem; text-align: start; min-width: 7rem; }
 .study-table th { background: var(--muted); }
 
