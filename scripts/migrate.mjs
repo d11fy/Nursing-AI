@@ -37,7 +37,7 @@ export async function migrate(client) {
       await client.query(seed);
       await client.query("INSERT INTO app_migrations(version,checksum) VALUES('0001',$1)", [checksum]);
     }
-    for (const file of ["0002_embedding_spaces.sql", "0003_academic_year_subjects.sql", "0004_lectures.sql", "0005_google_oauth.sql", "0006_nursing_curriculum_update.sql", "0007_openai_transition.sql", "0008_large_knowledge_uploads.sql", "0009_documents_updated_at.sql", "0010_student_memory.sql", "0011_curriculum_search.sql", "0012_multi_provider_router.sql", "0013_conversation_evidence.sql", "0014_exam_training_center.sql", "0015_trusted_practice_grading.sql", "0016_personal_tutor.sql"]) {
+    for (const file of ["0002_embedding_spaces.sql", "0003_academic_year_subjects.sql", "0004_lectures.sql", "0005_google_oauth.sql", "0006_nursing_curriculum_update.sql", "0007_openai_transition.sql", "0008_large_knowledge_uploads.sql", "0009_documents_updated_at.sql", "0010_student_memory.sql", "0011_curriculum_search.sql", "0012_multi_provider_router.sql", "0013_conversation_evidence.sql", "0014_exam_training_center.sql", "0015_trusted_practice_grading.sql", "0016_personal_tutor.sql", "0017_study_pack.sql"]) {
       const version = file.split("_")[0];
       const migration = await readFile(new URL(`../database/${file}`, import.meta.url), "utf8");
       const digest = createHash("sha256").update(migration).digest("hex");
