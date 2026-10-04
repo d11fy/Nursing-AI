@@ -44,3 +44,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# android & capacitor secrets
+android/local.properties
+android/app/*.keystore
+android/app/*.jks
+android/app/release-key.jks
+*.keystore
+*.jks
+

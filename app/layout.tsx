@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Cairo } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { CapacitorHandler } from "@/components/mobile/capacitor-handler";
 import "./globals.css";
 
 const cairo = Cairo({
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="ar" dir="rtl" className={`${cairo.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
+        <CapacitorHandler />
         <TooltipProvider>
           {children}
           <Toaster position="top-center" richColors />
