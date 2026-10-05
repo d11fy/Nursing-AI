@@ -73,6 +73,12 @@ export async function POST(request: Request) {
         storagePath,
         JSON.stringify({
           academicYearId: parsed.data.academicYearId || null,
+          resourceCategory: parsed.data.resourceCategory,
+          description: parsed.data.description || null,
+          language: parsed.data.language || null,
+          sourceLabel: parsed.data.sourceLabel || null,
+          visibilityScope: parsed.data.visibilityScope,
+          sortOrder: parsed.data.sortOrder,
           priority:parsed.data.priority??null,
           semester: parsed.data.semester || null,
           examYear: parsed.data.examYear || null,

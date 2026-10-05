@@ -1,19 +1,20 @@
 "use client";
 
 import { ChatView } from "@/components/chat/chat-view";
-import { Sparkles } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import type { ActiveLibrarySource } from "@/lib/library-types";
 
 export function AskAiTab({
   lectureId,
   subjectId,
   subjectName,
   maxImageSizeMb,
+  librarySource,
 }: {
-  lectureId: string;
+  lectureId?: string | null;
   subjectId: string;
   subjectName: string;
   maxImageSizeMb: number;
+  librarySource?: ActiveLibrarySource;
 }) {
   return (
     <div className="space-y-3">
@@ -25,6 +26,7 @@ export function AskAiTab({
         subjectId={subjectId}
         subjectName={subjectName}
         maxImageSizeMb={maxImageSizeMb}
+        initialActiveSources={librarySource ? [librarySource] : []}
         containerClassName="h-[calc(100vh-14rem)] min-h-[550px]"
       />
     </div>

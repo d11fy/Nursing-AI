@@ -41,7 +41,7 @@ test('canonical index embeds once, publishes atomically and hybrid retrieval iso
  await db.query("insert into stored_files(path,bucket,owner_id,mime_type,content) values('canonical-fixture','knowledge-documents',$1,'text/plain',$2)",[admin,Buffer.from(text)]);
  docId=(await db.query<{id:string}>("insert into documents(title,file_name,file_url,subject_id,created_by,source_type) values('Microscope lecture','microscope.txt','canonical-fixture',$1,$2,'university_lecture') returning id",[subject,admin])).rows[0].id;
  const id=await registerDocument(docId);await processKnowledgeDocument(id);const calls=embeddingCalls;await processKnowledgeDocument(id);assert.equal(embeddingCalls,calls);const ready=(await workerDb.query('select * from knowledge_documents where id=$1',[id])).rows[0];assert.equal(ready.status,'ready');assert.equal(ready.chunk_count,ready.embedding_count);assert.ok(Number(ready.chunk_count)>0);assert.equal(ready.is_active,false);
- await workerDb.query('update knowledge_documents set is_active=true where id=$1',[id]);
+ await workerDb.query("update knowledge_documents set is_active=true,publication_status='published' where id=$1",[id]);
  await db.query('set role tutor_runtime');try{const found=await retrieveKnowledge('اشرح وظيفة العدسة في المجهر',{userId:other,subjectId:subject});assert.ok(found.sources.some(s=>s.title==='Microscope lecture'));assert.ok(found.sources.every(s=>s.ownerId!==uid));assert.ok(found.sources[0].scores.lexical>0);await assert.rejects(workerDb.query("update knowledge_documents set chunk_count=0 where id=$1",[id]),/check constraint/);}finally{await db.query('reset role');}
 });
 test('profile course matching and learning memory use assessed answers only and survive a new conversation',async()=>{

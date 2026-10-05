@@ -8,7 +8,7 @@ export type QuizQuestionType = "mcq" | "true_false";
 export interface StudyPack {
   id: string;
   user_id: string;
-  lecture_id: string;
+  lecture_id: string | null;
   document_id: string | null;
   subject_id: string;
   title: string;
@@ -111,6 +111,7 @@ export interface ExtractedPageItem {
 }
 
 export interface StudyPackWorkspaceData {
+  sourceKind: "lecture" | "library";
   studyPack: StudyPack;
   lecture: {
     id: string;

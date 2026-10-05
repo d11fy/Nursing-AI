@@ -9,6 +9,7 @@ import { MessageBubble, type ChatMessageData } from "@/components/chat/message-b
 import { Suggestions } from "@/components/chat/suggestions";
 import { Composer, type ChatSubjectOption, type PendingImage } from "@/components/chat/composer";
 import { consumeChatResponse } from "@/lib/chat/stream";
+import type { ActiveLibrarySource } from "@/lib/library-types";
 
 let localIdCounter = 0;
 function localId() {
@@ -29,6 +30,7 @@ export function ChatView({
   availableSubjects = [],
   containerClassName = "h-[calc(100vh-4rem)]",
   showAITrace = false,
+  initialActiveSources = [],
 }: {
   conversationId: string | null;
   initialMessages: ChatMessageData[];
@@ -39,6 +41,7 @@ export function ChatView({
   availableSubjects?: ChatSubjectOption[];
   containerClassName?: string;
   showAITrace?: boolean;
+  initialActiveSources?: ActiveLibrarySource[];
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessageData[]>(initialMessages);
@@ -47,8 +50,10 @@ export function ChatView({
   const [isGenerating, setIsGenerating] = useState(false);
   const [uploadConversationId,setUploadConversationId]=useState(initialConversationId);
   const [uploadSubjectId,setUploadSubjectId]=useState(subjectId);
+  const [activeSources,setActiveSources]=useState<ActiveLibrarySource[]>(initialActiveSources);
   const conversationIdRef = useRef(initialConversationId);
   const activeSubjectRef=useRef(subjectId);
+  const initialSourcesHydratedRef=useRef(initialActiveSources.length === 0);
   const abortRef = useRef<AbortController | null>(null);
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -79,6 +84,24 @@ export function ChatView({
     abortRef.current = controller;
 
     try {
+      if (!initialSourcesHydratedRef.current && activeSources.length) {
+        for (const source of activeSources) {
+          const attachResponse = await fetch("/api/library/sources", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              conversationId: conversationIdRef.current ?? undefined,
+              documentId: source.id,
+              subjectId: activeSubjectRef.current ?? source.subjectId ?? undefined,
+            }),
+          });
+          const attached = await attachResponse.json();
+          if (!attachResponse.ok) throw new Error(attached.error || "تعذر ربط مصدر المكتبة");
+          conversationIdRef.current = attached.conversationId;
+          setUploadConversationId(attached.conversationId);
+        }
+        initialSourcesHydratedRef.current = true;
+      }
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json",Accept:'text/event-stream' },
@@ -182,6 +205,13 @@ export function ChatView({
           onSubjectChange={(nextSubjectId) => {
             activeSubjectRef.current = nextSubjectId;
             setUploadSubjectId(nextSubjectId);
+          }}
+          activeSources={activeSources}
+          onActiveSourcesChange={setActiveSources}
+          onConversationCreated={(id)=>{
+            conversationIdRef.current=id;
+            setUploadConversationId(id);
+            router.replace(`/dashboard/chat/${id}`,{scroll:false});
           }}
         />
       </div>

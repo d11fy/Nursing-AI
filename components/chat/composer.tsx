@@ -14,6 +14,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { ActiveSourceChips, LibraryPicker } from "@/components/chat/library-picker";
+import type { ActiveLibrarySource } from "@/lib/library-types";
 
 export interface PendingImage {
   path: string;
@@ -52,6 +54,9 @@ export function Composer({
   subjectId,
   availableSubjects = [],
   onSubjectChange,
+  activeSources,
+  onActiveSourcesChange,
+  onConversationCreated,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -65,6 +70,9 @@ export function Composer({
   subjectId?:string|null;
   availableSubjects?: ChatSubjectOption[];
   onSubjectChange?: (subjectId: string) => void;
+  activeSources: ActiveLibrarySource[];
+  onActiveSourcesChange: (sources: ActiveLibrarySource[]) => void;
+  onConversationCreated: (conversationId: string) => void;
 }) {
   const [uploadingKind, setUploadingKind] = useState<"image" | "file" | null>(null);
   const [subjectPickerOpen, setSubjectPickerOpen] = useState(false);
@@ -189,6 +197,7 @@ export function Composer({
 
   return (
     <div className="rounded-2xl border border-border bg-card p-2.5 shadow-[0_10px_30px_rgb(16_42_58/0.08)] sm:p-3">
+      <ActiveSourceChips conversationId={conversationId??null} sources={activeSources} onChange={onActiveSourcesChange} disabled={isGenerating}/>
       {pendingImage && (
         <div className="mb-2 flex items-center gap-3">
           <div className="relative inline-block shrink-0">
@@ -215,6 +224,7 @@ export function Composer({
       )}
 
       <div className="mb-2 flex flex-wrap items-center gap-1.5 border-b border-border/70 pb-2">
+        <LibraryPicker conversationId={conversationId??null} subjectId={subjectId} activeSources={activeSources} onSourcesChange={onActiveSourcesChange} onConversationCreated={onConversationCreated} disabled={isUploading||isGenerating}/>
         <input
           ref={imageInputRef}
           type="file"

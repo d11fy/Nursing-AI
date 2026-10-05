@@ -54,8 +54,9 @@ export async function POST(request: Request) {
         `INSERT INTO public.documents (
           title, file_url, file_name, file_size, subject_id,
           source_type, status, created_by,
-          academic_year_id, semester, exam_year, doctor_name, exam_type, notes
-        ) VALUES ($1, $2, $3, $4, $5, $6, 'processing', $7, $8, $9, $10, $11, $12, $13)
+          academic_year_id, semester, exam_year, doctor_name, exam_type, notes,
+          resource_category,library_description,language,source_label,visibility_scope,sort_order
+        ) VALUES ($1, $2, $3, $4, $5, $6, 'processing', $7, $8, $9, $10, $11, $12, $13,$14,$15,$16,$17,$18,$19)
         RETURNING id`,
         [
           session.title,
@@ -71,6 +72,12 @@ export async function POST(request: Request) {
           meta.doctorName || null,
           meta.examType || null,
           meta.notes || null,
+          meta.resourceCategory || 'other',
+          meta.description || null,
+          meta.language || null,
+          meta.sourceLabel || null,
+          meta.visibilityScope || 'specific_subject',
+          meta.sortOrder || 0,
         ]
       );
       documentId = docRes.rows[0].id;
@@ -84,6 +91,12 @@ export async function POST(request: Request) {
              doctor_name = coalesce($5, doctor_name),
              exam_type = coalesce($6, exam_type),
              notes = coalesce($7, notes),
+             resource_category = coalesce($8, resource_category),
+             library_description = coalesce($9, library_description),
+             language = coalesce($10, language),
+             source_label = coalesce($11, source_label),
+             visibility_scope = coalesce($12, visibility_scope),
+             sort_order = coalesce($13, sort_order),
              updated_at = now()
          WHERE id = $1`,
         [
@@ -94,6 +107,12 @@ export async function POST(request: Request) {
           meta.doctorName || null,
           meta.examType || null,
           meta.notes || null,
+          meta.resourceCategory || null,
+          meta.description || null,
+          meta.language || null,
+          meta.sourceLabel || null,
+          meta.visibilityScope || null,
+          meta.sortOrder ?? null,
         ]
       );
     }

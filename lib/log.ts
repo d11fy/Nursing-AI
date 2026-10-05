@@ -16,7 +16,9 @@ export type LogEvent =
   | "CONTRIBUTION_APPROVED"
   | "VISION_REQUEST_STARTED"
   | "VISION_REQUEST_COMPLETED"
-  | "VISION_REQUEST_FAILED";
+  | "VISION_REQUEST_FAILED"
+  | "LIBRARY_RESOURCE_ATTACHED"
+  | "LIBRARY_RESOURCE_REMOVED";
 
 /**
  * Structured, single-line JSON logs. Callers must only pass ids, sizes,

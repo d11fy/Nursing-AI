@@ -38,25 +38,21 @@ import {
 const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB per chunk
 const MAX_CHUNK_RETRIES = 3;
 
-const SOURCE_TYPES = [
-  {value:'official_course_material',label:'مادة مساق رسمية'},
-  {value:'required_textbook',label:'كتاب المساق المطلوب'},
-  {value:'university_lecture',label:'محاضرة جامعية'},
-  {value:'doctor_slides',label:'سلايدات الدكتور'},
-  {value:'lab_manual',label:'دليل المختبر'},
-  {value:'approved_notes',label:'ملاحظات معتمدة'},
-  { value: "BOOK", label: "كتاب معتمد (Book)" },
-  { value: "UNIVERSITY_LECTURE", label: "محاضرة جامعية رسمية (University Lecture)" },
-  { value: "DOCTOR_SLIDES", label: "سلايدات الدكتور (Doctor Slides)" },
-  { value: "SUMMARY", label: "ملخص دراسي (Summary)" },
-  { value: "PAST_EXAM", label: "امتحان سنوات سابقة (Past Exam)" },
-  { value: "QUESTION_BANK", label: "بنك أسئلة (Question Bank)" },
-  { value: "MODEL_ANSWERS", label: "إجابات نموذجية (Model Answers)" },
-  { value: "LAB_MATERIAL", label: "مادة المعمل السريري (Lab Material)" },
-  { value: "REVIEW_NOTES", label: "ملاحظات مراجعة (Review Notes)" },
+const RESOURCE_CATEGORIES = [
+  { value: "curriculum_book", label: "كتب المنهج", sourceType: "required_textbook" },
+  { value: "university_lecture", label: "محاضرات الجامعة", sourceType: "university_lecture" },
+  { value: "summary", label: "ملخصات", sourceType: "approved_notes" },
+  { value: "previous_exam", label: "امتحانات سابقة", sourceType: "exam_questions" },
+  { value: "exam_model", label: "نماذج امتحانات", sourceType: "exam_questions" },
+  { value: "question_bank", label: "بنك أسئلة", sourceType: "exam_questions" },
+  { value: "explanation", label: "شروحات", sourceType: "official_course_material" },
+  { value: "notes", label: "ملاحظات", sourceType: "approved_notes" },
+  { value: "lab_material", label: "مختبر / عملي", sourceType: "lab_manual" },
+  { value: "other", label: "مصادر أخرى", sourceType: "approved_notes" },
 ] as const;
 
-type SourceType = (typeof SOURCE_TYPES)[number]["value"];
+type SourceType = (typeof RESOURCE_CATEGORIES)[number]["sourceType"];
+type ResourceCategory = (typeof RESOURCE_CATEGORIES)[number]["value"];
 type FileStatus =
   | "pending"
   | "uploading"
@@ -71,6 +67,12 @@ interface FileQueueItem {
   title: string;
   subjectId: string;
   sourceType: SourceType;
+  resourceCategory: ResourceCategory;
+  description?: string;
+  language?: "ar" | "en" | "mixed";
+  sourceLabel?: string;
+  visibilityScope: "all_students" | "academic_year" | "specific_subject";
+  sortOrder: number;
   status: FileStatus;
   uploadId?: string;
   totalChunks: number;
@@ -136,7 +138,13 @@ export function UploadDocumentDialog({
   const [defaultSubjectId, setDefaultSubjectId] = useState<string>(subjects[0]?.id ?? "");
   const [defaultYear,setDefaultYear]=useState('');
   const [defaultPriority,setDefaultPriority]=useState('95');
-  const [defaultSourceType, setDefaultSourceType] = useState<SourceType>("BOOK");
+  const [defaultSourceType, setDefaultSourceType] = useState<SourceType>("required_textbook");
+  const [defaultCategory, setDefaultCategory] = useState<ResourceCategory>("curriculum_book");
+  const [defaultDescription, setDefaultDescription] = useState("");
+  const [defaultLanguage, setDefaultLanguage] = useState<"ar" | "en" | "mixed">("ar");
+  const [defaultSourceLabel, setDefaultSourceLabel] = useState("");
+  const [defaultVisibility, setDefaultVisibility] = useState<"all_students" | "academic_year" | "specific_subject">("specific_subject");
+  const [defaultSortOrder, setDefaultSortOrder] = useState("0");
   const [defaultExamYear, setDefaultExamYear] = useState<string>(new Date().getFullYear().toString());
   const [defaultSemester, setDefaultSemester] = useState<string>("1");
   const [defaultDoctorName, setDefaultDoctorName] = useState<string>("");
@@ -178,6 +186,12 @@ export function UploadDocumentDialog({
         title: titleWithoutExt,
         subjectId: defaultSubjectId || subjects[0]?.id || "",
         sourceType: defaultSourceType,
+        resourceCategory: defaultCategory,
+        description: defaultDescription || undefined,
+        language: defaultLanguage,
+        sourceLabel: defaultSourceLabel || undefined,
+        visibilityScope: defaultVisibility,
+        sortOrder: Number(defaultSortOrder) || 0,
         academicYearId:defaultYear||undefined,priority:Number(defaultPriority),
         examYear: defaultExamYear ? parseInt(defaultExamYear, 10) : undefined,
         semester: defaultSemester ? parseInt(defaultSemester, 10) : undefined,
@@ -343,6 +357,12 @@ export function UploadDocumentDialog({
               title: item.title,
               subjectId: item.subjectId,
               sourceType: item.sourceType,
+              resourceCategory: item.resourceCategory,
+              description: item.description,
+              language: item.language,
+              sourceLabel: item.sourceLabel,
+              visibilityScope: item.visibilityScope,
+              sortOrder: item.sortOrder,
               academicYearId:item.academicYearId,priority:item.priority,
               fileName: item.file.name,
               fileSize: item.file.size,
@@ -707,29 +727,31 @@ export function UploadDocumentDialog({
               </Select>
             </div>
 
-            {/* Source Type Selector */}
+            {/* Library category; mapped to the existing retrieval source type. */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                نوع المصدر الافتراضي
+                تصنيف المصدر في المكتبة
               </Label>
               <Select
-                value={defaultSourceType}
+                value={defaultCategory}
                 onValueChange={(val) => {
                   if (!val) return;
-                  const source = val as SourceType;
+                  const category = val as ResourceCategory;
+                  const source = RESOURCE_CATEGORIES.find((item) => item.value === category)?.sourceType as SourceType;
+                  setDefaultCategory(category);
                   setDefaultSourceType(source);
                   setQueue((prev) =>
-                    prev.map((it) => (it.status === "pending" ? { ...it, sourceType: source } : it))
+                    prev.map((it) => (it.status === "pending" ? { ...it, resourceCategory: category, sourceType: source } : it))
                   );
                 }}
               >
                 <SelectTrigger className="w-full bg-background text-xs sm:text-sm h-10 border-border shadow-xs">
                   <SelectValue>
-                    {(val: string) => SOURCE_TYPES.find((t) => t.value === val)?.label}
+                    {(val: string) => RESOURCE_CATEGORIES.find((t) => t.value === val)?.label}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {SOURCE_TYPES.map((t) => (
+                  {RESOURCE_CATEGORIES.map((t) => (
                     <SelectItem key={t.value} value={t.value} className="text-xs sm:text-sm py-2">
                       {t.label}
                     </SelectItem>
@@ -740,10 +762,16 @@ export function UploadDocumentDialog({
           </div>
 
           {/* Optional Extended Metadata Toggle */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <label className="text-xs">السنة الدراسية<select className="mt-1 w-full rounded border bg-background p-2" value={defaultYear} onChange={event=>{
               setDefaultYear(event.target.value);setQueue(previous=>previous.map(item=>item.status==='pending'?{...item,academicYearId:event.target.value||undefined}:item));
             }}><option value="">كل السنوات المعيّنة للمادة</option>{academicYears.map(year=><option key={year.id} value={year.id}>{year.name_ar}</option>)}</select></label>
+            <label className="text-xs">نطاق الظهور<select className="mt-1 w-full rounded border bg-background p-2" value={defaultVisibility} onChange={event=>{
+              const value=event.target.value as typeof defaultVisibility;setDefaultVisibility(value);setQueue(previous=>previous.map(item=>item.status==='pending'?{...item,visibilityScope:value}:item));
+            }}><option value="specific_subject">طلاب المادة</option><option value="academic_year">طلاب السنة</option><option value="all_students">جميع الطلاب</option></select></label>
+            <label className="text-xs">ترتيب العرض<Input type="number" min={0} max={100000} value={defaultSortOrder} onChange={event=>{
+              setDefaultSortOrder(event.target.value);setQueue(previous=>previous.map(item=>item.status==='pending'?{...item,sortOrder:Number(event.target.value)||0}:item));
+            }}/></label>
             <label className="text-xs">أولوية المصدر (0–100)<Input type="number" min={0} max={100} value={defaultPriority} onChange={event=>{
               setDefaultPriority(event.target.value);setQueue(previous=>previous.map(item=>item.status==='pending'?{...item,priority:Number(event.target.value)}:item));
             }}/></label>
@@ -759,7 +787,14 @@ export function UploadDocumentDialog({
             </button>
 
             {showAdvancedMeta && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                <div className="lg:col-span-2"><Label className="text-[11px] text-muted-foreground block mb-1">وصف قصير</Label><Input
+                  placeholder="ما الذي يغطيه هذا المصدر؟" value={defaultDescription} onChange={event=>{setDefaultDescription(event.target.value);setQueue(previous=>previous.map(item=>item.status==='pending'?{...item,description:event.target.value||undefined}:item));}} className="h-8 text-xs" /></div>
+                <div><Label className="text-[11px] text-muted-foreground block mb-1">اللغة</Label><select className="h-8 w-full rounded border bg-background px-2 text-xs" value={defaultLanguage} onChange={event=>{
+                  const value=event.target.value as typeof defaultLanguage;setDefaultLanguage(value);setQueue(previous=>previous.map(item=>item.status==='pending'?{...item,language:value}:item));
+                }}><option value="ar">العربية</option><option value="en">الإنجليزية</option><option value="mixed">مختلطة</option></select></div>
+                <div><Label className="text-[11px] text-muted-foreground block mb-1">المصدر / المحاضر</Label><Input
+                  placeholder="IUG أو اسم المحاضر" value={defaultSourceLabel} onChange={event=>{setDefaultSourceLabel(event.target.value);setQueue(previous=>previous.map(item=>item.status==='pending'?{...item,sourceLabel:event.target.value||undefined}:item));}} className="h-8 text-xs" /></div>
                 <div>
                   <Label className="text-[11px] text-muted-foreground block mb-1">سنة الامتحان</Label>
                   <Input

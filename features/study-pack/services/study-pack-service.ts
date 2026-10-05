@@ -1,12 +1,19 @@
 import "server-only";
 import {
   getOrCreateStudyPack,
+  getOrCreateLibraryStudyPack,
   getStudyPackById,
   getStudyPackContentRow,
   setStudyPackContentStatus,
   saveStudyPackContent,
   getExtractedPagesForLecture,
+  getExtractedPagesForStudyPack,
+  getSharedStudyContent,
+  claimSharedStudyContent,
+  saveSharedStudyContent,
+  failSharedStudyContent,
 } from "../db/study-pack-db";
+import { getAccessibleLibraryDocument } from "@/lib/library";
 import {
   getStudyPackFlashcards,
   saveStudyPackFlashcards,
@@ -83,6 +90,7 @@ export async function getStudyPackWorkspace(
   const keyPointsStatus = keyPointsRow?.generation_status ?? "not_generated";
 
   return {
+    sourceKind: "lecture",
     studyPack,
     lecture: {
       id: lecture.id,
@@ -115,6 +123,61 @@ export async function getStudyPackWorkspace(
   };
 }
 
+export async function getLibraryStudyPackWorkspace(
+  documentId: string,
+  userId: string
+): Promise<StudyPackWorkspaceData> {
+  const db = identityDb(userId);
+  const [studyPack, document] = await Promise.all([
+    getOrCreateLibraryStudyPack(documentId, userId),
+    getAccessibleLibraryDocument(userId, documentId),
+  ]);
+  const [subjectRes, summaryRow, keyPointsRow, flashcardsRes, quizRes, pages] = await Promise.all([
+    db.query<{ id: string; name_ar: string; name_en: string }>(
+      "SELECT id, name_ar, name_en FROM subjects WHERE id = $1",
+      [studyPack.subject_id]
+    ),
+    getSharedStudyContent(documentId, studyPack.source_hash, "summary", userId),
+    getSharedStudyContent(documentId, studyPack.source_hash, "key_points", userId),
+    db.query<{ count: string }>(
+      "SELECT COUNT(*)::text AS count FROM study_pack_flashcards WHERE study_pack_id = $1",
+      [studyPack.id]
+    ),
+    db.query<{ count: string }>(
+      "SELECT COUNT(*)::text AS count FROM study_pack_quizzes WHERE study_pack_id = $1",
+      [studyPack.id]
+    ),
+    getExtractedPagesForStudyPack(studyPack, userId),
+  ]);
+  const subject = subjectRes.rows[0];
+  if (!subject) throw new Error("بيانات المادة غير متوفرة");
+  const summaryStatus = summaryRow?.generation_status ?? "not_generated";
+  const keyPointsStatus = keyPointsRow?.generation_status ?? "not_generated";
+
+  return {
+    sourceKind: "library",
+    studyPack,
+    lecture: {
+      id: document.id,
+      title: document.title,
+      fileName: document.originalFileName,
+      fileSizeBytes: Number(document.fileSize ?? 0),
+      mimeType: "application/pdf",
+      status: "ready",
+      uploadedAt: document.createdAt,
+      deleteAfter: null,
+    },
+    subject: { id: subject.id, nameAr: subject.name_ar, nameEn: subject.name_en },
+    pages,
+    summaryStatus,
+    keyPointsStatus,
+    flashcardsCount: Number(flashcardsRes.rows[0]?.count ?? 0),
+    quizzesCount: Number(quizRes.rows[0]?.count ?? 0),
+    initialSummary: summaryStatus === "ready" ? summaryRow?.content_json as SummaryContent : null,
+    initialKeyPoints: keyPointsStatus === "ready" ? keyPointsRow?.content_json as KeyPointsContent : null,
+  };
+}
+
 export async function getOrGenerateContent(params: {
   studyPackId: string;
   contentType: StudyContentType;
@@ -129,6 +192,42 @@ export async function getOrGenerateContent(params: {
 
   const studyPack = await getStudyPackById(studyPackId, userId);
   if (!studyPack) throw new Error("حزمة الدراسة غير موجودة");
+
+  if (!studyPack.lecture_id && studyPack.document_id) {
+    const shared = await getSharedStudyContent(
+      studyPack.document_id,
+      studyPack.source_hash,
+      contentType,
+      userId
+    );
+    if (!regenerate && shared?.generation_status === "ready" && shared.content_json) {
+      return { content: shared.content_json as SummaryContent | KeyPointsContent, fromCache: true, status: "ready" };
+    }
+    if (shared?.generation_status === "generating" && Date.now() - new Date(shared.updated_at).getTime() < 60_000) {
+      throw new Error("جارٍ إنشاء هذا القسم حاليًا، الرجاء الانتظار لحظات");
+    }
+    const claimed = await claimSharedStudyContent(studyPack.document_id, studyPack.source_hash, contentType);
+    if (!claimed) {
+      const ready = await getSharedStudyContent(studyPack.document_id, studyPack.source_hash, contentType, userId);
+      if (ready?.generation_status === "ready") {
+        return { content: ready.content_json as SummaryContent | KeyPointsContent, fromCache: true, status: "ready" };
+      }
+      throw new Error("جارٍ إنشاء هذا القسم حاليًا، الرجاء الانتظار لحظات");
+    }
+    try {
+      const pages = await getExtractedPagesForStudyPack(studyPack, userId);
+      if (!pages.length) throw new Error("لا يوجد محتوى نصي مستخرج لهذا المصدر");
+      const context = { lectureId: studyPack.document_id, userId, lectureTitle: studyPack.title, materials: pages };
+      const generated = contentType === "summary"
+        ? await generateSummary(context)
+        : await generateKeyPoints(context);
+      await saveSharedStudyContent(studyPack.document_id, studyPack.source_hash, contentType, generated);
+      return { content: generated, fromCache: false, status: "ready" };
+    } catch (error) {
+      await failSharedStudyContent(studyPack.document_id, studyPack.source_hash, contentType);
+      throw error;
+    }
+  }
 
   // Check cache
   const existing = await getStudyPackContentRow(studyPackId, contentType, userId);
@@ -160,11 +259,11 @@ export async function getOrGenerateContent(params: {
   await setStudyPackContentStatus(studyPackId, contentType, "generating", studyPack.source_hash, userId);
 
   try {
-    const pages = await getExtractedPagesForLecture(studyPack.lecture_id, userId);
+    const pages = await getExtractedPagesForStudyPack(studyPack, userId);
     if (!pages.length) throw new Error("لا يوجد محتوى نصي مستخرج لهذه المحاضرة");
 
     const genContext = {
-      lectureId: studyPack.lecture_id,
+      lectureId: studyPack.lecture_id ?? studyPack.document_id ?? studyPack.id,
       userId,
       lectureTitle: studyPack.title,
       materials: pages,
@@ -210,11 +309,11 @@ export async function getOrGenerateFlashcards(params: {
     }
   }
 
-  const pages = await getExtractedPagesForLecture(studyPack.lecture_id, userId);
+  const pages = await getExtractedPagesForStudyPack(studyPack, userId);
   if (!pages.length) throw new Error("لا يوجد محتوى نصي مستخرج لإنشاء البطاقات");
 
   const cards = await generateFlashcards({
-    lectureId: studyPack.lecture_id,
+    lectureId: studyPack.lecture_id ?? studyPack.document_id ?? studyPack.id,
     userId,
     lectureTitle: studyPack.title,
     materials: pages,
@@ -249,12 +348,12 @@ export async function getOrGenerateQuiz(params: {
     }
   }
 
-  const pages = await getExtractedPagesForLecture(studyPack.lecture_id, userId);
+  const pages = await getExtractedPagesForStudyPack(studyPack, userId);
   if (!pages.length) throw new Error("لا يوجد محتوى نصي مستخرج لإنشاء الاختبار");
 
   const generated = await generateQuiz(
     {
-      lectureId: studyPack.lecture_id,
+      lectureId: studyPack.lecture_id ?? studyPack.document_id ?? studyPack.id,
       userId,
       lectureTitle: studyPack.title,
       materials: pages,

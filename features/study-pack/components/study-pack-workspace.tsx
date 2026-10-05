@@ -186,10 +186,18 @@ export function StudyPackWorkspace({
         {/* Tab 6: Ask AI */}
         <TabsContent value="ask" className="pt-3">
           <AskAiTab
-            lectureId={lecture.id}
+            lectureId={data.sourceKind === "lecture" ? lecture.id : null}
             subjectId={subject.id}
             subjectName={subject.nameAr}
             maxImageSizeMb={maxImageSizeMb}
+            librarySource={data.sourceKind === "library" ? {
+              id: lecture.id,
+              title: lecture.title,
+              category: "university_lecture",
+              subjectId: subject.id,
+              subjectName: subject.nameAr,
+              sourceLabel: null,
+            } : undefined}
           />
         </TabsContent>
       </Tabs>
