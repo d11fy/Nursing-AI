@@ -12,7 +12,7 @@ export function CapacitorHandler() {
   const [isNative, setIsNative] = useState(false);
 
   useEffect(() => {
-    let cleanupFuncs: Array<() => void> = [];
+    const cleanupFuncs: Array<() => void> = [];
 
     async function initCapacitor() {
       try {

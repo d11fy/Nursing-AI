@@ -18,10 +18,19 @@ export function normalizeSource(value: string): string {
   return ({ book:'required_textbook',reference:'required_textbook',lecture:'university_lecture',lab_material:'lab_manual',
     past_exam:'exam_questions',question_bank:'exam_questions',questions:'exam_questions' } as Record<string,string>)[key] ?? 'approved_notes';
 }
+export function normalizeResourceCategory(value:string|null|undefined, sourceType:string):string {
+  const allowed=new Set(['curriculum_book','university_lecture','summary','previous_exam','exam_model','question_bank','explanation','notes','lab_material','other']);
+  if(value&&allowed.has(value))return value;
+  const key=sourceType.toLowerCase();
+  return ({required_textbook:'curriculum_book',book:'curriculum_book',reference:'curriculum_book',university_lecture:'university_lecture',
+    doctor_slides:'university_lecture',summary:'summary',past_exam:'previous_exam',exam_questions:'previous_exam',model_answers:'exam_model',
+    question_bank:'question_bank',official_course_material:'explanation',approved_notes:'notes',review_notes:'notes',lab_manual:'lab_material',lab_material:'lab_material'} as Record<string,string>)[key]??'other';
+}
 type Document = { id:string; legacy_document_id:string|null; lecture_id:string|null; owner_id:string|null; subject_id:string|null;
   academic_year_id:string|null; semester_id:number|null; title:string; original_file_name:string; storage_path:string;
   source_type:string; source_priority:number; file_hash:string|null; status:string; index_version:number; uploaded_by:string|null;
-  extracted_pages_json:ExtractedPage[] };
+  extracted_pages_json:ExtractedPage[]; resource_category:string|null; library_description:string|null; language:string|null;
+  source_label:string|null; visibility_scope:string; sort_order:number };
 
 export async function registerDocument(id:string, privateLecture = false): Promise<string> {
   const pool = getPool();
@@ -40,12 +49,17 @@ export async function registerDocument(id:string, privateLecture = false): Promi
   const d=rows[0]; if(!d) throw new Error('Document not found');
   const type=normalizeSource(d.source_type);
   return withIdentity(null,async db => {
+    const category=normalizeResourceCategory(d.resource_category,d.source_type);
     const result=await db.query(`insert into knowledge_documents(legacy_document_id,title,original_file_name,storage_path,subject_id,
-      academic_year_id,semester_id,source_type,source_priority,file_hash,file_size,uploaded_by)
-      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) on conflict(legacy_document_id) do update set
+      academic_year_id,semester_id,source_type,source_priority,file_hash,file_size,uploaded_by,resource_category,library_description,
+      language,source_label,visibility_scope,sort_order)
+      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) on conflict(legacy_document_id) do update set
       title=excluded.title,subject_id=excluded.subject_id,academic_year_id=excluded.academic_year_id,semester_id=excluded.semester_id,
-      source_type=excluded.source_type,source_priority=excluded.source_priority returning id`,[id,d.title,d.file_name,d.file_url,d.subject_id,d.academic_year_id,d.semester,type,
-      d.source_priority??SOURCE_PRIORITIES[type],d.file_hash,d.file_size,d.created_by]);
+      source_type=excluded.source_type,source_priority=excluded.source_priority,resource_category=excluded.resource_category,
+      library_description=excluded.library_description,language=excluded.language,source_label=excluded.source_label,
+      visibility_scope=excluded.visibility_scope,sort_order=excluded.sort_order returning id`,[id,d.title,d.file_name,d.file_url,d.subject_id,d.academic_year_id,d.semester,type,
+      d.source_priority??SOURCE_PRIORITIES[type],d.file_hash,d.file_size,d.created_by,category,d.library_description,d.language,d.source_label,
+      d.visibility_scope??'specific_subject',d.sort_order??0]);
     return result.rows[0].id;
   },true);
 }

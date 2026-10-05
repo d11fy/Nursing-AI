@@ -34,7 +34,7 @@ export function QuizTab({
 }) {
   const [quiz, setQuiz] = useState<QuizItem | null>(initialQuiz ?? null);
   const [loading, setLoading] = useState(false);
-  const [fetching, setFetching] = useState(false);
+  const [fetching, setFetching] = useState(!initialQuiz);
 
   // Quiz Configuration State
   const [showConfig, setShowConfig] = useState(!initialQuiz);
@@ -65,7 +65,6 @@ export function QuizTab({
   // Load existing quiz if not supplied
   useEffect(() => {
     if (!quiz && !initialQuiz) {
-      setFetching(true);
       fetch(`/api/study-packs/${studyPackId}/quiz`)
         .then((res) => res.json())
         .then((data) => {

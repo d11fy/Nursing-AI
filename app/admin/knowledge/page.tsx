@@ -5,12 +5,21 @@ import { getAcademicYears } from '@/lib/subjects';
 import { UploadDocumentDialog } from '@/components/admin/upload-document-dialog';
 import { KnowledgeActions } from '@/components/admin/knowledge-actions';
 import { StatusBadge } from '@/components/ui/status-badge';
-export default async function KnowledgePage() {
+import { RESOURCE_CATEGORIES, categoryLabel, type ResourceCategory } from '@/lib/library-types';
+export default async function KnowledgePage({searchParams}:{searchParams:Promise<Record<string,string|string[]|undefined>>}) {
   const admin=await getAdminProfileOrNull();if(!admin)redirect('/dashboard');
   const db=identityDb(admin.user_id);
+  const params=await searchParams;
+  const subjectFilter=typeof params.subject==='string'?params.subject:'';
+  const categoryFilter=typeof params.category==='string'?params.category:'';
+  const statusFilter=typeof params.status==='string'?params.status:'';
+  const filters:string[]=['d.owner_id is null'],values:unknown[]=[];
+  if(subjectFilter){values.push(subjectFilter);filters.push(`d.subject_id=$${values.length}::uuid`);}
+  if(categoryFilter){values.push(categoryFilter);filters.push(`d.resource_category=$${values.length}`);}
+  if(statusFilter){values.push(statusFilter);filters.push(`d.publication_status=$${values.length}`);}
   const [documents,subjects,years,gaps,coverage]=await Promise.all([
-    db.query<{id:string;title:string;name_ar:string;status:string;source_type:string;source_priority:number;is_active:boolean;page_count:number;extracted_text_length:number;chunk_count:number;embedding_count:number;processing_time_ms:number|null;processed_at:string|null;error_message:string|null}>(`
-      select d.*,s.name_ar from knowledge_documents d left join subjects s on s.id=d.subject_id where d.owner_id is null order by d.created_at desc`),
+    db.query<{id:string;title:string;name_ar:string;status:string;source_type:string;resource_category:ResourceCategory;publication_status:string;library_description:string|null;source_label:string|null;sort_order:number;source_priority:number;is_active:boolean;page_count:number;extracted_text_length:number;chunk_count:number;embedding_count:number;processing_time_ms:number|null;processed_at:string|null;error_message:string|null}>(`
+      select d.*,s.name_ar from knowledge_documents d left join subjects s on s.id=d.subject_id where ${filters.join(' and ')} order by d.sort_order,d.created_at desc`,values),
     db.query<{id:string;name_ar:string}>('select id,name_ar from subjects where status=\'active\' and archived_at is null order by sort_order'),getAcademicYears(),
     db.query<{topic:string;count:number;reason:string;name_ar:string}>(`select g.topic,g.reason,s.name_ar,count(*)::int count from curriculum_gaps g
       left join subjects s on s.id=g.subject_id group by g.topic,g.reason,s.name_ar order by count(*) desc limit 30`),
@@ -27,10 +36,16 @@ export default async function KnowledgePage() {
   const labels:Record<string,string>={uploaded:'Uploaded',extracting:'Extracting',processing:'Processing',chunking:'Chunking',embedding:'Embedding',ready:'Ready',failed:'Failed',needs_review:'Needs Review'};
   return <div className="page-container mx-auto max-w-7xl space-y-6"><div className="flex items-center justify-between"><h1 className="text-xl font-bold">قاعدة المعرفة</h1><UploadDocumentDialog subjects={subjects.rows} academicYears={years}/></div>
     <p className="rounded-xl border bg-card p-4 text-sm">ارفع المصدر، راجع النص والمقاطع، ثم اعتمده للدراسة. يمكنك تعطيله دون حذف الملف. الملفات الخاصة لا تدخل المنهج المشترك تلقائيًا.</p>
+    <form className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-4">
+      <select name="subject" defaultValue={subjectFilter} className="h-11 rounded-xl border bg-background px-3 text-sm"><option value="">كل المواد</option>{subjects.rows.map(subject=><option key={subject.id} value={subject.id}>{subject.name_ar}</option>)}</select>
+      <select name="category" defaultValue={categoryFilter} className="h-11 rounded-xl border bg-background px-3 text-sm"><option value="">كل التصنيفات</option>{RESOURCE_CATEGORIES.map(category=><option key={category.value} value={category.value}>{category.label}</option>)}</select>
+      <select name="status" defaultValue={statusFilter} className="h-11 rounded-xl border bg-background px-3 text-sm"><option value="">كل حالات النشر</option><option value="published">منشور</option><option value="hidden">مخفي</option><option value="archived">مؤرشف</option></select>
+      <button className="h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground">تطبيق المرشحات</button>
+    </form>
     <div className="admin-table-scroll"><table className="w-full text-right text-sm"><thead><tr>{['المصدر','المادة','النوع / الأولوية','الحالة','صحة الملف','آخر فهرسة','الإجراءات'].map(label=><th key={label} className="p-3">{label}</th>)}</tr></thead>
-    <tbody>{documents.rows.map(d=><tr key={d.id} className="border-t"><td className="p-3 font-medium">{d.title}<p className="text-xs text-muted-foreground">{d.is_active?'فعال':'غير فعال'}</p></td><td className="p-3">{d.name_ar}</td><td className="p-3">{d.source_type}<br/>{d.source_priority}</td><td className="p-3"><StatusBadge status={d.status}>{labels[d.status]}</StatusBadge>{d.error_message&&<p className="max-w-xs text-xs text-red-600">{d.error_message}</p>}</td>
+    <tbody>{documents.rows.map(d=><tr key={d.id} className="border-t"><td className="p-3 font-medium">{d.title}<p className="max-w-xs text-xs text-muted-foreground">{d.library_description||d.source_label||'—'}</p></td><td className="p-3">{d.name_ar}</td><td className="p-3">{categoryLabel(d.resource_category)}<br/><span className="text-xs text-muted-foreground">أولوية {d.source_priority} · ترتيب {d.sort_order}</span></td><td className="p-3"><StatusBadge status={d.status}>{labels[d.status]}</StatusBadge><p className="mt-1 text-xs text-muted-foreground">{d.publication_status==='published'?'منشور':d.publication_status==='archived'?'مؤرشف':'مخفي'}</p>{d.error_message&&<p className="max-w-xs text-xs text-red-600">{d.error_message}</p>}</td>
       <td className="p-3 text-xs">Pages: {d.page_count}<br/>Characters: {d.extracted_text_length}<br/>Chunks: {d.chunk_count}<br/>Embeddings: {d.embedding_count}<br/>Time: {d.processing_time_ms?`${(d.processing_time_ms/1000).toFixed(1)}s`:'—'}</td>
-      <td className="p-3 text-xs">{d.processed_at?new Date(d.processed_at).toLocaleString('ar',{timeZone:'Asia/Hebron'}):'—'}</td><td className="p-3"><KnowledgeActions id={d.id} active={d.is_active}/></td></tr>)}</tbody></table></div>
+      <td className="p-3 text-xs">{d.processed_at?new Date(d.processed_at).toLocaleString('ar',{timeZone:'Asia/Hebron'}):'—'}</td><td className="p-3"><KnowledgeActions id={d.id} active={d.publication_status==='published'}/></td></tr>)}</tbody></table></div>
     <h2 className="font-semibold">تغطية المواد</h2><div className="admin-table-scroll"><table className="w-full text-right text-sm"><thead><tr>{['المادة','الملفات','الصفحات','المقاطع','الأسئلة','معرفة عامة','توضيح مطلوب','آخر فهرسة'].map(label=><th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{coverage.rows.map(row=><tr key={row.name_ar} className="border-t"><td className="p-3">{row.name_ar}</td>{[row.documents,row.pages,row.chunks,row.questions,row.fallbacks,row.clarifications].map((value,index)=><td key={index} className="p-3">{value}</td>)}<td className="p-3">{row.last_indexed?new Date(row.last_indexed).toLocaleString('ar-PS'):'—'}</td></tr>)}</tbody></table></div>
     <h2 className="font-semibold">Curriculum gaps — نقاط تحتاج مصادر أو توضيحًا</h2><div className="space-y-2">{gaps.rows.map((gap,index)=><div key={index} className="rounded border bg-card p-3 text-sm">{gap.name_ar} · {gap.topic} · {gap.count} طلب · {gap.reason==='clarification'?'توضيح مطلوب':'شرح من المعرفة العامة'}</div>)}{!gaps.rows.length&&<p className="text-sm text-muted-foreground">لا توجد بيانات بعد.</p>}</div>
   </div>;

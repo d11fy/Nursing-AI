@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Repository-local agent skills and evaluation fixtures are executable
+    // tooling inputs, not application source code.
+    ".codex/**",
+    ".evaluation/**",
+    "android/**/build/**",
   ]),
 ]);
 

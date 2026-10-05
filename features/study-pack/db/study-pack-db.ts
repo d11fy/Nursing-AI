@@ -1,5 +1,6 @@
 import "server-only";
-import { identityDb, withIdentity } from "@/lib/tutor/db";
+import { identityDb, withIdentity, workerDb } from "@/lib/tutor/db";
+import { getAccessibleLibraryDocument } from "@/lib/library";
 import type { StudyPack, StudyContentType, GenerationStatus, ExtractedPageItem } from "../types";
 
 export async function getOrCreateStudyPack(lectureId: string, userId: string): Promise<StudyPack> {
@@ -66,6 +67,41 @@ export async function getOrCreateStudyPack(lectureId: string, userId: string): P
       [userId, lecture.id, documentId, lecture.subject_id, lecture.title, lecture.file_hash]
     );
     return insertRes.rows[0];
+  });
+}
+
+export async function getOrCreateLibraryStudyPack(documentId: string, userId: string): Promise<StudyPack> {
+  const document = await getAccessibleLibraryDocument(userId, documentId);
+  if (!document.subjectId) throw new Error("لا يمكن إنشاء حزمة دراسة لمصدر غير مرتبط بمادة");
+
+  return withIdentity(userId, async (client) => {
+    const existing = await client.query<StudyPack>(
+      "SELECT * FROM study_packs WHERE user_id = $1 AND document_id = $2 AND lecture_id IS NULL LIMIT 1",
+      [userId, documentId]
+    );
+    if (existing.rows[0]) {
+      const pack = existing.rows[0];
+      if (pack.source_hash !== document.fileHash || pack.title !== document.title) {
+        const updated = await client.query<StudyPack>(
+          `UPDATE study_packs SET source_hash = $1, title = $2, subject_id = $3, updated_at = now()
+           WHERE id = $4 AND user_id = $5 RETURNING *`,
+          [document.fileHash, document.title, document.subjectId, pack.id, userId]
+        );
+        return updated.rows[0];
+      }
+      return pack;
+    }
+
+    const inserted = await client.query<StudyPack>(
+      `INSERT INTO study_packs (user_id, lecture_id, document_id, subject_id, title, status, source_hash)
+       VALUES ($1, NULL, $2, $3, $4, 'ready', $5)
+       ON CONFLICT (user_id, document_id) WHERE lecture_id IS NULL AND document_id IS NOT NULL
+       DO UPDATE SET title = EXCLUDED.title, subject_id = EXCLUDED.subject_id,
+                     source_hash = EXCLUDED.source_hash, updated_at = now()
+       RETURNING *`,
+      [userId, documentId, document.subjectId, document.title, document.fileHash]
+    );
+    return inserted.rows[0];
   });
 }
 
@@ -186,4 +222,100 @@ export async function getExtractedPagesForLecture(
   }
 
   return [];
+}
+
+export async function getExtractedPagesForDocument(
+  documentId: string,
+  userId: string
+): Promise<ExtractedPageItem[]> {
+  const db = identityDb(userId);
+  const res = await db.query<{ extracted_pages_json: ExtractedPageItem[] }>(
+    "SELECT extracted_pages_json FROM knowledge_documents WHERE id = $1",
+    [documentId]
+  );
+  const pages = res.rows[0]?.extracted_pages_json;
+  if (Array.isArray(pages) && pages.length > 0) return pages;
+
+  const chunks = await db.query<{ content: string; page_number: number | null; chunk_index: number }>(
+    `SELECT content, page_number, chunk_index FROM knowledge_chunks
+     WHERE document_id = $1 ORDER BY chunk_index ASC`,
+    [documentId]
+  );
+  const pageMap = new Map<number, string[]>();
+  for (const chunk of chunks.rows) {
+    const page = chunk.page_number ?? 1;
+    const values = pageMap.get(page) ?? [];
+    values.push(chunk.content);
+    pageMap.set(page, values);
+  }
+  return Array.from(pageMap, ([pageNumber, contents]) => ({ pageNumber, text: contents.join("\n\n") }));
+}
+
+export async function getExtractedPagesForStudyPack(studyPack: StudyPack, userId: string) {
+  if (studyPack.lecture_id) return getExtractedPagesForLecture(studyPack.lecture_id, userId);
+  if (studyPack.document_id) return getExtractedPagesForDocument(studyPack.document_id, userId);
+  return [];
+}
+
+export type SharedStudyContentRow = {
+  document_id: string;
+  source_hash: string;
+  content_type: StudyContentType;
+  content_json: unknown;
+  generation_status: "generating" | "ready" | "failed";
+  generated_at: string | null;
+  updated_at: string;
+};
+
+export async function getSharedStudyContent(
+  documentId: string,
+  sourceHash: string,
+  contentType: StudyContentType,
+  userId: string
+): Promise<SharedStudyContentRow | null> {
+  const result = await identityDb(userId).query<SharedStudyContentRow>(
+    `SELECT * FROM shared_study_content
+     WHERE document_id = $1 AND source_hash = $2 AND content_type = $3`,
+    [documentId, sourceHash, contentType]
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function claimSharedStudyContent(
+  documentId: string,
+  sourceHash: string,
+  contentType: StudyContentType
+): Promise<boolean> {
+  const result = await workerDb.query<{ claimed: boolean }>(
+    `INSERT INTO shared_study_content(document_id,source_hash,content_type,content_json,generation_status,updated_at)
+     VALUES($1,$2,$3,'{}'::jsonb,'generating',now())
+     ON CONFLICT(document_id,source_hash,content_type) DO UPDATE
+       SET generation_status='generating',content_json='{}'::jsonb,generated_at=NULL,updated_at=now()
+       WHERE shared_study_content.generation_status='failed'
+          OR (shared_study_content.generation_status='generating' AND shared_study_content.updated_at < now()-interval '60 seconds')
+     RETURNING true AS claimed`,
+    [documentId, sourceHash, contentType]
+  );
+  return result.rows[0]?.claimed ?? false;
+}
+
+export async function saveSharedStudyContent(
+  documentId: string,
+  sourceHash: string,
+  contentType: StudyContentType,
+  contentJson: unknown
+) {
+  await workerDb.query(
+    `UPDATE shared_study_content SET content_json=$4::jsonb,generation_status='ready',generated_at=now(),updated_at=now()
+     WHERE document_id=$1 AND source_hash=$2 AND content_type=$3`,
+    [documentId, sourceHash, contentType, JSON.stringify(contentJson)]
+  );
+}
+
+export async function failSharedStudyContent(documentId: string, sourceHash: string, contentType: StudyContentType) {
+  await workerDb.query(
+    `UPDATE shared_study_content SET generation_status='failed',updated_at=now()
+     WHERE document_id=$1 AND source_hash=$2 AND content_type=$3`,
+    [documentId, sourceHash, contentType]
+  );
 }

@@ -31,7 +31,7 @@ export function FlashcardsTab({
 }) {
   const [cards, setCards] = useState<FlashcardItem[]>(initialCards);
   const [loading, setLoading] = useState(false);
-  const [fetching, setFetching] = useState(false);
+  const [fetching, setFetching] = useState(initialCards.length === 0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [filterMode, setFilterMode] = useState<"all" | "review_again">("all");
@@ -40,7 +40,6 @@ export function FlashcardsTab({
   // If initialCards is empty, load existing cards from API
   useEffect(() => {
     if (cards.length === 0) {
-      setFetching(true);
       fetch(`/api/study-packs/${studyPackId}/flashcards`)
         .then((res) => res.json())
         .then((data) => {
