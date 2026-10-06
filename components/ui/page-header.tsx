@@ -19,15 +19,15 @@ export function PageHeader({
 }) {
   return (
     <header className={cn("page-heading", className)}>
-      <div className="flex min-w-0 items-start gap-3.5">
+      <div className="flex w-full min-w-0 items-start gap-3 sm:w-auto">
         {Icon && (
           <span className="icon-tile mt-0.5 shrink-0" aria-hidden="true">
             <Icon className="size-5" />
           </span>
         )}
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           {eyebrow && <div className="eyebrow mb-1.5">{eyebrow}</div>}
-          <h1 className="text-balance text-xl font-extrabold leading-[1.55] tracking-[-0.025em] text-foreground sm:text-2xl">
+          <h1 className="break-words text-xl font-extrabold leading-[1.55] tracking-[-0.025em] text-foreground sm:text-2xl">
             {title}
           </h1>
           {description && (
@@ -37,7 +37,7 @@ export function PageHeader({
           )}
         </div>
       </div>
-      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0">{actions}</div>}
     </header>
   );
 }

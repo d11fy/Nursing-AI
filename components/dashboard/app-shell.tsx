@@ -75,7 +75,7 @@ export function AppShell({
       </Sheet>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-card/95 px-4 backdrop-blur sm:px-7">
+        <header className="flex min-h-16 shrink-0 items-center justify-between border-b border-border bg-card/95 px-4 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur sm:px-7">
           <Button
             variant="ghost"
             size="icon"

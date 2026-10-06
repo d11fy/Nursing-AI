@@ -45,7 +45,7 @@ export function ActiveSourceChips({ conversationId, sources, onChange, disabled 
     <div className="flex gap-2 overflow-x-auto pb-0.5">
       {sources.map(source=><span key={source.id} className="inline-flex min-h-9 max-w-[240px] shrink-0 items-center gap-2 rounded-xl border border-border bg-card px-2.5 text-xs shadow-xs">
         <CategoryIcon category={source.category} className="size-3.5 shrink-0 text-primary" /><span className="truncate font-medium">{source.title}</span>
-        <button type="button" disabled={disabled||removing===source.id} onClick={()=>remove(source)} aria-label={`إزالة ${source.title}`} className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-destructive disabled:opacity-50">
+        <button type="button" disabled={disabled||removing===source.id} onClick={()=>remove(source)} aria-label={`إزالة ${source.title}`} className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-destructive disabled:opacity-50">
           {removing===source.id?<Loader2 className="size-3.5 animate-spin"/>:<X className="size-3.5"/>}
         </button>
       </span>)}
@@ -135,17 +135,17 @@ export function LibraryPicker({ conversationId, subjectId, activeSources, onSour
   const showFiles=Boolean(query.trim()||selectedCategory);
   return <Sheet open={open} onOpenChange={next=>{if(next&&subjectId)setSelectedSubject(subjectId);setOpen(next);}}>
     <SheetTrigger render={<Button type="button" variant="ghost" size="sm" disabled={disabled} className="text-primary hover:text-primary"/>}><Library className="size-4"/>المكتبة</SheetTrigger>
-    <SheetContent side="bottom" className="mx-auto h-[92dvh] max-h-[820px] w-full max-w-5xl gap-0 rounded-t-3xl border-x p-0" dir="rtl">
+    <SheetContent side="bottom" className="mx-auto h-[min(92dvh,820px)] w-full max-w-5xl gap-0 rounded-t-3xl border-x p-0" dir="rtl">
       <SheetHeader className="shrink-0 border-b px-4 pb-4 pt-5 sm:px-6"><SheetTitle className="flex items-center gap-2 text-lg"><span className="icon-tile size-10"><Library className="size-5"/></span>المكتبة الدراسية</SheetTitle><SheetDescription>{catalog?.academicYear?.name??"مصادر جاهزة ومعتمدة لمساقاتك"}</SheetDescription></SheetHeader>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="shrink-0 space-y-3 border-b bg-card/70 p-4 sm:px-6">
           <div className="relative"><Search className="absolute right-3 top-3.5 size-4 text-muted-foreground"/><Input value={query} onChange={event=>{setQuery(event.target.value);setPage(1);}} placeholder="ابحث بالعنوان، المادة، التصنيف أو الوصف" className="pe-10"/></div>
           <div className="flex gap-2 overflow-x-auto pb-1">
-            {catalog?.subjects.map(subject=><button key={subject.id} type="button" onClick={()=>{setSelectedSubject(subject.id);setSelectedCategory(null);setPage(1);}} className={`min-h-10 shrink-0 rounded-xl border px-3 text-xs font-bold ${selectedSubject===subject.id?"border-primary bg-accent text-primary":"bg-card text-muted-foreground"}`}>{subject.name}<span className="ms-1 font-normal">{subject.count}</span></button>)}
+            {catalog?.subjects.map(subject=><button key={subject.id} type="button" onClick={()=>{setSelectedSubject(subject.id);setSelectedCategory(null);setPage(1);}} className={`min-h-11 shrink-0 rounded-xl border px-3 text-xs font-bold ${selectedSubject===subject.id?"border-primary bg-accent text-primary":"bg-card text-muted-foreground"}`}><bdi className="[unicode-bidi:plaintext]">{subject.name}</bdi><span className="ms-1 font-normal">{subject.count}</span></button>)}
           </div>
-          <div className="flex items-center gap-2"><select value={semester} onChange={event=>{setSemester(event.target.value);setPage(1);}} className="h-10 rounded-xl border bg-background px-3 text-xs"><option value="">كل الفصول</option><option value="1">الفصل الأول</option><option value="2">الفصل الثاني</option></select>{(selectedCategory||query)&&<button type="button" onClick={()=>{setSelectedCategory(null);setQuery("");setPage(1);}} className="text-xs font-bold text-primary">عرض التصنيفات</button>}</div>
+          <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center"><select value={semester} onChange={event=>{setSemester(event.target.value);setPage(1);}} className="min-h-11 w-full rounded-xl border bg-background px-3 text-sm sm:w-auto"><option value="">كل الفصول</option><option value="1">الفصل الأول</option><option value="2">الفصل الثاني</option></select>{(selectedCategory||query)&&<button type="button" onClick={()=>{setSelectedCategory(null);setQuery("");setPage(1);}} className="min-h-11 rounded-xl px-3 text-xs font-bold text-primary">عرض التصنيفات</button>}</div>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-background p-4 sm:p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-background p-4 scrollbar-none sm:p-6">
           {loading&&!catalog?<div className="grid gap-3 sm:grid-cols-2">{Array.from({length:6},(_,index)=><div key={index} className="h-28 animate-pulse rounded-2xl border bg-muted"/>)}</div>
           :error?<div className="flex min-h-52 flex-col items-center justify-center text-center"><p className="font-bold">تعذر تحميل المكتبة حاليًا.</p><Button variant="outline" className="mt-3" onClick={()=>setRetry(value=>value+1)}>حاول مرة أخرى</Button></div>
           :!showFiles?<div className="space-y-6">

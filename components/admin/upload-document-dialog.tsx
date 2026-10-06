@@ -790,7 +790,7 @@ export function UploadDocumentDialog({
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
                 <div className="lg:col-span-2"><Label className="text-[11px] text-muted-foreground block mb-1">وصف قصير</Label><Input
                   placeholder="ما الذي يغطيه هذا المصدر؟" value={defaultDescription} onChange={event=>{setDefaultDescription(event.target.value);setQueue(previous=>previous.map(item=>item.status==='pending'?{...item,description:event.target.value||undefined}:item));}} className="h-8 text-xs" /></div>
-                <div><Label className="text-[11px] text-muted-foreground block mb-1">اللغة</Label><select className="h-8 w-full rounded border bg-background px-2 text-xs" value={defaultLanguage} onChange={event=>{
+                <div><Label className="text-[11px] text-muted-foreground block mb-1">اللغة</Label><select className="min-h-11 w-full rounded-xl border bg-background px-3 text-sm" value={defaultLanguage} onChange={event=>{
                   const value=event.target.value as typeof defaultLanguage;setDefaultLanguage(value);setQueue(previous=>previous.map(item=>item.status==='pending'?{...item,language:value}:item));
                 }}><option value="ar">العربية</option><option value="en">الإنجليزية</option><option value="mixed">مختلطة</option></select></div>
                 <div><Label className="text-[11px] text-muted-foreground block mb-1">المصدر / المحاضر</Label><Input

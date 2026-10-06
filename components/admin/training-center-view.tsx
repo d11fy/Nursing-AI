@@ -100,7 +100,7 @@ export function TrainingCenterView({ subjects }: { subjects: SubjectReadinessMet
             <div className="mt-5 border-t border-border/80 pt-4">
               <h3 className="text-sm font-bold text-foreground mb-3">نتائج البحث عن: &ldquo;{searchQuery}&rdquo;</h3>
               <Tabs defaultValue="books" className="w-full">
-                <TabsList className="grid grid-cols-4 max-w-2xl h-9">
+                <TabsList className="flex h-auto max-w-full snap-x flex-nowrap justify-start overflow-x-auto scrollbar-none [&_[data-slot=tabs-trigger]]:min-h-11 [&_[data-slot=tabs-trigger]]:snap-start [&_[data-slot=tabs-trigger]]:shrink-0">
                   <TabsTrigger value="books" className="text-xs">الكتب ({searchResults.bookSections.length})</TabsTrigger>
                   <TabsTrigger value="lectures" className="text-xs">المحاضرات ({searchResults.lectureSections.length})</TabsTrigger>
                   <TabsTrigger value="summaries" className="text-xs">الملخصات ({searchResults.summaryPoints.length})</TabsTrigger>

@@ -35,13 +35,13 @@ export function StudyTab({
   if (!pages || pages.length === 0) {
     return (
       <Card className="border-border">
-        <CardContent className="flex flex-col items-center justify-center p-12 text-center">
+        <CardContent className="flex flex-col items-center justify-center p-5 text-center sm:p-12">
           <FileText className="size-10 text-muted-foreground/60 mb-3" />
           <h3 className="text-base font-bold text-foreground">لا يتوفر نص مستخرج</h3>
           <p className="text-xs text-muted-foreground mt-1 max-w-md">
             لم نتمكن من استخراج صفحات نصية مباشرة من هذا الملف، ولكن يمكنك استخدام تبويب &ldquo;اسأل AI&rdquo; أو إنشاء الملخص والبطاقات.
           </p>
-          <div className="flex gap-2 mt-4">
+          <div className="mt-4 flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             <Button size="sm" onClick={() => onNavigateTab("summary")}>
               انتقل إلى الملخص
             </Button>
@@ -69,8 +69,8 @@ export function StudyTab({
   return (
     <div className="space-y-4">
       {/* Quick Study Navigation Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-3 shadow-2xs">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col items-stretch gap-3 rounded-xl border border-border bg-card p-3 shadow-2xs sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Badge variant="secondary" className="font-semibold text-xs">
             {subjectName}
           </Badge>
@@ -80,11 +80,11 @@ export function StudyTab({
         </div>
 
         {/* Quick action buttons */}
-        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+        <div className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-1 text-xs scrollbar-none sm:mx-0 sm:flex-wrap sm:px-0 sm:pb-0">
           <Button
             size="sm"
             variant="ghost"
-            className="h-8 gap-1 text-xs"
+            className="shrink-0 gap-1 text-xs"
             onClick={() => onNavigateTab("summary")}
           >
             <FileText className="size-3.5 text-primary" />
@@ -93,7 +93,7 @@ export function StudyTab({
           <Button
             size="sm"
             variant="ghost"
-            className="h-8 gap-1 text-xs"
+            className="shrink-0 gap-1 text-xs"
             onClick={() => onNavigateTab("key_points")}
           >
             <Sparkles className="size-3.5 text-amber-500" />
@@ -102,7 +102,7 @@ export function StudyTab({
           <Button
             size="sm"
             variant="ghost"
-            className="h-8 gap-1 text-xs"
+            className="shrink-0 gap-1 text-xs"
             onClick={() => onNavigateTab("flashcards")}
           >
             <Layers className="size-3.5 text-purple-500" />
@@ -111,7 +111,7 @@ export function StudyTab({
           <Button
             size="sm"
             variant="ghost"
-            className="h-8 gap-1 text-xs"
+            className="shrink-0 gap-1 text-xs"
             onClick={() => onNavigateTab("quiz")}
           >
             <HelpCircle className="size-3.5 text-green-500" />
@@ -120,7 +120,7 @@ export function StudyTab({
           <Button
             size="sm"
             variant="outline"
-            className="h-8 gap-1 text-xs border-primary/30"
+            className="shrink-0 gap-1 border-primary/30 text-xs"
             onClick={() => onNavigateTab("ask")}
           >
             <BookOpen className="size-3.5 text-primary" />
@@ -141,7 +141,7 @@ export function StudyTab({
                 placeholder="بحث في الصفحات..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-8 pr-8 text-xs bg-muted/40"
+                className="pe-3 ps-8 text-sm bg-muted/40"
               />
             </div>
           </CardHeader>
@@ -154,13 +154,13 @@ export function StudyTab({
                   <button
                     key={page.originalIndex}
                     onClick={() => setCurrentPageIndex(page.originalIndex)}
-                    className={`w-full text-start p-2 rounded-lg text-xs transition-colors flex items-center justify-between ${
+                    className={`flex min-h-11 w-full items-center justify-between rounded-lg p-2 text-start text-xs transition-colors ${
                       isSelected
                         ? "bg-primary text-primary-foreground font-semibold"
                         : "hover:bg-muted text-foreground"
                     }`}
                   >
-                    <span className="truncate">{label}</span>
+                    <span className="min-w-0 break-words">{label}</span>
                     {page.ocr && (
                       <Badge variant="outline" className={`text-[10px] px-1 py-0 ${isSelected ? "border-primary-foreground/30 text-primary-foreground" : ""}`}>
                         OCR
@@ -177,22 +177,22 @@ export function StudyTab({
 
         {/* Viewer: Active Page Content */}
         <Card className="md:col-span-3 border-border flex flex-col shadow-xs">
-          <CardHeader className="p-4 pb-2 border-b border-border/60 flex flex-row items-center justify-between">
-            <div className="flex items-center gap-2">
+          <CardHeader className="flex flex-col items-stretch gap-3 border-b border-border/60 p-4 pb-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center">
               <Badge variant="outline" className="text-xs font-bold text-primary border-primary/30">
                 {pageNumberLabel}
               </Badge>
-              <span className="text-xs text-muted-foreground truncate max-w-[250px]">
+              <span dir="auto" className="min-w-0 break-words text-xs leading-5 text-muted-foreground [unicode-bidi:plaintext]">
                 {lectureTitle}
               </span>
             </div>
 
             {/* Navigation Controls */}
-            <div className="flex items-center gap-1">
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1 sm:flex">
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 px-2"
+                className="w-full px-2 sm:w-auto"
                 disabled={currentPageIndex <= 0}
                 onClick={() => setCurrentPageIndex((prev) => Math.max(0, prev - 1))}
                 aria-label="الصفحة السابقة"
@@ -206,7 +206,7 @@ export function StudyTab({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 px-2"
+                className="w-full px-2 sm:w-auto"
                 disabled={currentPageIndex >= pages.length - 1}
                 onClick={() => setCurrentPageIndex((prev) => Math.min(pages.length - 1, prev + 1))}
                 aria-label="الصفحة التالية"
@@ -217,7 +217,7 @@ export function StudyTab({
             </div>
           </CardHeader>
 
-          <CardContent className="p-6 flex-1 min-h-[400px] overflow-y-auto">
+          <CardContent className="min-h-[320px] flex-1 overflow-y-auto p-4 sm:min-h-[400px] sm:p-6">
             <div
               dir="ltr"
               className="text-start font-mono text-sm leading-relaxed whitespace-pre-wrap text-foreground select-text"
@@ -227,14 +227,14 @@ export function StudyTab({
           </CardContent>
 
           {/* Bottom helper toolbar */}
-          <div className="border-t border-border/60 p-3 bg-muted/20 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex flex-col items-stretch gap-2 border-t border-border/60 bg-muted/20 p-3 text-xs sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
             <span className="text-muted-foreground">
               هل تواجه صعوبة في فهم هذه الشريحة؟
             </span>
             <Button
               size="sm"
               variant="default"
-              className="h-8 gap-1.5 text-xs"
+              className="h-auto min-h-11 gap-1.5 whitespace-normal text-center text-xs leading-5"
               onClick={() => onNavigateTab("ask")}
             >
               <Sparkles className="size-3.5" />

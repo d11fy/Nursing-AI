@@ -3,17 +3,13 @@
 import { useState, useEffect } from "react";
 import {
   HelpCircle,
-  Sparkles,
   Loader2,
   CheckCircle2,
   XCircle,
   RotateCcw,
-  ArrowRight,
-  ArrowLeft,
   Award,
   AlertTriangle,
   Play,
-  Layers,
   ChevronRight,
   BookOpen,
 } from "lucide-react";
@@ -23,7 +19,20 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { QuizItem, QuizQuestionItem, QuizDifficulty, StudentMistakeItem } from "../types";
+import type { QuizItem, QuizDifficulty, StudentMistakeItem } from "../types";
+
+const difficultyLabels: Record<QuizDifficulty, string> = {
+  easy: "سهل",
+  medium: "متوسط",
+  hard: "متقدم",
+  mixed: "مختلط",
+};
+
+const questionTypeLabels = {
+  mixed: "مختلط",
+  mcq: "اختيار من متعدد",
+  true_false: "صح أو خطأ",
+} as const;
 
 export function QuizTab({
   studyPackId,
@@ -220,7 +229,7 @@ export function QuizTab({
   // 1. Loading State
   if (loading || fetching) {
     return (
-      <Card className="border-border p-12 text-center">
+      <Card className="border-border p-5 text-center sm:p-12">
         <div className="flex flex-col items-center justify-center space-y-4 max-w-md mx-auto">
           <Loader2 className="size-8 text-primary animate-spin" />
           <div className="space-y-1">
@@ -239,32 +248,32 @@ export function QuizTab({
   // 2. Configuration State (Before generation or clicking New Quiz)
   if (showConfig || !quiz) {
     return (
-      <Card className="border-border shadow-xs max-w-xl mx-auto">
-        <CardHeader className="text-center pb-2">
-          <div className="size-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto mb-2">
+      <Card className="mx-auto w-full max-w-xl border-border shadow-xs">
+        <CardHeader className="items-center px-4 pb-2 text-center sm:px-5">
+          <div className="mx-auto mb-2 flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
             <HelpCircle className="size-6" />
           </div>
           <CardTitle className="text-base font-bold text-foreground">
             تجهيز اختبار تدريبي للمحاضرة
           </CardTitle>
-          <p className="text-xs text-muted-foreground">
+          <p className="max-w-md text-sm leading-6 text-muted-foreground">
             حدد عدد الأسئلة ومستوى الصعوبة لبدء اختبار تفاعلي فوري مبني بالكامل على هذا الملف.
           </p>
         </CardHeader>
 
-        <CardContent className="space-y-4 pt-2">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <CardContent className="space-y-4 px-4 pt-2 sm:px-5">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             {/* Question Count */}
-            <div>
-              <label className="text-xs font-semibold text-foreground block mb-1">
+            <div className="min-w-0 space-y-1.5">
+              <label className="block text-sm font-semibold text-foreground">
                 عدد الأسئلة
               </label>
               <Select
                 value={String(questionCount)}
                 onValueChange={(val) => setQuestionCount(Number(val))}
               >
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue />
+                <SelectTrigger className="w-full text-sm">
+                  <SelectValue>{(value: string) => value}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="5">5 أسئلة</SelectItem>
@@ -276,16 +285,16 @@ export function QuizTab({
             </div>
 
             {/* Difficulty */}
-            <div>
-              <label className="text-xs font-semibold text-foreground block mb-1">
+            <div className="min-w-0 space-y-1.5">
+              <label className="block text-sm font-semibold text-foreground">
                 مستوى الصعوبة
               </label>
               <Select
                 value={difficulty}
                 onValueChange={(val) => setDifficulty(val as QuizDifficulty)}
               >
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue />
+                <SelectTrigger className="w-full text-sm">
+                  <SelectValue>{(value: QuizDifficulty) => difficultyLabels[value]}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="easy">سهل (مفاهيم أساسية)</SelectItem>
@@ -297,16 +306,16 @@ export function QuizTab({
             </div>
 
             {/* Question Type */}
-            <div>
-              <label className="text-xs font-semibold text-foreground block mb-1">
+            <div className="min-w-0 space-y-1.5">
+              <label className="block text-sm font-semibold text-foreground">
                 نوع الأسئلة
               </label>
               <Select
                 value={questionType}
                 onValueChange={(val) => setQuestionType(val as "mcq" | "true_false" | "mixed")}
               >
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue />
+                <SelectTrigger className="w-full text-sm">
+                  <SelectValue>{(value: keyof typeof questionTypeLabels) => questionTypeLabels[value]}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="mixed">مختلط (MCQ + صح/خطأ)</SelectItem>
@@ -318,13 +327,13 @@ export function QuizTab({
           </div>
         </CardContent>
 
-        <CardFooter className="flex items-center justify-between border-t border-border pt-4">
+        <CardFooter className="flex flex-col-reverse items-stretch gap-2 border-t border-border p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
           {quiz ? (
-            <Button variant="ghost" size="sm" onClick={() => setShowConfig(false)}>
+            <Button variant="ghost" size="sm" onClick={() => setShowConfig(false)} className="h-auto min-h-11 whitespace-normal text-center leading-5">
               إلغاء والعودة للاختبار الحالي
             </Button>
-          ) : <span />}
-          <Button onClick={() => handleGenerateQuiz(Boolean(quiz))} className="gap-2 text-xs">
+          ) : null}
+          <Button onClick={() => handleGenerateQuiz(Boolean(quiz))} className="w-full gap-2 sm:ms-auto sm:w-auto">
             <Play className="size-3.5" />
             بدء الاختبار الآن
           </Button>
@@ -340,26 +349,26 @@ export function QuizTab({
 
     return (
       <Card className="border-amber-500/30 shadow-sm max-w-2xl mx-auto">
-        <CardHeader className="p-4 border-b border-border/60 flex flex-row items-center justify-between">
-          <div className="flex items-center gap-2">
+        <CardHeader className="flex flex-col items-stretch gap-3 border-b border-border/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center">
             <Badge variant="outline" className="border-amber-500/40 text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950 text-xs">
               مراجعة الأخطاء ({mistakeIndex + 1} من {mistakes.length})
             </Badge>
-            <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-              الموضوع: {activeMistake.topic}
+            <span className="min-w-0 break-words text-xs text-muted-foreground">
+              الموضوع: <bdi dir="auto" className="[unicode-bidi:plaintext]">{activeMistake.topic}</bdi>
             </span>
           </div>
           <Button
             size="sm"
             variant="ghost"
             onClick={() => setMistakesMode(false)}
-            className="text-xs h-7"
+            className="w-full text-xs sm:w-auto"
           >
             إغلاق المراجعة
           </Button>
         </CardHeader>
 
-        <CardContent className="p-6 space-y-4">
+        <CardContent className="space-y-4 p-4 sm:p-6">
           <div className="space-y-2">
             <span className="text-xs font-semibold text-muted-foreground">السؤال:</span>
             <p dir="auto" className="text-sm sm:text-base font-bold text-foreground leading-relaxed [unicode-bidi:plaintext]">
@@ -402,7 +411,7 @@ export function QuizTab({
           </div>
         </CardContent>
 
-        <CardFooter className="p-4 border-t border-border flex items-center justify-between">
+        <CardFooter className="flex items-center justify-between gap-2 border-t border-border p-4">
           <Button
             size="sm"
             variant="outline"
@@ -437,8 +446,8 @@ export function QuizTab({
     const isPassed = score >= 60;
 
     return (
-      <Card className="border-border shadow-xs max-w-xl mx-auto text-center">
-        <CardHeader className="p-6 pb-2">
+      <Card className="mx-auto max-w-xl border-border text-center shadow-xs">
+        <CardHeader className="p-4 pb-2 sm:p-6">
           <div
             className={`size-14 rounded-full mx-auto flex items-center justify-center mb-2 ${
               isPassed ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
@@ -454,7 +463,7 @@ export function QuizTab({
           </p>
         </CardHeader>
 
-        <CardContent className="p-6 space-y-5">
+        <CardContent className="space-y-5 p-4 sm:p-6">
           {/* Big Score Display */}
           <div className="rounded-2xl bg-muted/40 p-6 space-y-2">
             <span className="text-3xl sm:text-4xl font-black text-primary">
@@ -527,15 +536,15 @@ export function QuizTab({
   const isCorrect = selectedAnswer?.trim().toLowerCase() === currentQ.correct_answer.trim().toLowerCase();
 
   return (
-    <Card className="border-border shadow-xs max-w-2xl mx-auto">
+    <Card className="mx-auto w-full max-w-2xl border-border shadow-xs">
       {/* Question Header */}
       <CardHeader className="p-4 pb-2 border-b border-border/60">
-        <div className="flex items-center justify-between gap-2 text-xs mb-2">
+        <div className="mb-2 flex min-w-0 flex-col items-start gap-2 text-xs sm:flex-row sm:items-center sm:justify-between">
           <Badge variant="outline" className="font-semibold text-primary border-primary/30">
             السؤال {currentQuestionIndex + 1} من {quiz.questions.length}
           </Badge>
-          <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-            الموضوع: {currentQ.topic || "عام"}
+          <span className="min-w-0 break-words text-xs text-muted-foreground">
+            الموضوع: <bdi dir="auto" className="[unicode-bidi:plaintext]">{currentQ.topic || "عام"}</bdi>
           </span>
         </div>
         <Progress
@@ -545,7 +554,7 @@ export function QuizTab({
       </CardHeader>
 
       {/* Question Content */}
-      <CardContent className="p-6 space-y-5">
+      <CardContent className="space-y-5 p-4 sm:p-6">
         <div className="space-y-1">
           <p dir="auto" className="text-sm sm:text-base font-bold text-foreground leading-relaxed [unicode-bidi:plaintext]">
             {currentQ.question}
@@ -575,7 +584,7 @@ export function QuizTab({
                 disabled={revealed}
                 onClick={() => handleSelectOption(option)}
                 dir="auto"
-                className={`w-full text-start p-3.5 rounded-xl border text-xs sm:text-sm transition-all flex items-center justify-between gap-3 ${optionStyle}`}
+                className={`flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border p-3.5 text-start text-sm leading-6 transition-all ${optionStyle}`}
               >
                 <span className="[unicode-bidi:plaintext] flex-1">{option}</span>
                 {revealed && isThisCorrect && (
@@ -623,12 +632,12 @@ export function QuizTab({
       </CardContent>
 
       {/* Footer Navigation */}
-      <CardFooter className="p-4 border-t border-border flex items-center justify-between">
+      <CardFooter className="flex flex-col-reverse items-stretch gap-2 border-t border-border p-4 sm:flex-row sm:items-center sm:justify-between">
         <Button
           variant="outline"
           size="sm"
           onClick={() => setShowConfig(true)}
-          className="text-xs text-muted-foreground"
+          className="w-full text-xs text-muted-foreground sm:w-auto"
         >
           إعدادات الاختبار
         </Button>
@@ -637,7 +646,7 @@ export function QuizTab({
           <Button
             size="sm"
             onClick={handleNextQuestion}
-            className="gap-1.5 text-xs animate-in fade-in"
+            className="h-auto min-h-11 w-full gap-1.5 whitespace-normal text-center text-xs leading-5 animate-in fade-in sm:w-auto"
           >
             {currentQuestionIndex < quiz.questions.length - 1 ? (
               <>

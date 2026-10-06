@@ -53,7 +53,7 @@ export function ProfileForm({ profile, academicYearName }: { profile: Profile; a
         </p>
       )}
 
-      <Button type="submit" className="min-w-36" disabled={isPending}>
+      <Button type="submit" className="w-full sm:w-auto sm:min-w-36" disabled={isPending}>
         {isPending ? "جارٍ الحفظ..." : "حفظ التعديلات"}
       </Button>
     </form>

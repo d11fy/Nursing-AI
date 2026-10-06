@@ -24,8 +24,8 @@ export default async function AdminSubjectsPage({ searchParams }: PageProps<"/ad
     <Card><CardHeader><CardTitle className="text-base">إضافة مادة جديدة</CardTitle></CardHeader><CardContent><CreateSubjectForm years={years.filter(y => y.is_active)} /></CardContent></Card>
     <form className="grid gap-3 rounded-xl border border-border bg-card p-4 sm:grid-cols-[1fr_220px_180px_auto]">
       <div className="relative"><Search className="absolute right-3 top-2.5 size-4 text-muted-foreground" /><Input name="search" defaultValue={search} className="pr-9" placeholder="بحث بالعربي أو English" /></div>
-      <select name="year" defaultValue={year} className="h-9 rounded-lg border border-input bg-transparent px-2 text-sm"><option value="">كل السنوات</option>{years.map(y => <option key={y.id} value={y.id}>{y.name_ar}</option>)}</select>
-      <select name="status" defaultValue={status} className="h-9 rounded-lg border border-input bg-transparent px-2 text-sm"><option value="">كل الحالات</option><option value="active">Active</option><option value="inactive">Hidden</option></select>
+      <select name="year" defaultValue={year} className="min-h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm sm:w-auto"><option value="">كل السنوات</option>{years.map(y => <option key={y.id} value={y.id}>{y.name_ar}</option>)}</select>
+      <select name="status" defaultValue={status} className="min-h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm sm:w-auto"><option value="">كل الحالات</option><option value="active">Active</option><option value="inactive">Hidden</option></select>
       <Button type="submit">تصفية</Button>
     </form>
     <div className="overflow-hidden rounded-xl border border-border bg-card">

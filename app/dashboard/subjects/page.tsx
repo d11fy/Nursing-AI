@@ -42,14 +42,14 @@ function SubjectCard({ subject }: { subject: SubjectWithYears }) {
             )}
           </div>
         </div>
-        <CardTitle className="text-lg mt-3 leading-relaxed">{subject.name_ar}</CardTitle>
-        <CardDescription dir="ltr" className="text-start text-sm line-clamp-2">
+        <CardTitle dir="auto" className="mt-3 break-words text-lg leading-relaxed [unicode-bidi:plaintext]">{subject.name_ar}</CardTitle>
+        <CardDescription dir="auto" className="break-words text-start text-sm leading-6 [unicode-bidi:plaintext]">
           {subject.name_en}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 pt-0">
         {subject.description_ar && (
-          <p className="text-sm leading-7 text-muted-foreground line-clamp-2">
+          <p dir="auto" className="break-words text-sm leading-7 text-muted-foreground [unicode-bidi:plaintext]">
             {subject.description_ar}
           </p>
         )}

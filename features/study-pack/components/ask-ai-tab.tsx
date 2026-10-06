@@ -27,7 +27,7 @@ export function AskAiTab({
         subjectName={subjectName}
         maxImageSizeMb={maxImageSizeMb}
         initialActiveSources={librarySource ? [librarySource] : []}
-        containerClassName="h-[calc(100vh-14rem)] min-h-[550px]"
+        containerClassName="h-[calc(100dvh-14rem)] min-h-[28rem]"
       />
     </div>
   );

@@ -72,30 +72,30 @@ export default async function AdminLecturesPage({
         <StatCard label="فشل في المعالجة" value={String(stats.processingFailuresCount)} />
       </div>
 
-      <form className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3">
-        <select name="subjectId" defaultValue={filters.subjectId ?? ""} className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm">
+      <form className="grid grid-cols-1 gap-2 rounded-xl border border-border bg-card p-3 sm:grid-cols-2 xl:grid-cols-4">
+        <select name="subjectId" defaultValue={filters.subjectId ?? ""} className="min-h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm">
           <option value="">كل المواد</option>
           {subjects.map((s) => <option key={s.id} value={s.id}>{s.name_ar}</option>)}
         </select>
-        <select name="academicYearId" defaultValue={filters.academicYearId ?? ""} className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm">
+        <select name="academicYearId" defaultValue={filters.academicYearId ?? ""} className="min-h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm">
           <option value="">كل السنوات</option>
           {years.map((y) => <option key={y.id} value={y.id}>{y.name_ar}</option>)}
         </select>
-        <select name="status" defaultValue={filters.status ?? ""} className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm">
+        <select name="status" defaultValue={filters.status ?? ""} className="min-h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm">
           <option value="">كل الحالات</option>
           {Object.entries(STATUS_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
-        <select name="contributionStatus" defaultValue={filters.contributionStatus ?? ""} className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm">
+        <select name="contributionStatus" defaultValue={filters.contributionStatus ?? ""} className="min-h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm">
           <option value="">كل حالات المساهمة</option>
           {Object.entries(CONTRIBUTION_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
-        <label className="flex items-center gap-1.5 text-sm">
+        <label className="flex min-h-11 items-center gap-2 rounded-xl px-2 text-sm">
           <input type="checkbox" name="largeOnly" value="1" defaultChecked={filters.largeOnly} /> ملفات كبيرة فقط
         </label>
-        <label className="flex items-center gap-1.5 text-sm">
+        <label className="flex min-h-11 items-center gap-2 rounded-xl px-2 text-sm">
           <input type="checkbox" name="expiringSoon" value="1" defaultChecked={filters.expiringSoon} /> ستُحذف قريبًا
         </label>
-        <Button type="submit" size="sm" variant="outline">تصفية</Button>
+        <Button type="submit" size="sm" variant="outline" className="w-full sm:w-auto">تصفية</Button>
       </form>
 
       <div className="overflow-x-auto rounded-xl border border-border bg-card">

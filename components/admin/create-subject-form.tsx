@@ -23,7 +23,7 @@ export function SubjectFields({ years, defaults }: { years: AcademicYear[]; defa
       <div className="space-y-1.5"><Label htmlFor="icon">الأيقونة</Label><Input id="icon" name="icon" defaultValue={defaults?.icon ?? "book-open"} /></div>
       <div className="space-y-1.5"><Label htmlFor="iconTheme">لون / Theme (اختياري)</Label><Input id="iconTheme" name="iconTheme" defaultValue={defaults?.icon_theme ?? ""} placeholder="blue" /></div>
       <div className="space-y-1.5"><Label htmlFor="sortOrder">ترتيب الظهور</Label><Input id="sortOrder" name="sortOrder" type="number" min={0} defaultValue={defaults?.sort_order ?? 0} required /></div>
-      <div className="space-y-1.5"><Label htmlFor="status">الحالة</Label><select id="status" name="status" defaultValue={defaults?.status ?? "active"} className="h-9 w-full rounded-lg border border-input bg-transparent px-2 text-sm"><option value="active">Active</option><option value="inactive">Hidden</option></select></div>
+      <div className="space-y-1.5"><Label htmlFor="status">الحالة</Label><select id="status" name="status" defaultValue={defaults?.status ?? "active"} className="min-h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm"><option value="active">Active</option><option value="inactive">Hidden</option></select></div>
     </div>
     <fieldset className="space-y-2 rounded-xl border border-border p-3">
       <legend className="px-1 text-sm font-medium">السنة الدراسية (اختر واحدة أو أكثر)</legend>

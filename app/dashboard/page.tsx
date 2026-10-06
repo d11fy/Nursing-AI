@@ -102,8 +102,8 @@ export default async function DashboardHomePage() {
             {recentConversations.map((c) => (
               <Link key={c.id} href={`/dashboard/chat/${c.id}`}>
                 <Card className="interactive-card">
-                  <CardContent className="flex items-center justify-between py-3">
-                    <span className="min-w-0 truncate text-sm font-semibold text-foreground">
+                  <CardContent className="flex min-w-0 items-center justify-between gap-2 py-3">
+                    <span dir="auto" className="min-w-0 break-words text-sm font-semibold leading-6 text-foreground [unicode-bidi:plaintext]">
                       {c.title}
                     </span>
                     <Button variant="ghost" size="sm" className="shrink-0 text-primary">
