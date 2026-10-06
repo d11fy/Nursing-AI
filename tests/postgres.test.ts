@@ -282,6 +282,19 @@ test("persistent sessions enforce one device while allowing the same device to r
   assert.equal((await readSession(afterAdminReset.sessionToken, firstDevice))?.user_id, bob.user_id);
   await revokeAllUserSessions(bob.user_id);
 });
+test("database constraint prevents two active sessions for one account", async () => {
+  const firstToken = newToken();
+  const secondToken = newToken();
+  await db.query(
+    "insert into app_sessions(token_hash,user_id,device_hash,expires_at) values($1,$2,$3,now()+interval '1 hour')",
+    [tokenHash(firstToken), bob.user_id, tokenHash(newToken())]
+  );
+  await assert.rejects(db.query(
+    "insert into app_sessions(token_hash,user_id,device_hash,expires_at) values($1,$2,$3,now()+interval '1 hour')",
+    [tokenHash(secondToken), bob.user_id, tokenHash(newToken())]
+  ));
+  await revokeAllUserSessions(bob.user_id);
+});
 test("auth cookies are HttpOnly, SameSite and persistent for browser and Android WebView", () => {
   const originalNodeEnv = process.env.NODE_ENV;
   Reflect.set(process.env, "NODE_ENV", "production");

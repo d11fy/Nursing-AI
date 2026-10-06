@@ -2,7 +2,8 @@ import Link from "next/link";
 import { ArrowLeft, CheckCircle2, MessageSquareText, Search, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export function Hero() {
+export function Hero({ dashboardHref }: { dashboardHref: string | null }) {
+  const primaryHref = dashboardHref ?? "/register";
   return (
     <section className="landing-grid relative overflow-hidden border-b border-border bg-background">
       <div className="absolute inset-0 bg-background/88" />
@@ -33,8 +34,8 @@ export function Hero() {
             className="w-full px-6 sm:w-auto"
             nativeButton={false}
             render={
-              <Link href="/register">
-                ابدأ الدراسة
+              <Link href={primaryHref}>
+                {dashboardHref ? "تابع الدراسة" : "ابدأ الدراسة"}
                 <ArrowLeft className="size-4" />
               </Link>
             }
@@ -44,7 +45,7 @@ export function Hero() {
             variant="outline"
             className="w-full bg-card px-6 sm:w-auto"
             nativeButton={false}
-            render={<Link href="/register">جرب مجانًا</Link>}
+            render={<Link href={primaryHref}>{dashboardHref ? "فتح المنصة" : "جرب مجانًا"}</Link>}
           />
         </div>
         </div>
