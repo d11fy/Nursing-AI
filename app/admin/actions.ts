@@ -6,6 +6,7 @@ import { requireAdminProfile } from "@/lib/auth";
 import { subjectSchema, settingsSchema, academicYearSchema, newAcademicYearSchema } from "@/lib/validations/admin";
 import { archiveSubject, createAcademicYear, createSubject, setStudentAcademicYear, updateAcademicYear, updateSubject } from "@/lib/subjects";
 import { z } from "zod";
+import { revokeAllUserSessions } from "@/lib/auth/session-store";
 
 export async function setStudentStatusAction(formData: FormData) {
   await requireAdminProfile();
@@ -15,6 +16,17 @@ export async function setStudentStatusAction(formData: FormData) {
 
   const db = await createClient();
   await db.from("profiles").update({ status }).eq("user_id", userId);
+  if (status === "suspended") await revokeAllUserSessions(userId);
+  revalidatePath("/admin/students");
+}
+
+export async function resetStudentDeviceAction(formData: FormData) {
+  await requireAdminProfile();
+  const parsed = z.string().uuid().safeParse(formData.get("userId"));
+  if (!parsed.success) return;
+  // Device binding lives only on active server sessions. Revoking them releases
+  // the account so the next successful login can securely bind a new device.
+  await revokeAllUserSessions(parsed.data);
   revalidatePath("/admin/students");
 }
 

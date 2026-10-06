@@ -8,7 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { setStudentStatusAction, resetDailyLimitAction } from "@/app/admin/actions";
+import { resetStudentDeviceAction, setStudentStatusAction, resetDailyLimitAction } from "@/app/admin/actions";
 import type { UserStatus } from "@/types/database";
 
 export function StudentActions({ userId, status }: { userId: string; status: UserStatus }) {
@@ -39,6 +39,16 @@ export function StudentActions({ userId, status }: { userId: string; status: Use
               <input type="hidden" name="userId" value={userId} />
               <button type="submit" className="w-full text-right">
                 إعادة تعيين الحد اليومي
+              </button>
+            </form>
+          }
+        />
+        <DropdownMenuItem
+          render={
+            <form action={resetStudentDeviceAction}>
+              <input type="hidden" name="userId" value={userId} />
+              <button type="submit" className="w-full text-right">
+                إعادة تعيين جهاز الطالب
               </button>
             </form>
           }

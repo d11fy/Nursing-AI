@@ -5,7 +5,8 @@ import { vector } from '@electric-sql/pglite-pgvector';
 import { Query, type Actor, type Executor } from "../lib/db/query";
 import { hashPassword, verifyPassword, newToken, tokenHash } from "../lib/auth/password";
 import { migrate } from "../scripts/migrate.mjs";
-import { readSession } from "../lib/auth/session";
+import { deviceCookieOptions, readSession, sessionCookieOptions } from "../lib/auth/session";
+import { DeviceConflictError, establishSession, revokeAllUserSessions, revokeSessionToken } from "../lib/auth/session-store";
 import { DatabaseClient } from "../lib/db/server";
 import { uploadChatImage, getSignedChatImageUrl, validFileSignature } from "../lib/storage";
 import { limitedFormData } from "../lib/request-body";
@@ -249,6 +250,57 @@ test("sessions reject forged, expired, logged-out and suspended identities", asy
   assert.equal(await readSession(token), null);
   await db.query("DELETE FROM app_sessions WHERE token_hash=$1", [tokenHash(token)]);
   assert.equal(await readSession(token), null);
+});
+test("persistent sessions enforce one device while allowing the same device to rotate safely", async () => {
+  const firstDevice = newToken();
+  const secondDevice = newToken();
+  const first = await establishSession(bob.user_id, firstDevice);
+
+  assert.equal((await readSession(first.sessionToken, firstDevice))?.user_id, bob.user_id);
+  assert.equal(await readSession(first.sessionToken, secondDevice), null);
+  await assert.rejects(establishSession(bob.user_id, secondDevice), DeviceConflictError);
+
+  const sameDevice = await establishSession(bob.user_id, firstDevice);
+  assert.equal(await readSession(first.sessionToken, firstDevice), null);
+  assert.equal((await readSession(sameDevice.sessionToken, firstDevice))?.user_id, bob.user_id);
+
+  const stored = (await db.query<{ device_hash: string; days: number }>(
+    "select device_hash,extract(epoch from (expires_at-now()))/86400 as days from app_sessions where token_hash=$1",
+    [tokenHash(sameDevice.sessionToken)]
+  )).rows[0];
+  assert.equal(stored.device_hash, tokenHash(firstDevice));
+  assert.ok(stored.days > 360);
+
+  await revokeSessionToken(sameDevice.sessionToken);
+  assert.equal(await readSession(sameDevice.sessionToken, firstDevice), null);
+  const replacement = await establishSession(bob.user_id, secondDevice);
+  assert.equal((await readSession(replacement.sessionToken, secondDevice))?.user_id, bob.user_id);
+
+  await revokeAllUserSessions(bob.user_id);
+  assert.equal(await readSession(replacement.sessionToken, secondDevice), null);
+  const afterAdminReset = await establishSession(bob.user_id, firstDevice);
+  assert.equal((await readSession(afterAdminReset.sessionToken, firstDevice))?.user_id, bob.user_id);
+  await revokeAllUserSessions(bob.user_id);
+});
+test("auth cookies are HttpOnly, SameSite and persistent for browser and Android WebView", () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+  Reflect.set(process.env, "NODE_ENV", "production");
+  try {
+    const session = sessionCookieOptions();
+    const device = deviceCookieOptions();
+    assert.equal(session.httpOnly, true);
+    assert.equal(session.sameSite, "lax");
+    assert.equal(session.path, "/");
+    assert.ok(session.maxAge >= 365 * 24 * 60 * 60);
+    assert.equal(device.httpOnly, true);
+    assert.equal(device.sameSite, "lax");
+    assert.ok(device.maxAge > session.maxAge);
+    assert.equal(session.secure, true);
+    assert.equal(device.secure, true);
+  } finally {
+    if (originalNodeEnv === undefined) Reflect.deleteProperty(process.env, "NODE_ENV");
+    else Reflect.set(process.env, "NODE_ENV", originalNodeEnv);
+  }
 });
 test("RPC access checks cannot be bypassed by a student", async () => {
   assert.ok((await new DatabaseClient(alice).rpc("admin_list_students")).error);

@@ -69,8 +69,8 @@ export async function loginAccount(emailInput: string, password: string) {
   const dummy = `scrypt$${"0".repeat(32)}$${"0".repeat(128)}`;
   const valid = await verifyPassword(password, user?.password_hash ?? dummy);
   if (!user || !valid || user.status !== "active") return false;
-  await startSession(user.id);
   await getPool().query("DELETE FROM auth_attempts WHERE key=$1", [tokenHash(`login:${email}`)]);
+  await startSession(user.id);
   return true;
 }
 export async function requestPasswordReset(emailInput: string) {

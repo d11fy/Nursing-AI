@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { AccountAlreadyExistsError, registerAccount, loginAccount, requestPasswordReset, resetAccountPassword } from "@/lib/auth/accounts";
 import { endSession } from "@/lib/auth/session";
+import { DeviceConflictError } from "@/lib/auth/session-store";
 import { completeGoogleRegistration } from "@/lib/auth/google";
 import { z } from "zod";
 import {
@@ -58,7 +59,15 @@ export async function loginAction(
     return { error: parsed.error.issues[0]?.message ?? "بيانات غير صالحة" };
   }
 
-  if (!await loginAccount(parsed.data.email, parsed.data.password)) {
+  try {
+    if (!await loginAccount(parsed.data.email, parsed.data.password)) {
+      return { error: "تعذر تسجيل الدخول؛ تحقق من البيانات أو حاول لاحقًا" };
+    }
+  } catch (error) {
+    if (error instanceof DeviceConflictError) {
+      return { error: "هذا الحساب مستخدم حاليًا على جهاز آخر." };
+    }
+    console.error("Login failed", error);
     return { error: "تعذر تسجيل الدخول؛ تحقق من البيانات أو حاول لاحقًا" };
   }
 

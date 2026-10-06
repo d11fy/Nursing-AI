@@ -25,7 +25,7 @@ test("upgrade preserves legacy data, excludes unlabelled vectors, and is repeata
     assert.equal((await db.query("SELECT * FROM document_chunks")).rows.length, 1);
     assert.equal((await db.query("SELECT * FROM documents")).rows.length, 1);
     assert.equal((await db.query("SELECT * FROM match_document_chunks($1,null,5,'openai','text-embedding-3-small')", [vector])).rows.length, 0);
-    assert.equal((await db.query("SELECT * FROM app_migrations")).rows.length, 20);
+    assert.equal((await db.query("SELECT * FROM app_migrations")).rows.length, 21);
     await assert.rejects(db.query("SELECT * FROM match_document_chunks($1,null,5)", [vector]), /does not exist/);
   } finally { await db.close(); }
 });

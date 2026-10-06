@@ -16,6 +16,7 @@ const googleErrors: Record<string, string> = {
   google_cancelled: "تم إلغاء تسجيل الدخول باستخدام Google.",
   google_failed: "تعذر التحقق من حساب Google؛ حاول مرة أخرى.",
   google_expired: "انتهت جلسة Google؛ ابدأ تسجيل الدخول مجددًا.",
+  device_in_use: "هذا الحساب مستخدم حاليًا على جهاز آخر.",
 };
 
 export function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
