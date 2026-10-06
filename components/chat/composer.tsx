@@ -217,7 +217,7 @@ export function Composer({
             </button>
           </div>
           <div className="min-w-0 text-xs text-muted-foreground">
-            <p className="truncate font-medium text-foreground">{pendingImage.name}</p>
+            <p dir="auto" className="line-clamp-2 break-words font-medium text-foreground [unicode-bidi:plaintext]">{pendingImage.name}</p>
             <p>{formatFileSize(pendingImage.size)}</p>
           </div>
         </div>
@@ -330,7 +330,7 @@ export function Composer({
                   className={`flex min-h-12 w-full cursor-pointer items-center gap-3 rounded-xl border px-3 text-start transition-colors focus-visible:ring-2 focus-visible:ring-primary ${selected ? "border-primary bg-accent text-primary" : "border-border bg-card hover:bg-muted"}`}
                 >
                   <BookOpen className="size-4 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate font-medium">{subject.name}</span>
+                  <span dir="auto" className="min-w-0 flex-1 break-words font-medium [unicode-bidi:plaintext]">{subject.name}</span>
                   {selected && <Check className="size-4 shrink-0" />}
                 </button>
               );

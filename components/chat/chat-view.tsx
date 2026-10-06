@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Loader2, MessageSquareText, BookOpen } from "lucide-react";
 import Link from "next/link";
 import { MessageBubble, type ChatMessageData } from "@/components/chat/message-bubble";
-import { Suggestions } from "@/components/chat/suggestions";
+import { ChatEmptyState } from "@/components/chat/chat-empty-state";
 import { Composer, type ChatSubjectOption, type PendingImage } from "@/components/chat/composer";
 import { consumeChatResponse } from "@/lib/chat/stream";
 import type { ActiveLibrarySource } from "@/lib/library-types";
@@ -28,7 +28,7 @@ export function ChatView({
   lectureId,
   maxImageSizeMb,
   availableSubjects = [],
-  containerClassName = "h-[calc(100vh-4rem)]",
+  containerClassName = "h-[calc(100dvh-4rem)]",
   showAITrace = false,
   initialActiveSources = [],
 }: {
@@ -153,7 +153,7 @@ export function ChatView({
     abortRef.current?.abort();
   }
 
-  const showSuggestions = messages.length === 0;
+  const showEmptyState = messages.length === 0;
 
   return (
     <div className={`chat-layout flex min-h-0 min-w-0 flex-col ${containerClassName}`}>
@@ -170,9 +170,9 @@ export function ChatView({
         </div>
       )}
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-y-contain bg-background px-3 py-5 sm:px-6 sm:py-8">
-        {showSuggestions ? (
+        {showEmptyState ? (
           <div className="flex h-full items-center justify-center">
-            <Suggestions onPick={(text) => send(text)} />
+            <ChatEmptyState />
           </div>
         ) : (
           <div className="mx-auto max-w-[920px] space-y-6 pb-6">

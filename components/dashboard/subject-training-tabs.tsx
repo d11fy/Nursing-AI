@@ -28,6 +28,15 @@ import { PracticeExamRunner } from "@/components/dashboard/practice-exam-runner"
 import type { PracticeQuestionView } from "@/lib/exams/practice-service";
 import type { TopicRecurrenceStat } from "@/lib/exams/analytics-service";
 
+const practiceTypeLabels = {
+  UNIVERSITY_STYLE: "نمط الجامعة",
+  PAST_EXAM: "امتحانات سابقة",
+  MIXED: "تدريب مختلط",
+} as const;
+
+const examModeLabels = { STUDY: "نمط الدراسة", EXAM: "نمط الامتحان" } as const;
+const practiceDifficultyLabels = { EASY: "سهل", MEDIUM: "متوسط", HARD: "متقدم" } as const;
+
 interface PastExamItem {
   id: string;
   title: string;
@@ -136,7 +145,7 @@ export function SubjectTrainingTabs({
 
   return (
     <Tabs defaultValue="lectures" className="space-y-4">
-      <TabsList className="grid w-full grid-cols-2 gap-1 sm:grid-cols-4 group-data-horizontal/tabs:h-auto p-1 bg-muted/60 border [&_[data-slot=tabs-trigger]]:min-h-11">
+      <TabsList className="flex h-auto w-full snap-x flex-nowrap justify-start gap-1 overflow-x-auto border bg-muted/60 p-1 scrollbar-none [&_[data-slot=tabs-trigger]]:min-h-11 [&_[data-slot=tabs-trigger]]:snap-start [&_[data-slot=tabs-trigger]]:shrink-0">
         <TabsTrigger value="lectures" className="text-xs sm:text-sm font-semibold">
           المحاضرات ({lectures.length})
         </TabsTrigger>
@@ -190,7 +199,7 @@ export function SubjectTrainingTabs({
                 <label className="text-xs font-semibold text-foreground block mb-1.5">نمط توليد الأسئلة</label>
                 <Select value={practiceType} onValueChange={(val) => {if(val==="PAST_EXAM"||val==="UNIVERSITY_STYLE"||val==="MIXED")setPracticeType(val); }}>
                   <SelectTrigger className="h-9 text-xs">
-                    <SelectValue />
+                    <SelectValue>{(value: keyof typeof practiceTypeLabels) => practiceTypeLabels[value]}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="UNIVERSITY_STYLE">أسئلة جديدة بنمط امتحانات الجامعة (جديد كليًا)</SelectItem>
@@ -204,7 +213,7 @@ export function SubjectTrainingTabs({
                 <label className="text-xs font-semibold text-foreground block mb-1.5">طريقة الاختبار</label>
                 <Select value={examMode} onValueChange={(val) => {if(val==="STUDY"||val==="EXAM")setExamMode(val); }}>
                   <SelectTrigger className="h-9 text-xs">
-                    <SelectValue />
+                    <SelectValue>{(value: keyof typeof examModeLabels) => examModeLabels[value]}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="STUDY">نمط الدراسة (عرض الشرح والمصدر فورًا بعد كل سؤال)</SelectItem>
@@ -217,7 +226,7 @@ export function SubjectTrainingTabs({
                 <label className="text-xs font-semibold text-foreground block mb-1.5">عدد الأسئلة</label>
                 <Select value={questionCount} onValueChange={(val) => { if (val) setQuestionCount(val); }}>
                   <SelectTrigger className="h-9 text-xs">
-                    <SelectValue />
+                    <SelectValue>{(value: string) => value}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="5">5 أسئلة سريعة</SelectItem>
@@ -232,7 +241,7 @@ export function SubjectTrainingTabs({
                 <label className="text-xs font-semibold text-foreground block mb-1.5">مستوى الصعوبة</label>
                 <Select value={difficulty} onValueChange={(val) => { if (val==="EASY"||val==="MEDIUM"||val==="HARD") setDifficulty(val); }}>
                   <SelectTrigger className="h-9 text-xs">
-                    <SelectValue />
+                    <SelectValue>{(value: keyof typeof practiceDifficultyLabels) => practiceDifficultyLabels[value]}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="EASY">سهل (تذكر ومفاهيم أساسية)</SelectItem>
@@ -262,11 +271,11 @@ export function SubjectTrainingTabs({
               </div>
             )}
           </CardContent>
-          <CardFooter className="border-t pt-3 flex justify-end">
+          <CardFooter className="flex justify-end border-t pt-3">
             <Button
               onClick={() => handleStartPractice()}
               disabled={loadingExam}
-              className="gap-2"
+              className="w-full gap-2 sm:w-auto"
             >
               <Play className="size-4" />
               {loadingExam ? "جارٍ تجهيز الامتحان..." : "ابدأ التدريب الآن"}

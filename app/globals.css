@@ -141,6 +141,8 @@
   }
   html {
     @apply font-sans;
+    min-width: 320px;
+    scroll-padding-top: max(1rem, env(safe-area-inset-top));
   }
 }
 
@@ -154,8 +156,12 @@
 
 @layer components {
   .page-container {
+    --page-gutter: clamp(1rem, 3vw, 2.25rem);
     width: 100%;
-    padding: clamp(1rem, 3vw, 2.25rem);
+    min-width: 0;
+    padding-block: var(--page-gutter);
+    padding-inline-start: max(var(--page-gutter), env(safe-area-inset-right));
+    padding-inline-end: max(var(--page-gutter), env(safe-area-inset-left));
   }
   .page-container > h1,
   .page-container > div > h1 {
@@ -167,7 +173,7 @@
     flex-wrap: wrap;
     gap: 1rem;
   }
-  .app-main { scrollbar-gutter: stable; }
+  .app-main { scrollbar-gutter: auto; }
   .app-main:has(> .chat-layout) { scrollbar-gutter: auto; overflow: hidden; }
   .app-main > .chat-layout { height: 100%; }
   .page-heading {
@@ -253,7 +259,16 @@
   .admin-table-scroll th { background: var(--muted); color: var(--muted-foreground); font-weight: 600; white-space: nowrap; }
   .admin-table-scroll tbody tr { transition: background-color 200ms; }
   .admin-table-scroll tbody tr:hover { background: var(--accent); }
-  [data-slot="tabs-list"] { max-width: 100%; overflow-x: auto; }
+  [data-slot="tabs-list"] {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  [data-slot="tabs-list"]::-webkit-scrollbar,
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+  .scrollbar-none { scrollbar-width: none; }
   [data-slot="tabs-trigger"] { flex-shrink: 0; }
   [data-slot="skeleton"] { border-radius: .75rem; }
 }
@@ -312,9 +327,18 @@
   .chat-composer-dock { padding-inline: 1.5rem; padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
   .study-prose { font-size: 1rem; }
 }
+@media (min-width: 1024px) {
+  .app-main { scrollbar-gutter: stable; }
+}
 @media (max-width: 639px) {
   .page-heading { flex-direction: column; }
   .page-heading > :last-child:not(:first-child) { width: 100%; }
+  .empty-state { padding-block: 2rem; }
+  [data-slot="button"] { min-width: 2.75rem; min-height: 2.75rem; }
+}
+@media (max-width: 1023px) {
+  .app-main { scrollbar-width: none; }
+  .app-main::-webkit-scrollbar { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

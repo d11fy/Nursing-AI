@@ -2,7 +2,6 @@ import Link from "next/link";
 import { BookOpen, FileText, Loader2, TriangleAlert, ArrowLeft } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { daysUntil } from "@/lib/lectures/retention-display";
 import type { LectureStatus } from "@/types/database";
@@ -48,8 +47,8 @@ export function LectureCard({
             {isReady ? <BookOpen className="size-5" /> : <FileText className="size-5" />}
           </div>
           <div className="min-w-0 flex-1 space-y-1.5">
-            <div className="flex items-start justify-between gap-2">
-              <p className="truncate font-medium text-foreground">{lecture.title}</p>
+            <div className="flex min-w-0 flex-col items-start gap-2 min-[430px]:flex-row min-[430px]:justify-between">
+              <p dir="auto" className="min-w-0 break-words font-medium leading-6 text-foreground [unicode-bidi:plaintext]">{lecture.title}</p>
               {isReady && (
                 <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary shrink-0">
                   Study Pack

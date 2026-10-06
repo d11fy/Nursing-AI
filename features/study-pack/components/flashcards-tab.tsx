@@ -7,7 +7,6 @@ import {
   Loader2,
   RotateCcw,
   CheckCircle2,
-  AlertCircle,
   ChevronRight,
   ChevronLeft,
   Eye,
@@ -15,7 +14,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -145,7 +144,7 @@ export function FlashcardsTab({
   // Loading State
   if (loading || fetching) {
     return (
-      <Card className="border-border p-12 text-center">
+      <Card className="border-border p-5 text-center sm:p-12">
         <div className="flex flex-col items-center justify-center space-y-4 max-w-md mx-auto">
           <Loader2 className="size-8 text-primary animate-spin" />
           <p className="text-sm font-semibold text-foreground">
@@ -160,7 +159,7 @@ export function FlashcardsTab({
   // Empty State
   if (!cards.length) {
     return (
-      <Card className="border-dashed border-2 border-border p-12 text-center">
+      <Card className="border-2 border-dashed border-border p-5 text-center sm:p-12">
         <div className="flex flex-col items-center justify-center max-w-md mx-auto space-y-4">
           <div className="size-12 rounded-full bg-purple-500/10 text-purple-600 flex items-center justify-center">
             <Layers className="size-6" />
@@ -171,7 +170,7 @@ export function FlashcardsTab({
               أنشئ 10–20 بطاقة ذكية لمراجعة المفاهيم والتعريفات والأعراض والتدخلات السريرية لهذه المحاضرة وحفظ تقدمك.
             </p>
           </div>
-          <Button onClick={() => handleGenerate(false)} size="default" className="gap-2 bg-purple-600 hover:bg-purple-700">
+          <Button onClick={() => handleGenerate(false)} size="default" className="h-auto min-h-11 w-full gap-2 whitespace-normal bg-purple-600 text-center leading-5 hover:bg-purple-700 sm:w-auto">
             <Sparkles className="size-4" />
             إنشاء البطاقات التعليمية الآن
           </Button>
@@ -186,13 +185,13 @@ export function FlashcardsTab({
     <div className="space-y-5 max-w-2xl mx-auto">
       {/* Header controls & filter tabs */}
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl border border-border bg-card shadow-2xs">
+        <div className="flex flex-col items-stretch gap-3 rounded-xl border border-border bg-card p-3 shadow-2xs sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           {/* Filter options */}
-          <div className="flex items-center gap-1.5">
+          <div className="grid grid-cols-1 gap-2 min-[430px]:grid-cols-2">
             <Button
               size="sm"
               variant={filterMode === "all" ? "default" : "outline"}
-              className="h-8 text-xs gap-1.5"
+              className="w-full gap-1.5"
               onClick={() => {
                 setFilterMode("all");
                 setCurrentIndex(0);
@@ -207,7 +206,7 @@ export function FlashcardsTab({
             <Button
               size="sm"
               variant={filterMode === "review_again" ? "default" : "outline"}
-              className="h-8 text-xs gap-1.5"
+              className="w-full gap-1.5"
               disabled={reviewAgainCount === 0}
               onClick={() => {
                 setFilterMode("review_again");
@@ -226,7 +225,7 @@ export function FlashcardsTab({
             variant="ghost"
             size="sm"
             onClick={() => handleGenerate(true)}
-            className="h-8 text-xs text-muted-foreground gap-1.5 hover:text-foreground"
+            className="w-full gap-1.5 text-xs text-muted-foreground hover:text-foreground sm:w-auto"
           >
             <RotateCcw className="size-3.5" />
             إعادة إنشاء البطاقات
@@ -245,7 +244,7 @@ export function FlashcardsTab({
 
       {/* Empty in filtered mode check */}
       {!currentCard ? (
-        <Card className="border-border p-8 text-center space-y-3">
+        <Card className="space-y-3 border-border p-5 text-center sm:p-8">
           <CheckCircle2 className="size-10 text-green-500 mx-auto" />
           <h4 className="text-sm font-bold text-foreground">رائع! لا توجد بطاقات بحاجة لمراجعة حاليًا</h4>
           <p className="text-xs text-muted-foreground">
@@ -270,7 +269,7 @@ export function FlashcardsTab({
             role="button"
             tabIndex={0}
             aria-label="اقلب البطاقة"
-            className={`w-full min-h-[280px] p-8 rounded-2xl border-2 transition-all duration-300 cursor-pointer flex flex-col justify-between select-none shadow-sm ${
+            className={`flex min-h-[280px] w-full cursor-pointer select-none flex-col justify-between rounded-2xl border-2 p-4 shadow-sm transition-all duration-300 sm:p-8 ${
               isFlipped
                 ? "bg-muted/40 border-primary/40 shadow-md"
                 : "bg-card border-border hover:border-primary/50"
@@ -321,7 +320,7 @@ export function FlashcardsTab({
 
           {/* Action rating buttons (Visible after flip) */}
           {isFlipped && (
-            <div className="grid grid-cols-2 gap-3 animate-in fade-in duration-200">
+            <div className="grid grid-cols-1 gap-3 animate-in fade-in duration-200 sm:grid-cols-2">
               <Button
                 variant="outline"
                 size="lg"
@@ -330,7 +329,7 @@ export function FlashcardsTab({
                   e.stopPropagation();
                   handleProgress("review_again");
                 }}
-                className={`h-12 border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950 font-semibold gap-2 ${
+                className={`h-auto min-h-12 whitespace-normal border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950 font-semibold gap-2 ${
                   currentCard.progress_status === "review_again" ? "ring-2 ring-amber-500" : ""
                 }`}
               >
@@ -346,7 +345,7 @@ export function FlashcardsTab({
                   e.stopPropagation();
                   handleProgress("known");
                 }}
-                className={`h-12 bg-green-600 hover:bg-green-700 text-white font-semibold gap-2 ${
+                className={`h-auto min-h-12 whitespace-normal bg-green-600 hover:bg-green-700 text-white font-semibold gap-2 ${
                   currentCard.progress_status === "known" ? "ring-2 ring-green-600" : ""
                 }`}
               >
@@ -357,7 +356,7 @@ export function FlashcardsTab({
           )}
 
           {/* Prev / Next navigation bar */}
-          <div className="flex items-center justify-between pt-2">
+          <div className="grid grid-cols-2 items-center gap-2 pt-2 sm:grid-cols-[auto_1fr_auto]">
             <Button
               variant="outline"
               size="sm"
@@ -366,13 +365,13 @@ export function FlashcardsTab({
                 setIsFlipped(false);
                 setCurrentIndex((i) => Math.max(0, i - 1));
               }}
-              className="gap-1 text-xs"
+              className="w-full gap-1 text-xs sm:w-auto"
             >
               <ChevronRight className="size-4" />
               السابق
             </Button>
 
-            <span className="text-xs text-muted-foreground">
+            <span className="col-span-2 row-start-1 text-center text-xs leading-5 text-muted-foreground sm:col-span-1 sm:col-start-2">
               استخدم الأسهم ◄ ► للتنقل والتقييم
             </span>
 
@@ -384,7 +383,7 @@ export function FlashcardsTab({
                 setIsFlipped(false);
                 setCurrentIndex((i) => Math.min(activeCards.length - 1, i + 1));
               }}
-              className="gap-1 text-xs"
+              className="w-full gap-1 text-xs sm:w-auto"
             >
               التالي
               <ChevronLeft className="size-4" />
