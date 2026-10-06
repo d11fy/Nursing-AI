@@ -10,15 +10,9 @@ export async function getStudentContext(userId: string, conversationId: string, 
   const [profile, memories, progress, conversation] = await Promise.all([
     pool.query<{full_name:string; nursing_year:string; university:string|null}>("select full_name,nursing_year,university from profiles where user_id=$1", [userId]),
     pool.query<{memory_key:string; memory_value_json:unknown}>("select memory_key,memory_value_json from student_memory where user_id=$1 and memory_type='preference' order by importance desc,updated_at desc limit 8", [userId]),
-    pool.query<{topic_name:string; mastery_score:number}>(`SELECT aa.topic AS topic_name,
-      round(100.0*count(*) filter (where aa.is_correct=true)/count(*))::int AS mastery_score
-      FROM student_exam_attempt_answers aa
-      JOIN student_exam_attempts a ON a.id=aa.attempt_id
-      JOIN student_exam_attempt_questions aq ON aq.attempt_id=a.id AND aq.question_id=aa.question_id
-      WHERE a.user_id=$1 AND ($2::uuid IS NULL OR a.subject_id=$2)
-      GROUP BY aa.topic
-      HAVING 100.0*count(*) filter (where aa.is_correct=true)/count(*) < 80
-      ORDER BY mastery_score ASC LIMIT 6`, [userId,subjectId]),
+    pool.query<{topic_name:string; mastery_score:number}>(`SELECT topic_name,mastery_score::int
+      FROM student_topic_progress WHERE user_id=$1 AND ($2::uuid IS NULL OR subject_id=$2)
+      AND evidence_count>=3 AND mastery_score<60 ORDER BY mastery_score ASC,last_activity_at DESC LIMIT 6`, [userId,subjectId]),
     pool.query<{summary:string}>("select summary from conversation_memory where conversation_id=$1 and user_id=$2", [conversationId,userId]),
   ]);
   const p = profile.rows[0]; const preferences = Object.fromEntries(memories.rows.map((m) => [m.memory_key, m.memory_value_json]));

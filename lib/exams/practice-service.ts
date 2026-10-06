@@ -11,6 +11,8 @@ import { gradePracticeAnswer } from "./answer-grading";
 import { searchTerms } from "@/lib/ai/curriculum-search";
 import { getNursingTutorInstructions } from "@/lib/ai/prompts/nursing-tutor";
 import type { QuestionType } from "@/types/database";
+import { normalizeTopicIdentity } from "@/lib/learning-progress/formula";
+import { recalculateStudentTopicProgress } from "@/lib/learning-progress/service";
 
 export interface GeneratePracticeExamOptions {
   userId: string;
@@ -385,8 +387,10 @@ export async function submitQuestionAnswer(input: {
   try {
     await client.query("BEGIN");
     await client.query("select set_config('app.user_id',$1,true),set_config('app.ai_worker','off',true)",[input.userId]);
-    const { rows } = await client.query<{subject_id:string;topic:string;correct_answer_json:unknown}>(
-      `SELECT a.subject_id,q.topic,q.correct_answer_json
+    const { rows } = await client.query<{subject_id:string;topic:string;correct_answer_json:unknown;question_text:string;
+      question_type:string;options_json:unknown;explanation:string|null;source_document_id:string|null;page_number:number|null}>(
+      `SELECT a.subject_id,q.topic,q.correct_answer_json,q.question_text,q.question_type,q.options_json,q.explanation,
+        q.source_document_id,q.page_number
        FROM public.student_exam_attempts a
        JOIN public.student_exam_attempt_questions aq ON aq.attempt_id=a.id
        JOIN public.exam_questions q ON q.id=aq.question_id
@@ -403,34 +407,34 @@ export async function submitQuestionAnswer(input: {
     );
     if (existing.rows.length) { await client.query("COMMIT"); return; }
     const isCorrect = gradePracticeAnswer(input.selectedAnswer, question.correct_answer_json);
+    const topicIdentity = normalizeTopicIdentity(question.topic);
     await client.query(
       `INSERT INTO public.student_exam_attempt_answers
-       (attempt_id,question_id,selected_answer,is_correct,topic)
-       VALUES($1,$2,$3::jsonb,$4,$5)`,
-      [input.attemptId,input.questionId,JSON.stringify(input.selectedAnswer ?? null),isCorrect,question.topic]
+       (attempt_id,question_id,selected_answer,is_correct,topic,topic_key)
+       VALUES($1,$2,$3::jsonb,$4,$5,$6)`,
+      [input.attemptId,input.questionId,JSON.stringify(input.selectedAnswer ?? null),isCorrect,question.topic,topicIdentity.topicKey]
     );
-    const cleanKey = "v2:"+question.topic.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").slice(0, 80) || "general";
-    await client.query(
-    `INSERT INTO public.student_topic_progress (
-       user_id, subject_id, topic_key, topic_name, questions_answered,
-       correct_answers, wrong_answers, mastery_score, generation, last_studied_at, updated_at
-     ) VALUES (
-       $1, $2, $3, $4, 1,
-       ${isCorrect ? 1 : 0}, ${isCorrect ? 0 : 1},
-       ${isCorrect ? 100 : 0}, 2, now(), now()
-     )
-     ON CONFLICT (user_id, subject_id, topic_key) DO UPDATE SET
-       questions_answered = student_topic_progress.questions_answered + 1,
-       correct_answers = student_topic_progress.correct_answers + ${isCorrect ? 1 : 0},
-       wrong_answers = student_topic_progress.wrong_answers + ${isCorrect ? 0 : 1},
-       mastery_score = round(
-         (student_topic_progress.correct_answers + ${isCorrect ? 1 : 0})::numeric * 100.0 /
-         (student_topic_progress.questions_answered + 1)
-       ),
-       last_studied_at = now(),
-       updated_at = now()`,
-      [input.userId, question.subject_id, cleanKey, question.topic]
-    );
+    if (!isCorrect) {
+      await client.query(
+        `insert into student_mistakes(user_id,subject_id,exam_question_id,exam_attempt_id,topic,topic_key,question_type,
+          question_snapshot,options_snapshot,student_answer,correct_answer,rationale_snapshot,source_document_id,
+          source_reference,mistake_key,first_wrong_at,last_wrong_at,wrong_count,review_status)
+         values($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,now(),now(),1,'new')
+         on conflict(user_id,mistake_key) where mistake_key is not null do update set
+          exam_attempt_id=excluded.exam_attempt_id,student_answer=excluded.student_answer,last_wrong_at=now(),
+          wrong_count=student_mistakes.wrong_count+1,
+          review_status=case when student_mistakes.review_status='mastered' then 'reviewing' else student_mistakes.review_status end,
+          resolved=false,updated_at=now()`,
+        [input.userId,question.subject_id,input.questionId,input.attemptId,question.topic,topicIdentity.topicKey,
+          question.question_type,question.question_text,JSON.stringify(question.options_json ?? []),
+          typeof input.selectedAnswer === "string" ? input.selectedAnswer : JSON.stringify(input.selectedAnswer ?? null),
+          typeof question.correct_answer_json === "string" ? question.correct_answer_json : JSON.stringify(question.correct_answer_json),
+          question.explanation,question.source_document_id,question.page_number ? `Page ${question.page_number}` : null,
+          `practice:${input.questionId}`]
+      );
+    }
+    await recalculateStudentTopicProgress({ userId: input.userId, subjectId: question.subject_id,
+      topic: question.topic, client });
     await client.query(`insert into learning_events(user_id,subject_id,topic,event_type,result,metadata) values($1,$2,$3,$4,$5,$6::jsonb)`,[input.userId,question.subject_id,question.topic,isCorrect?'quiz_correct':'quiz_incorrect',isCorrect,JSON.stringify({attemptId:input.attemptId,questionId:input.questionId})]);
     await client.query("COMMIT");
   } catch (error) {
@@ -453,8 +457,8 @@ export async function completePracticeExam(attemptId: string, userId: string): P
   weakTopicsRecommendation: string[];
 }> {
   const pool = getPool();
-  const attempt = await pool.query<{id:string;total_questions:number}>(
-    "SELECT id,total_questions FROM public.student_exam_attempts WHERE id=$1 AND user_id=$2",
+  const attempt = await pool.query<{id:string;total_questions:number;subject_id:string}>(
+    "SELECT id,total_questions,subject_id FROM public.student_exam_attempts WHERE id=$1 AND user_id=$2",
     [attemptId,userId]
   );
   if (!attempt.rows.length) throw new Error("محاولة التدريب غير متاحة");
@@ -502,6 +506,16 @@ export async function completePracticeExam(attemptId: string, userId: string): P
      LIMIT 3`,
     [attemptId]
   );
+
+  const { rows: attemptedTopics } = await pool.query<{ topic: string }>(
+    `select distinct aa.topic from student_exam_attempt_answers aa
+     join student_exam_attempts a on a.id=aa.attempt_id
+     where aa.attempt_id=$1 and a.user_id=$2 and aa.topic is not null`, [attemptId, userId]
+  );
+  for (const item of attemptedTopics) {
+    await recalculateStudentTopicProgress({ userId, subjectId: attempt.rows[0].subject_id,
+      topic: item.topic, reason: "quiz_completed", recordHistory: true });
+  }
 
   return {
     totalQuestions: attempt.rows[0].total_questions,

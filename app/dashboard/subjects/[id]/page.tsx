@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { forbidden, notFound } from "next/navigation";
-import { ArrowRight, BookOpen } from "lucide-react";
+import { ArrowRight, BookOpen, TrendingUp } from "lucide-react";
 import { requireProfile } from "@/lib/auth";
 import { createClient } from "@/lib/db/server";
 import { getPool } from "@/lib/db/pool";
@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { SubjectTrainingTabs } from "@/components/dashboard/subject-training-tabs";
 import { PageHeader } from "@/components/ui/page-header";
+import { Progress } from "@/components/ui/progress";
+import { getSubjectProgress } from "@/lib/learning-progress/service";
 
 export default async function SubjectDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -22,7 +24,7 @@ export default async function SubjectDetailsPage({ params }: { params: Promise<{
   const db = await createClient();
   const pool = getPool();
 
-  const [{ data: lectures }, settings, examsRes, statsRes, smartReview] = await Promise.all([
+  const [{ data: lectures }, settings, examsRes, statsRes, smartReview, learningProgress] = await Promise.all([
     db
       .from("lectures")
       .select("id, title, file_name, status, file_size_bytes, delete_after, deleted_at")
@@ -65,6 +67,7 @@ export default async function SubjectDetailsPage({ params }: { params: Promise<{
       [id]
     ),
     getSmartReviewRecommendations(profile.user_id, id),
+    getSubjectProgress(profile.user_id, id),
   ]);
 
   const repeatedTopics = statsRes.rows.map((r) => ({
@@ -99,6 +102,17 @@ export default async function SubjectDetailsPage({ params }: { params: Promise<{
               <span key={y.id} className="rounded-full border border-border bg-card px-3 py-1 text-xs font-semibold text-foreground">{y.name_ar}</span>
             ))}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-primary/15 bg-primary/3">
+        <CardContent className="space-y-4 pt-1">
+          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div><p className="flex items-center gap-2 font-extrabold"><TrendingUp className="size-4 text-primary" />تقدمك في المادة</p>
+              <p className="mt-1 text-xs text-muted-foreground">{learningProgress.subject ? `${learningProgress.subject.topicsStudied} مواضيع دُرست · ${learningProgress.subject.questionsAnswered} أسئلة` : "ابدأ بحل Quiz حتى نقدر نقيس تقدمك."}</p></div>
+            <Button nativeButton={false} variant="outline" className="w-full sm:w-auto" render={<Link href="/dashboard/progress">عرض التقدم</Link>} />
+          </div>
+          {learningProgress.subject?.masteryScore != null && <div className="space-y-2"><div className="flex justify-between text-sm"><span>الإتقان المقاس</span><strong>{learningProgress.subject.masteryScore}%</strong></div><Progress value={learningProgress.subject.masteryScore} /><p className="text-xs text-muted-foreground">{learningProgress.weakTopics.length} مواضيع تحتاج مراجعة · {learningProgress.mistakes} أخطاء حالية</p></div>}
         </CardContent>
       </Card>
 
