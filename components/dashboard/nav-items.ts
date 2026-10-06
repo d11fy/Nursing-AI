@@ -16,6 +16,8 @@ import {
   BrainCircuit,
   FileCheck2,
   HelpCircle,
+  TrendingUp,
+  CircleAlert,
   type LucideIcon,
 } from "lucide-react";
 
@@ -30,6 +32,8 @@ export const studentNavItems: NavItem[] = [
   { href: "/dashboard/chat", label: "المحادثة", icon: MessageSquare },
   { href: "/dashboard/history", label: "المحادثات السابقة", icon: History },
   { href: "/dashboard/subjects", label: "المواد", icon: BookOpen },
+  { href: "/dashboard/progress", label: "تقدمي", icon: TrendingUp },
+  { href: "/dashboard/mistakes", label: "أخطائي", icon: CircleAlert },
   { href: "/dashboard/profile", label: "حسابي", icon: UserRound },
 ];
 

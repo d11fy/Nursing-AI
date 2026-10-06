@@ -6,6 +6,7 @@ import { getAIProvider } from '@/lib/ai';
 import { logUsage } from '@/lib/usage';
 import { getNursingTutorInstructions } from '@/lib/ai/prompts/nursing-tutor';
 import type { TutorAnswer, PendingQuiz } from './answer';
+import { recalculateStudentTopicProgress } from '@/lib/learning-progress/service';
 
 type Summary={conversation_id:string;summary:string;current_subject_id:string|null;current_document_id:string|null;current_attachment_id:string|null;
   current_topic:string|null;pending_quiz_json:PendingQuiz|null;turns_since_summary:number;last_summarized_message_id:string|null};
@@ -17,9 +18,10 @@ export async function loadTutorContext(userId:string,conversationId:string,quest
     getStudentSubjects(userId),db.query<Summary>('select * from conversation_summaries where conversation_id=$1 and user_id=$2',[conversationId,userId]),
     db.query<{memory_key:string;memory_value_json:unknown}>(`select memory_key,memory_value_json from student_memory where user_id=$1
       and memory_type='preference' order by importance desc,updated_at desc limit 8`,[userId]),
-    db.query<{topic:string;correct:number;incorrect:number;last_studied:string}>(`select topic,
-      count(*) filter(where event_type='quiz_correct')::int correct,count(*) filter(where event_type in ('quiz_incorrect','flashcard_miss'))::int incorrect,
-      max(created_at)::text last_studied from learning_events where user_id=$1 group by topic order by max(created_at) desc limit 12`,[userId]),
+    db.query<{topic:string;correct:number;incorrect:number;last_studied:string;mastery_score:number}>(`select topic_name as topic,
+      correct_answers::int as correct,wrong_answers::int as incorrect,last_activity_at::text as last_studied,mastery_score::int
+      from student_topic_progress where user_id=$1 and evidence_count>0
+      order by last_activity_at desc nulls last limit 12`,[userId]),
   ]);
   if(!profile.rows[0]) throw new Error('Student profile not found');
   let summary=state.rows[0]??null;
@@ -58,15 +60,9 @@ export async function recordTutorTurn(input:{userId:string;conversationId:string
         values($1,$2,$3,$4,$5,$6,$7,$8::jsonb) on conflict(message_id) do nothing returning id`,[input.userId,input.conversationId,input.messageId,input.subjectId,
         input.pendingQuiz&&answer.quiz_result!=='not_answered'?input.pendingQuiz.topic:answer.topic,event,
         event==='quiz_correct'?true:event==='quiz_incorrect'?false:null,JSON.stringify({answer_origin:answer.answer_origin})]);
-      if(recorded.rows.length && answer.quiz_result!=='not_answered'&&input.pendingQuiz) {
-        const key=`v2:${input.pendingQuiz.topic.toLowerCase().replace(/[^\p{L}\p{N}]+/gu,'-').slice(0,76)}`;
-        await db.query(`insert into student_topic_progress(user_id,subject_id,topic_key,topic_name,questions_answered,correct_answers,wrong_answers,mastery_score,generation,last_studied_at)
-          values($1,$2,$3,$4,1,$5,$6,$7,2,now()) on conflict(user_id,subject_id,topic_key) do update set
-          questions_answered=student_topic_progress.questions_answered+1,correct_answers=student_topic_progress.correct_answers+excluded.correct_answers,
-          wrong_answers=student_topic_progress.wrong_answers+excluded.wrong_answers,
-          mastery_score=round(100.0*(student_topic_progress.correct_answers+excluded.correct_answers)/(student_topic_progress.questions_answered+1),2),
-          generation=2,last_studied_at=now(),updated_at=now()`,[input.userId,input.subjectId,key,input.pendingQuiz.topic,
-          answer.quiz_result==='correct'?1:0,answer.quiz_result==='incorrect'?1:0,answer.quiz_result==='correct'?100:0]);
+      if(recorded.rows.length && answer.quiz_result!=='not_answered'&&input.pendingQuiz&&input.subjectId) {
+        await recalculateStudentTopicProgress({ userId: input.userId, subjectId: input.subjectId,
+          topic: input.pendingQuiz.topic, client: db });
       }
     }
     if(answer.preference) await db.query(`insert into student_memory(user_id,memory_type,memory_key,memory_value_json,importance,generation)

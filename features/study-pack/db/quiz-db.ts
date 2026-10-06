@@ -1,5 +1,7 @@
 import "server-only";
 import { identityDb, withIdentity } from "@/lib/tutor/db";
+import { normalizeTopicIdentity } from "@/lib/learning-progress/formula";
+import { recalculateStudentTopicProgress } from "@/lib/learning-progress/service";
 import type { QuizDifficulty, QuizItem, QuizQuestionItem, StudentMistakeItem } from "../types";
 
 export async function getLatestQuiz(
@@ -175,14 +177,21 @@ export async function submitQuizAnswer(params: {
     // 1. Verify attempt ownership & get question info
     const infoRes = await client.query<{
       attempt_id: string;
+      quiz_id: string;
       study_pack_id: string;
       subject_id: string;
       correct_answer: string;
       rationale: string;
       topic: string;
+      question_type: string;
+      question: string;
+      options_json: string[];
+      source_reference: string | null;
+      document_id: string | null;
     }>(
-      `SELECT a.id as attempt_id, sp.id as study_pack_id, sp.subject_id,
-              q.correct_answer, q.rationale, q.topic
+      `SELECT a.id as attempt_id, sq.id as quiz_id, sp.id as study_pack_id, sp.subject_id,
+              q.correct_answer, q.rationale, q.topic,q.question_type,q.question,q.options_json,
+              q.source_reference,sp.document_id
        FROM student_quiz_attempts a
        JOIN study_pack_quizzes sq ON sq.id = a.quiz_id
        JOIN study_packs sp ON sp.id = sq.study_pack_id
@@ -197,28 +206,45 @@ export async function submitQuizAnswer(params: {
     // Standardize comparison (trim and lowercase for true/false or exact match for mcq)
     const isCorrect =
       info.correct_answer.trim().toLowerCase() === studentAnswer.trim().toLowerCase();
+    const topic = normalizeTopicIdentity(info.topic);
 
     // 2. Save answer
     await client.query(
-      `INSERT INTO student_quiz_answers (attempt_id, question_id, student_answer, is_correct)
-       VALUES ($1, $2, $3, $4)`,
-      [attemptId, questionId, studentAnswer, isCorrect]
+      `INSERT INTO student_quiz_answers (attempt_id, question_id, student_answer, is_correct, topic_key)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [attemptId, questionId, studentAnswer, isCorrect, topic.topicKey]
     );
 
     // 3. If incorrect, record mistake immediately for future "My Mistakes" & "Weak Topics"
     if (!isCorrect) {
       await client.query(
-        `INSERT INTO student_mistakes (user_id, subject_id, study_pack_id, question_id, topic, student_answer, correct_answer, attempt_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        `INSERT INTO student_mistakes (user_id,subject_id,study_pack_id,question_id,quiz_id,topic,topic_key,
+          question_type,question_snapshot,options_snapshot,student_answer,correct_answer,rationale_snapshot,
+          source_document_id,source_reference,attempt_id,mistake_key,first_wrong_at,last_wrong_at,wrong_count,review_status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13,$14,$15,$16,$17,now(),now(),1,'new')
+         ON CONFLICT (user_id,mistake_key) WHERE mistake_key is not null DO UPDATE SET
+          student_answer=excluded.student_answer,correct_answer=excluded.correct_answer,attempt_id=excluded.attempt_id,
+          last_wrong_at=now(),wrong_count=student_mistakes.wrong_count+1,
+          review_status=case when student_mistakes.review_status='mastered' then 'reviewing' else student_mistakes.review_status end,
+          resolved=false,updated_at=now()`,
         [
           userId,
           info.subject_id,
           info.study_pack_id,
           questionId,
+          info.quiz_id,
           info.topic,
+          topic.topicKey,
+          info.question_type,
+          info.question,
+          JSON.stringify(info.options_json),
           studentAnswer,
           info.correct_answer,
+          info.rationale,
+          info.document_id,
+          info.source_reference,
           attemptId,
+          `study-pack:${questionId}`,
         ]
       );
 
@@ -247,6 +273,8 @@ export async function submitQuizAnswer(params: {
       );
     }
 
+    await recalculateStudentTopicProgress({ userId, subjectId: info.subject_id, topic: info.topic, client });
+
     return {
       isCorrect,
       correctAnswer: info.correct_answer,
@@ -271,11 +299,14 @@ export async function completeQuizAttempt(
     const answersRes = await client.query<{
       is_correct: boolean;
       topic: string;
+      subject_id: string;
     }>(
-      `SELECT ans.is_correct, q.topic
+      `SELECT ans.is_correct, q.topic,sp.subject_id
        FROM student_quiz_answers ans
        JOIN study_pack_questions q ON q.id = ans.question_id
        JOIN student_quiz_attempts a ON a.id = ans.attempt_id
+       JOIN study_pack_quizzes sq ON sq.id=a.quiz_id
+       JOIN study_packs sp ON sp.id=sq.study_pack_id
        WHERE ans.attempt_id = $1 AND a.user_id = $2`,
       [attemptId, userId]
     );
@@ -295,6 +326,11 @@ export async function completeQuizAttempt(
        WHERE id = $4 AND user_id = $5`,
       [score, correctCount, totalQuestions, attemptId, userId]
     );
+
+    for (const topic of Array.from(new Set(rows.map((row) => row.topic).filter(Boolean)))) {
+      await recalculateStudentTopicProgress({ userId, subjectId: rows[0].subject_id, topic, client,
+        reason: "quiz_completed", recordHistory: true });
+    }
 
     return {
       attemptId,
