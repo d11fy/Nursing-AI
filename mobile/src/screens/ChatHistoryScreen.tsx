@@ -27,8 +27,8 @@ export function ChatHistoryScreen() {
     try {
       const res = await apiFetch("/api/conversations");
       setConversations(res.conversations || []);
-    } catch (err) {
-      console.warn("Failed loading history:", err);
+    } catch {
+      setConversations([]);
     } finally {
       setLoading(false);
     }

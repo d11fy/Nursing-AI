@@ -1,32 +1,37 @@
 import { Preferences } from "@capacitor/preferences";
 import { getSecureItem, setSecureItem, removeSecureItem } from "./secureStorage";
 
-// Default Production Backend URL
 export const DEFAULT_SERVER_URL = "https://nursing.alisohail.tech";
 
 const KEY_SESSION_TOKEN = "nursing_mobile_session_token";
 const KEY_DEVICE_TOKEN = "nursing_mobile_device_token";
-const KEY_SERVER_URL = "nursing_mobile_server_url";
 
 let cachedSessionToken: string | null = null;
 let cachedDeviceToken: string | null = null;
-let cachedServerUrl: string | null = null;
 
 export async function getServerUrl(): Promise<string> {
-  if (cachedServerUrl) return cachedServerUrl;
-  try {
-    const { value } = await Preferences.get({ key: KEY_SERVER_URL });
-    cachedServerUrl = value || DEFAULT_SERVER_URL;
-  } catch {
-    cachedServerUrl = DEFAULT_SERVER_URL;
-  }
-  return cachedServerUrl;
+  return import.meta.env.DEV ? "" : DEFAULT_SERVER_URL;
 }
 
-export async function setServerUrl(url: string): Promise<void> {
-  const clean = url.trim().replace(/\/+$/, "");
-  cachedServerUrl = clean;
-  await Preferences.set({ key: KEY_SERVER_URL, value: clean });
+export function resolveOfficialUrl(value: string): string {
+  const base = import.meta.env.DEV && typeof window !== "undefined" ? window.location.origin : DEFAULT_SERVER_URL;
+  const resolved = new URL(value, base);
+  if (!import.meta.env.DEV && resolved.origin !== new URL(DEFAULT_SERVER_URL).origin) {
+    throw new Error("External URL is not allowed");
+  }
+  return resolved.toString();
+}
+
+function requireApiPath(endpoint: string): string {
+  if (!endpoint.startsWith("/api/")) {
+    throw new Error("API endpoint must be a local /api/ path");
+  }
+  return endpoint;
+}
+
+async function buildApiUrl(endpoint: string): Promise<string> {
+  const serverUrl = await getServerUrl();
+  return `${serverUrl}${requireApiPath(endpoint)}`;
 }
 
 export async function getTokens(): Promise<{ sessionToken: string | null; deviceToken: string | null }> {
@@ -68,6 +73,14 @@ export async function clearTokens(): Promise<void> {
   } catch {}
 }
 
+async function expireRejectedSession(hadSession: boolean): Promise<void> {
+  if (!hadSession) return;
+  await clearTokens();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("nursing:auth-expired"));
+  }
+}
+
 export class ApiError extends Error {
   status: number;
   data: any;
@@ -83,10 +96,8 @@ export async function apiFetch<T = any>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const serverUrl = await getServerUrl();
   const { sessionToken, deviceToken } = await getTokens();
-
-  const url = endpoint.startsWith("http") ? endpoint : `${serverUrl}${endpoint.startsWith("/") ? "" : "/"}${endpoint}`;
+  const url = await buildApiUrl(endpoint);
 
   const headers = new Headers(options.headers || {});
   if (!headers.has("Content-Type") && !(options.body instanceof FormData)) {
@@ -116,6 +127,7 @@ export async function apiFetch<T = any>(
   }
 
   if (!res.ok) {
+    if (res.status === 401) await expireRejectedSession(Boolean(sessionToken));
     const errorMsg = data?.error || (typeof data === "string" ? data : `خطأ (${res.status})`);
     throw new ApiError(errorMsg, res.status, data);
   }
@@ -124,9 +136,8 @@ export async function apiFetch<T = any>(
 }
 
 export async function apiUpload<T = any>(endpoint: string, formData: FormData): Promise<T> {
-  const serverUrl = await getServerUrl();
   const { sessionToken, deviceToken } = await getTokens();
-  const url = endpoint.startsWith("http") ? endpoint : `${serverUrl}${endpoint.startsWith("/") ? "" : "/"}${endpoint}`;
+  const url = await buildApiUrl(endpoint);
 
   const headers = new Headers();
   if (sessionToken) headers.set("Authorization", `Bearer ${sessionToken}`);
@@ -140,6 +151,7 @@ export async function apiUpload<T = any>(endpoint: string, formData: FormData): 
 
   const data = await res.json().catch(() => null);
   if (!res.ok) {
+    if (res.status === 401) await expireRejectedSession(Boolean(sessionToken));
     throw new ApiError(data?.error || `خطأ في الرفع (${res.status})`, res.status, data);
   }
   return data as T;
@@ -156,9 +168,8 @@ export async function apiStream(
   },
   signal?: AbortSignal
 ): Promise<void> {
-  const serverUrl = await getServerUrl();
   const { sessionToken, deviceToken } = await getTokens();
-  const url = `${serverUrl}${endpoint.startsWith("/") ? "" : "/"}${endpoint}`;
+  const url = await buildApiUrl(endpoint);
 
   const headers = new Headers({
     "Content-Type": "application/json",
@@ -177,6 +188,7 @@ export async function apiStream(
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
+      if (res.status === 401) await expireRejectedSession(Boolean(sessionToken));
       throw new Error(data.error || "تعذر إكمال المحادثة، جرب ثانية.");
     }
 

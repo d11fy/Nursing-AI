@@ -36,8 +36,8 @@ export function MistakesScreen() {
       setMistakes(res.mistakes || []);
       setSubjects(res.subjects || []);
       setCurrentCount(res.currentCount || 0);
-    } catch (err) {
-      console.warn("Failed fetching mistakes:", err);
+    } catch {
+      setMistakes([]);
     } finally {
       setLoading(false);
     }

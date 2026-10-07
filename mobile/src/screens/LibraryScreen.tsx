@@ -40,8 +40,8 @@ export function LibraryScreen() {
 
       const res = await apiFetch(`/api/library?${params.toString()}`);
       setResources(res.items || res.resources || []);
-    } catch (err) {
-      console.warn("Failed fetching library:", err);
+    } catch {
+      setResources([]);
     } finally {
       setLoading(false);
     }

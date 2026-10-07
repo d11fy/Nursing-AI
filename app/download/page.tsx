@@ -1,21 +1,16 @@
-import Link from "next/link";
 import { 
   Download, 
   Smartphone, 
   ShieldCheck, 
-  CheckCircle2, 
   HardDrive, 
   Calendar, 
   Lock, 
   Zap, 
-  ArrowLeft,
   FileCheck2,
   AlertTriangle
 } from "lucide-react";
 import { LandingHeader } from "@/components/landing/header";
 import { LandingFooter } from "@/components/landing/footer";
-import { Button } from "@/components/ui/button";
-import { BrandMark } from "@/components/brand/brand-mark";
 import { currentProfile } from "@/lib/auth/session";
 import { getAppVersionInfo } from "@/lib/version/app-version";
 
@@ -24,6 +19,7 @@ export const dynamic = "force-dynamic";
 export const metadata = {
   title: "تحميل تطبيق Nursing AI للأندرويد | الإصدار الرسمي",
   description: "حمّل تطبيق Nursing AI لهواتف الأندرويد برابط مباشر وسريع. نسخة موقعة ومحمية بالتخزين المشفر.",
+  alternates: { canonical: "/download" },
 };
 
 export default async function DownloadPage() {
@@ -56,7 +52,7 @@ export default async function DownloadPage() {
               </h1>
 
               <p className="mx-auto mt-5 max-w-2xl text-base text-muted-foreground sm:text-lg">
-                رفيقك الذكي في دراسة التمريض. تجربة هاتف أصلية فائقة السرعة مع المساعد السريري، بطاقات الاستذكار (Flashcards)، بنك الأسئلة، وتخزين مشفر بالكامل.
+                واجهة موبايل محلية مدمجة داخل التطبيق، مع المساعد التعليمي وStudy Pack والبطاقات والاختبارات والتخزين الآمن للجلسة.
               </p>
             </div>
 
@@ -79,7 +75,7 @@ export default async function DownloadPage() {
                     <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground sm:justify-start">
                       <span className="flex items-center gap-1">
                         <HardDrive className="size-3.5 text-primary" />
-                        {versionInfo.file_size || "3.2 MB"}
+                        {versionInfo.file_size || "الحجم غير متوفر"}
                       </span>
                       <span className="flex items-center gap-1">
                         <ShieldCheck className="size-3.5 text-emerald-500" />
@@ -100,7 +96,7 @@ export default async function DownloadPage() {
                 {/* Primary Action Button */}
                 <div className="mt-8 flex flex-col gap-3">
                   <a
-                    href="/api/download/apk"
+                    href={versionInfo.apk_url}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-6 py-4 text-base font-bold text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:bg-primary/95 hover:shadow-xl active:scale-[0.99]"
                     download={`nursing-ai-v${versionInfo.latest_version}.apk`}
                   >
@@ -113,7 +109,7 @@ export default async function DownloadPage() {
                       <FileCheck2 className="size-3.5" /> موقّع بشهادة أمان رقمية
                     </span>
                     <a 
-                      href="/downloads/nursing-ai-latest.apk" 
+                      href={versionInfo.apk_url}
                       className="text-primary hover:underline"
                     >
                       رابط مباشر بديل
@@ -150,8 +146,8 @@ export default async function DownloadPage() {
                   <ShieldCheck className="size-5" />
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-foreground">تحديثات تلقائية ذكية</h4>
-                  <p className="text-[11px] text-muted-foreground">تنبيه فوري داخل التطبيق عند كل إصدار</p>
+                  <h4 className="text-xs font-bold text-foreground">تنبيهات تحديث داخل التطبيق</h4>
+                  <p className="text-[11px] text-muted-foreground">يفحص الإصدار المنشور عند فتح التطبيق</p>
                 </div>
               </div>
             </div>
@@ -179,7 +175,7 @@ export default async function DownloadPage() {
                   <h3 className="text-sm font-bold text-foreground">تنزيل ملف الـ APK</h3>
                 </div>
                 <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                  اضغط على زر "تحميل تطبيق Nursing AI للأندرويد" أعلاه لحفظ ملف التطبيق على هاتفك.
+                  اضغط على زر &quot;تحميل تطبيق Nursing AI للأندرويد&quot; أعلاه لحفظ ملف التطبيق على هاتفك.
                 </p>
               </div>
 
@@ -191,7 +187,7 @@ export default async function DownloadPage() {
                   <h3 className="text-sm font-bold text-foreground">فتح الملف بعد التنزيل</h3>
                 </div>
                 <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                  عند اكتمال التنزيل، انقر على الإشعار، أو افتح تطبيق "الملفات" (Files) ثم مجلد "التنزيلات" (Downloads).
+                  عند اكتمال التنزيل، انقر على الإشعار، أو افتح تطبيق &quot;الملفات&quot; (Files) ثم مجلد &quot;التنزيلات&quot; (Downloads).
                 </p>
               </div>
 
@@ -203,7 +199,7 @@ export default async function DownloadPage() {
                   <h3 className="text-sm font-bold text-foreground">السماح بالتثبيت</h3>
                 </div>
                 <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                  إذا ظهر تنبيه أمان، اضغط على "الإعدادات" ثم فعّل "السماح بالتثبيت من هذا المصدر" (Install Unknown Apps) لمتصفحك.
+                  إذا ظهر تنبيه أمان، اضغط على &quot;الإعدادات&quot; ثم فعّل &quot;السماح بالتثبيت من هذا المصدر&quot; (Install Unknown Apps) لمتصفحك.
                 </p>
               </div>
 
@@ -215,7 +211,7 @@ export default async function DownloadPage() {
                   <h3 className="text-sm font-bold text-foreground">التثبيت والبدء فوراً</h3>
                 </div>
                 <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                  اضغط على "تثبيت" (Install)، ثم افتح التطبيق وسجل الدخول بحسابك الجامعي لتجد كافة محاضراتك ومحادثاتك.
+                  اضغط على &quot;تثبيت&quot; (Install)، ثم افتح التطبيق وسجل الدخول بحسابك الجامعي لتجد كافة محاضراتك ومحادثاتك.
                 </p>
               </div>
             </div>

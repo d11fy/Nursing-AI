@@ -24,8 +24,8 @@ export function ProgressScreen() {
     try {
       const res = await apiFetch("/api/learning-progress");
       setData(res);
-    } catch (err) {
-      console.warn("Failed fetching progress:", err);
+    } catch {
+      setData(null);
     } finally {
       setLoading(false);
     }

@@ -8,6 +8,8 @@ import { archiveSubject, createAcademicYear, createSubject, setStudentAcademicYe
 import { z } from "zod";
 import { revokeAllUserSessions } from "@/lib/auth/session-store";
 import { identityDb } from "@/lib/tutor/db";
+import { getPool } from "@/lib/db/pool";
+import { setAppVersionInfo } from "@/lib/version/app-version";
 
 export async function setStudentStatusAction(formData: FormData) {
   await requireAdminProfile();
@@ -179,4 +181,72 @@ export async function updateSettingsAction(
 
   revalidatePath("/admin/settings");
   return { success: "تم حفظ الإعدادات" };
+}
+
+export async function updatePublicSiteAction(
+  _prev: SettingsActionState,
+  formData: FormData
+): Promise<SettingsActionState> {
+  await requireAdminProfile();
+  const parsed = z.object({
+    contactEmail: z.union([z.literal(""), z.string().email()]),
+    whatsapp: z.string().max(40),
+    refundPolicy: z.string().max(4000),
+  }).safeParse({
+    contactEmail: String(formData.get("contactEmail") ?? "").trim(),
+    whatsapp: String(formData.get("whatsapp") ?? "").trim(),
+    refundPolicy: String(formData.get("refundPolicy") ?? "").trim(),
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "بيانات غير صالحة" };
+
+  await getPool().query(
+    `insert into public.settings(key,value) values('public_site',$1::jsonb)
+     on conflict(key) do update set value=excluded.value,updated_at=now()`,
+    [JSON.stringify({
+      contact_email: parsed.data.contactEmail,
+      whatsapp: parsed.data.whatsapp,
+      refund_policy: parsed.data.refundPolicy,
+    })]
+  );
+  revalidatePath("/");
+  revalidatePath("/privacy");
+  revalidatePath("/subscription-policy");
+  revalidatePath("/admin/settings");
+  return { success: "تم حفظ معلومات الموقع" };
+}
+
+export async function updateMobileReleaseAction(
+  _prev: SettingsActionState,
+  formData: FormData
+): Promise<SettingsActionState> {
+  await requireAdminProfile();
+  const parsed = z.object({
+    latestVersion: z.string().regex(/^\d+\.\d+\.\d+$/, "استخدم صيغة 1.0.0"),
+    latestVersionCode: z.coerce.number().int().positive(),
+    apkUrl: z.string().min(1),
+    releaseNotes: z.string().min(3).max(4000),
+    forceUpdate: z.boolean(),
+  }).safeParse({
+    latestVersion: formData.get("latestVersion"),
+    latestVersionCode: formData.get("latestVersionCode"),
+    apkUrl: formData.get("apkUrl"),
+    releaseNotes: formData.get("releaseNotes"),
+    forceUpdate: formData.get("forceUpdate") === "on",
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "بيانات الإصدار غير صالحة" };
+
+  try {
+    await setAppVersionInfo({
+      latest_version: parsed.data.latestVersion,
+      latest_version_code: parsed.data.latestVersionCode,
+      apk_url: parsed.data.apkUrl,
+      release_notes: parsed.data.releaseNotes,
+      force_update: parsed.data.forceUpdate,
+    });
+  } catch {
+    return { error: "تعذر حفظ الإصدار. تأكد من رقم الإصدار ورابط APK الرسمي." };
+  }
+  revalidatePath("/download");
+  revalidatePath("/admin/settings");
+  return { success: "تم نشر إعداد الإصدار" };
 }

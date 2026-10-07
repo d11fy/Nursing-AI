@@ -29,9 +29,8 @@ export function useAppUpdateCheck() {
         if (isNewerCode || (isNewerName && compareVersions(data.latest_version, APP_VERSION_NAME) > 0)) {
           setUpdateInfo(data);
         }
-      } catch (err) {
-        // Silently catch version check failure (offline or temporary issue)
-        console.warn("[UpdateCheck] Failed checking app version:", err);
+      } catch {
+        // Offline and temporary failures are handled by the normal network state.
       }
     }
 

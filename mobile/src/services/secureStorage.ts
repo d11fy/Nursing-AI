@@ -38,8 +38,7 @@ export async function getSecureItem(key: string): Promise<string | null> {
       }
 
       return null;
-    } catch (err) {
-      console.warn(`[SecureStorage] Error getting key "${key}":`, err);
+    } catch {
       return null;
     }
   }
@@ -64,9 +63,8 @@ export async function setSecureItem(key: string, value: string): Promise<void> {
         await Preferences.remove({ key });
       } catch {}
       return;
-    } catch (err) {
-      console.error(`[SecureStorage] Error setting key "${key}":`, err);
-      throw err;
+    } catch (error) {
+      throw error;
     }
   }
 
@@ -83,9 +81,7 @@ export async function removeSecureItem(key: string): Promise<void> {
   if (Capacitor.isNativePlatform()) {
     try {
       await NativeSecureStorage.remove({ key });
-    } catch (err) {
-      console.warn(`[SecureStorage] Error removing key "${key}":`, err);
-    }
+    } catch {}
     // Also remove any legacy unencrypted key
     try {
       await Preferences.remove({ key });
@@ -107,9 +103,7 @@ export async function clearSecureStorage(): Promise<void> {
   if (Capacitor.isNativePlatform()) {
     try {
       await NativeSecureStorage.clear();
-    } catch (err) {
-      console.warn("[SecureStorage] Error clearing secure vault:", err);
-    }
+    } catch {}
     return;
   }
 

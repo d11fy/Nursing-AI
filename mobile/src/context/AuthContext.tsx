@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { apiFetch, clearTokens, getTokens, saveTokens } from "../services/api";
+import { ApiError, apiFetch, clearTokens, getTokens, saveTokens } from "../services/api";
 
 export interface Profile {
   id?: string;
@@ -68,16 +68,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await clearTokens();
         setProfile(null);
       }
-    } catch (err) {
+    } catch {
       // If network error, don't necessarily clear tokens, might be offline
-      console.warn("Failed checking session:", err);
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
+    // Session hydration is intentionally started once when the provider mounts.
     checkSession();
+
+    const handleExpiredSession = () => {
+      setProfile(null);
+      setAccess(null);
+      setAiUsage(null);
+      setLoading(false);
+    };
+    window.addEventListener("nursing:auth-expired", handleExpiredSession);
+    return () => window.removeEventListener("nursing:auth-expired", handleExpiredSession);
   }, []);
 
   async function login(email: string, password: string) {
@@ -133,7 +142,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAiUsage(res.aiUsage || null);
       }
     } catch (e) {
-      console.warn("refreshAuth error", e);
+      if (e instanceof ApiError && e.status === 401) {
+        await clearTokens();
+        setProfile(null);
+        setAccess(null);
+        setAiUsage(null);
+        return;
+      }
+      // Keep the existing session during temporary network failures.
     }
   }
 

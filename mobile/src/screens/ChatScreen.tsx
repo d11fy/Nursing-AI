@@ -85,7 +85,7 @@ export function ChatScreen({
             setSubjectId(res.conversation.subject_id);
           }
         })
-        .catch((e) => console.warn("Failed loading conversation:", e));
+        .catch(() => setMessages([]));
     }
   }, [initialConversationId]);
 

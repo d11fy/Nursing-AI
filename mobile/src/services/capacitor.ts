@@ -13,15 +13,11 @@ export async function initNativePlugins(): Promise<void> {
   try {
     await StatusBar.setStyle({ style: Style.Dark });
     await StatusBar.setBackgroundColor({ color: "#0f5d75" });
-  } catch (e) {
-    console.warn("StatusBar setup error:", e);
-  }
+  } catch {}
 
   try {
     await SplashScreen.hide();
-  } catch (e) {
-    console.warn("SplashScreen hide error:", e);
-  }
+  } catch {}
 }
 
 export async function checkNetworkStatus(): Promise<boolean> {
@@ -65,7 +61,7 @@ export async function openExternalUrl(url: string): Promise<void> {
     } else {
       window.open(url, "_blank");
     }
-  } catch (err) {
+  } catch {
     window.open(url, "_blank");
   }
 }

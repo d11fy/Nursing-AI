@@ -51,8 +51,8 @@ export function StudyPackScreen({
           if (cardsRes.cards) setFlashcards(cardsRes.cards);
         } catch {}
       }
-    } catch (err: any) {
-      console.warn("Failed loading workspace:", err);
+    } catch {
+      setData(null);
     } finally {
       setLoading(false);
     }

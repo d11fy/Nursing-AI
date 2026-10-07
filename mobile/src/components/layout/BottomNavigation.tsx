@@ -1,6 +1,6 @@
 import React from "react";
 import { LayoutGrid, BookOpen, MessageSquare, BookMarked, User } from "lucide-react";
-import { useNavigation, TabType } from "../../context/NavigationContext";
+import { useNavigation } from "../../context/NavigationContext";
 
 export function BottomNavigation() {
   const { activeTab, switchTab } = useNavigation();
@@ -11,7 +11,7 @@ export function BottomNavigation() {
         {/* Home */}
         <button
           onClick={() => switchTab("home")}
-          className={`flex flex-1 flex-col items-center justify-center py-1 transition-transform active:scale-90 ${
+          className={`flex min-h-12 flex-1 flex-col items-center justify-center py-1 transition-transform active:scale-95 ${
             activeTab === "home" ? "text-primary font-bold" : "text-slate-400 hover:text-slate-600"
           }`}
         >
@@ -22,7 +22,7 @@ export function BottomNavigation() {
         {/* Subjects */}
         <button
           onClick={() => switchTab("subjects")}
-          className={`flex flex-1 flex-col items-center justify-center py-1 transition-transform active:scale-90 ${
+          className={`flex min-h-12 flex-1 flex-col items-center justify-center py-1 transition-transform active:scale-95 ${
             activeTab === "subjects" ? "text-primary font-bold" : "text-slate-400 hover:text-slate-600"
           }`}
         >
@@ -31,20 +31,21 @@ export function BottomNavigation() {
         </button>
 
         {/* Chat - Prominent Center Button */}
-        <div className="flex flex-1 items-center justify-center -mt-5">
+        <div className="-mt-4 flex flex-1 flex-col items-center justify-center">
           <button
             onClick={() => switchTab("chat")}
-            className="flex size-14 items-center justify-center rounded-full bg-primary text-white shadow-lg shadow-primary/30 transition-transform active:scale-95 border-4 border-white dark:border-slate-900"
+            className={`flex size-14 items-center justify-center rounded-full border-4 border-white bg-primary text-white shadow-lg shadow-primary/30 transition-transform active:scale-95 dark:border-slate-900 ${activeTab === "chat" ? "ring-2 ring-primary/35 ring-offset-2 ring-offset-white dark:ring-offset-slate-900" : ""}`}
             aria-label="المحادثة مع AI"
           >
             <MessageSquare className="size-6" />
           </button>
+          <span className={`mt-0.5 text-[10px] ${activeTab === "chat" ? "font-bold text-primary" : "text-slate-400"}`}>المحادثة</span>
         </div>
 
         {/* Library */}
         <button
           onClick={() => switchTab("library")}
-          className={`flex flex-1 flex-col items-center justify-center py-1 transition-transform active:scale-90 ${
+          className={`flex min-h-12 flex-1 flex-col items-center justify-center py-1 transition-transform active:scale-95 ${
             activeTab === "library" ? "text-primary font-bold" : "text-slate-400 hover:text-slate-600"
           }`}
         >
@@ -55,7 +56,7 @@ export function BottomNavigation() {
         {/* Profile */}
         <button
           onClick={() => switchTab("profile")}
-          className={`flex flex-1 flex-col items-center justify-center py-1 transition-transform active:scale-90 ${
+          className={`flex min-h-12 flex-1 flex-col items-center justify-center py-1 transition-transform active:scale-95 ${
             activeTab === "profile" ? "text-primary font-bold" : "text-slate-400 hover:text-slate-600"
           }`}
         >
