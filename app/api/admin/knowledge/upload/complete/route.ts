@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { after } from "next/server";
 import { getAdminProfileOrNull } from "@/lib/auth";
 import {identityDb} from "@/lib/tutor/db";
+import { drainKnowledgeJobs, enqueueDocument, registerDocument } from "@/lib/tutor/ingestion";
 
 export async function POST(request: Request) {
   try {
@@ -134,9 +136,14 @@ export async function POST(request: Request) {
       [documentId, uploadId]
     );
 
+    const knowledgeDocumentId = await registerDocument(documentId);
+    await enqueueDocument(knowledgeDocumentId);
+    after(() => drainKnowledgeJobs());
+
     return NextResponse.json({
       success: true,
       documentId,
+      knowledgeDocumentId,
       message: "اكتمل الرفع بنجاح",
     });
   } catch (err) {

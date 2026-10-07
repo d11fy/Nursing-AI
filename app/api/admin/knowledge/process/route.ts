@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { after } from "next/server";
 import { getAdminProfileOrNull } from "@/lib/auth";
-import { enqueueDocument,registerDocument } from '@/lib/tutor/ingestion';
+import { drainKnowledgeJobs,enqueueDocument,registerDocument } from '@/lib/tutor/ingestion';
 import { getPool } from "@/lib/db/pool";
 
 export async function GET(request: Request) {
@@ -18,7 +19,9 @@ export async function GET(request: Request) {
 
     const pool = getPool();
     const { rows } = await pool.query(
-      "SELECT id, status, chunk_count, error_message FROM public.documents WHERE id=$1",
+      `SELECT k.id, k.status, k.chunk_count, k.error_message
+       FROM public.knowledge_documents k
+       WHERE k.legacy_document_id=$1`,
       [documentId]
     );
 
@@ -54,6 +57,7 @@ export async function POST(request: Request) {
     // Execute heavy RAG extraction, chunking, and embedding generation in the background.
     // This responds in milliseconds to the client, preventing reverse-proxy 502/504 Bad Gateway timeouts.
     await enqueueDocument(await registerDocument(documentId));
+    after(() => drainKnowledgeJobs());
 
     return NextResponse.json({
       success: true,

@@ -99,7 +99,7 @@ test('large file follow-ups stay bounded and missing cached pages never fall bac
 test('explicit reindex rebuilds a ready source without repeating paid embeddings',async t=>{
  t.mock.method(globalThis,'fetch',async()=>{throw new Error('Cached reindex must not call OpenAI');});
  const document=(await workerDb.query<{id:string}>('select id from knowledge_documents where legacy_document_id=$1',[docId])).rows[0];assert.ok(document);
- await enqueueDocument(document.id,true);assert.equal((await workerDb.query('select status from knowledge_documents where id=$1',[document.id])).rows[0].status,'uploaded');
+ await enqueueDocument(document.id,true);const queued=(await workerDb.query<{status:string;extracted_pages_json:unknown[]}>('select status,extracted_pages_json from knowledge_documents where id=$1',[document.id])).rows[0];assert.equal(queued.status,'uploaded');assert.deepEqual(queued.extracted_pages_json,[]);
  await processKnowledgeDocument(document.id);const ready=(await workerDb.query('select status,index_version from knowledge_documents where id=$1',[document.id])).rows[0];assert.equal(ready.status,'ready');assert.equal(ready.index_version,3);
 });
 test('ordinary general knowledge streams while unsupported clinical follow-ups are withheld',async t=>{

@@ -68,7 +68,7 @@ export async function enqueueDocument(documentId:string, reindex=false) {
     const queued=await db.query(`insert into knowledge_jobs(document_id) values($1) on conflict(document_id) do update
     set status='queued',attempts=0,available_at=now(),lease_until=null,error_message=null,updated_at=now()
     where knowledge_jobs.status<>'running' or knowledge_jobs.lease_until<now() returning document_id`,[documentId]);
-    if(reindex&&queued.rows.length)await db.query("update knowledge_documents set status='uploaded',index_version=0,error_message=null,updated_at=now() where id=$1",[documentId]);
+    if(reindex&&queued.rows.length)await db.query("update knowledge_documents set status='uploaded',index_version=0,extracted_pages_json='[]'::jsonb,error_message=null,updated_at=now() where id=$1",[documentId]);
   },true);
 }
 export async function processKnowledgeDocument(id:string, forceExtraction=false):Promise<void> {
@@ -152,7 +152,7 @@ async function ingest(id:string,force:boolean) {
     throw error;
   }
 }
-export async function runKnowledgeJobs() {
+export async function runKnowledgeJobs():Promise<boolean> {
   const job=await withIdentity(null,async db=>{
     const result=await db.query(`select document_id from knowledge_jobs where (status='queued' and available_at<=now())
       or (status='running' and lease_until<now()) order by available_at for update skip locked limit 1`);
@@ -160,7 +160,7 @@ export async function runKnowledgeJobs() {
     await db.query("update knowledge_jobs set status='running',attempts=attempts+1,lease_until=now()+interval '5 minutes',updated_at=now() where document_id=$1",[result.rows[0].document_id]);
     return result.rows[0].document_id as string;
   },true);
-  if(!job) return;
+  if(!job) return false;
   const heartbeat=setInterval(()=>void workerDb.query("update knowledge_jobs set lease_until=now()+interval '5 minutes' where document_id=$1 and status='running'",[job]).catch(()=>{}),30_000);
   try {
     await processKnowledgeDocument(job);
@@ -175,4 +175,10 @@ export async function runKnowledgeJobs() {
     await workerDb.query(`update knowledge_jobs set status=case when attempts<3 then 'queued' else 'failed' end,
       available_at=now()+interval '1 minute',lease_until=null,error_message=$2,updated_at=now() where document_id=$1`,[job,error instanceof Error ? error.message.slice(0,600) : 'Failed']);
   } finally { clearInterval(heartbeat); }
+  return true;
+}
+export async function drainKnowledgeJobs(maxJobs=10) {
+  let processed=0;
+  while(processed<maxJobs && await runKnowledgeJobs()) processed++;
+  return processed;
 }
