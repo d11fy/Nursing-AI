@@ -36,8 +36,8 @@ test("Android and in-app update UI share one version source", () => {
   const gradle = fs.readFileSync(path.join(root, "android", "app", "build.gradle"), "utf8");
   const mobileConfig = fs.readFileSync(path.join(root, "mobile", "src", "config", "version.ts"), "utf8");
 
-  assert.equal(source.name, "1.0.0");
-  assert.equal(source.code, 1);
+  assert.equal(source.name, "1.0.1");
+  assert.equal(source.code, 2);
   assert.match(gradle, /mobile\/app-version\.json/);
   assert.match(gradle, /versionCode appVersion\.code/);
   assert.match(gradle, /versionName appVersion\.name/);
@@ -81,9 +81,9 @@ test("mobile version system: defaults and settings persistence", async () => {
 
 test("signed production APK: files exist and have valid digital signature", async () => {
   const root = process.cwd();
-  const v1Path = path.join(root, "public", "downloads", "nursing-ai-v1.0.0.apk");
+  const v1Path = path.join(root, "public", "downloads", "nursing-ai-v1.0.1.apk");
   const latestPath = path.join(root, "public", "downloads", "nursing-ai-latest.apk");
-  assert.ok(fs.existsSync(v1Path), "public/downloads/nursing-ai-v1.0.0.apk exists");
+  assert.ok(fs.existsSync(v1Path), "public/downloads/nursing-ai-v1.0.1.apk exists");
   assert.ok(fs.existsSync(latestPath), "public/downloads/nursing-ai-latest.apk exists");
 
   const stat = fs.statSync(v1Path);

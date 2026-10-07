@@ -14,13 +14,13 @@ export interface AppVersionInfo {
 }
 
 export const DEFAULT_APP_VERSION: AppVersionInfo = {
-  latest_version: "1.0.0",
-  latest_version_code: 1,
+  latest_version: "1.0.1",
+  latest_version_code: 2,
   apk_url: "/api/download/apk",
-  release_notes: "الإصدار الرسمي الأول من تطبيق Nursing AI.",
+  release_notes: "تحسين واجهة أندرويد وإظهار صندوق المحادثة وإصلاح المكتبة وحزم الدراسة.",
   force_update: false,
-  published_at: "2026-10-07T12:00:00.000Z",
-  file_size: "1.17 MB",
+  published_at: "2026-10-07T18:20:00.000Z",
+  file_size: "1.18 MB",
 };
 
 const SETTINGS_KEY = "mobile_app_version";

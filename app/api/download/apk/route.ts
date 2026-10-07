@@ -39,7 +39,7 @@ export async function GET() {
         "Content-Type": "application/vnd.android.package-archive",
         "Content-Disposition": `attachment; filename="${apkFileName}"`,
         "Content-Length": stat.size.toString(),
-        "Cache-Control": "public, max-age=3600",
+        "Cache-Control": "no-store, max-age=0",
       },
     });
   } catch {
