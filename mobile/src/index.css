@@ -56,6 +56,18 @@ button, a, input, textarea, select {
   padding-bottom: calc(max(env(safe-area-inset-bottom), 12px) + 68px);
 }
 
+/* Fill only the space between the sticky header and fixed bottom navigation. */
+.chat-viewport {
+  height: calc(100vh - max(env(safe-area-inset-top), 12px) - max(env(safe-area-inset-bottom), 12px) - 132px);
+  height: calc(100dvh - max(env(safe-area-inset-top), 12px) - max(env(safe-area-inset-bottom), 12px) - 132px);
+}
+
+/* Tailwind 4 compatibility utility used by the shared screen styles. */
+.outline-hidden {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
 /* Hide scrollbars */
 .no-scrollbar::-webkit-scrollbar {
   display: none;

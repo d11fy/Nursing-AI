@@ -17,10 +17,10 @@ import { FlashcardsViewer } from "../components/studypack/FlashcardsViewer";
 
 export function StudyPackScreen({
   id,
-  type = "lecture",
+  type,
   title,
 }: {
-  id: string;
+  id?: string;
   type?: "lecture" | "library";
   title?: string;
 }) {
@@ -28,6 +28,7 @@ export function StudyPackScreen({
 
   const [activeTab, setActiveTab] = useState<"summary" | "keypoints" | "flashcards" | "quiz">("summary");
   const [data, setData] = useState<any>(null);
+  const [errorMessage, setErrorMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
 
@@ -40,8 +41,11 @@ export function StudyPackScreen({
 
   const loadWorkspace = async () => {
     setLoading(true);
+    setErrorMessage("");
     try {
-      const res = await apiFetch(`/api/study-packs/${id}?type=${type}`);
+      if (!id) throw new Error("معرّف حزمة الدراسة غير متوفر");
+      const query = type ? `?type=${type}` : "";
+      const res = await apiFetch(`/api/study-packs/${id}${query}`);
       setData(res.workspaceData);
 
       // If flashcards already exist, load them
@@ -51,8 +55,9 @@ export function StudyPackScreen({
           if (cardsRes.cards) setFlashcards(cardsRes.cards);
         } catch {}
       }
-    } catch {
+    } catch (error) {
       setData(null);
+      setErrorMessage(error instanceof Error ? error.message : "تعذر تحميل حزمة الدراسة");
     } finally {
       setLoading(false);
     }
@@ -160,7 +165,9 @@ export function StudyPackScreen({
     return (
       <div className="rounded-3xl border border-red-200 bg-red-50 p-6 text-center space-y-3 my-6">
         <AlertCircle className="size-8 text-red-500 mx-auto" />
-        <p className="text-xs text-red-600 font-bold">تعذر العثور على حزمة الدراسة.</p>
+        <p className="text-xs text-red-700 font-bold">
+          {errorMessage || "تعذر العثور على حزمة الدراسة."}
+        </p>
         <button
           onClick={loadWorkspace}
           className="px-4 py-2 rounded-xl bg-red-600 text-white font-bold text-xs"

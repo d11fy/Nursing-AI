@@ -4,6 +4,21 @@ export default {
   darkMode: "class",
   theme: {
     extend: {
+      // Keep the mobile bundle compatible with utilities used by the web UI.
+      // The mobile app currently builds with Tailwind 3 while the web app uses Tailwind 4.
+      backgroundImage: {
+        "linear-to-l": "linear-gradient(to left, var(--tw-gradient-stops))",
+      },
+      boxShadow: {
+        xs: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+      },
+      spacing: {
+        "4.5": "1.125rem",
+      },
+      scale: {
+        97: ".97",
+        98: ".98",
+      },
       colors: {
         border: "hsl(var(--border, 214.3 31.8% 91.4%))",
         input: "hsl(var(--input, 214.3 31.8% 91.4%))",
@@ -39,6 +54,7 @@ export default {
         },
       },
       borderRadius: {
+        xs: "0.125rem",
         lg: "0.75rem",
         md: "0.5rem",
         sm: "0.25rem",

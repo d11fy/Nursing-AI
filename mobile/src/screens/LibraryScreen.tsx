@@ -8,9 +8,9 @@ interface Resource {
   title: string;
   category: string;
   description?: string | null;
-  subject_name?: string | null;
-  page_count?: number | null;
-  is_favorite?: boolean;
+  subjectName?: string | null;
+  pageCount?: number | null;
+  favorite?: boolean;
 }
 
 const CATEGORIES = [
@@ -59,12 +59,14 @@ export function LibraryScreen() {
   const toggleFavorite = async (docId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
+      const resource = resources.find((item) => item.id === docId);
+      const favorite = !resource?.favorite;
       await apiFetch("/api/library/favorites", {
-        method: "POST",
-        body: JSON.stringify({ documentId: docId }),
+        method: "PUT",
+        body: JSON.stringify({ documentId: docId, favorite }),
       });
       setResources((prev) =>
-        prev.map((r) => (r.id === docId ? { ...r, is_favorite: !r.is_favorite } : r))
+        prev.map((r) => (r.id === docId ? { ...r, favorite } : r))
       );
     } catch (err: any) {
       alert(err.message || "تعذر تحديث المفضلة");
@@ -77,8 +79,7 @@ export function LibraryScreen() {
         method: "POST",
       });
       navigate("study-pack", {
-        id: resource.id,
-        type: "library",
+        id: res.studyPackId,
         studyPackId: res.studyPackId,
         title: resource.title,
       });
@@ -87,7 +88,7 @@ export function LibraryScreen() {
     }
   };
 
-  const displayed = onlyFavorites ? resources.filter((r) => r.is_favorite) : resources;
+  const displayed = onlyFavorites ? resources.filter((r) => r.favorite) : resources;
 
   return (
     <div className="space-y-4 pb-nav">
@@ -168,7 +169,7 @@ export function LibraryScreen() {
                       {res.title}
                     </h4>
                     <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                      {res.subject_name || "مرجع تمريضي عام"}
+                      {res.subjectName || "مرجع تمريضي عام"}
                     </p>
                   </div>
                 </div>
@@ -176,7 +177,7 @@ export function LibraryScreen() {
                 <button
                   onClick={(e) => toggleFavorite(res.id, e)}
                   className={`flex size-8 shrink-0 items-center justify-center rounded-full ${
-                    res.is_favorite ? "text-amber-500" : "text-slate-300 hover:text-slate-500"
+                    res.favorite ? "text-amber-500" : "text-slate-300 hover:text-slate-500"
                   }`}
                   aria-label="المفضلة"
                 >

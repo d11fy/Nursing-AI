@@ -143,7 +143,7 @@ function MainContent() {
         {currentScreen.name === "library" && <LibraryScreen />}
         {currentScreen.name === "study-pack" && (
           <StudyPackScreen
-            id={currentScreen.params?.id}
+            id={currentScreen.params?.studyPackId || currentScreen.params?.id}
             type={currentScreen.params?.type}
             title={currentScreen.params?.title}
           />
