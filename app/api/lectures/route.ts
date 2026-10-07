@@ -9,6 +9,7 @@ import { uploadLectureFile } from "@/lib/storage";
 import { lectureUploadMetaSchema, LECTURE_EXTENSION_MIME_MAP } from "@/lib/validations/lectures";
 import {registerDocument,enqueueDocument} from "@/lib/tutor/ingestion";
 import { logEvent } from "@/lib/log";
+import { accessErrorMessage, consumeUsage, refundUsage } from "@/lib/subscriptions/service";
 
 function sanitizeFileName(name: string): string {
   return name.replace(/[/\\\x00-\x1f]/g, "_").slice(0, 200) || "lecture";
@@ -83,10 +84,16 @@ export async function POST(request: Request) {
   logEvent("FILE_UPLOAD_STARTED", { userId: user.id, fileSize: file.size, mimeType: file.type });
 
   let storagePath: string;
+  let reservation;
   try {
+    reservation = await consumeUsage(user.id, "files_limit");
     const result = await uploadLectureFile(db, user.id, file, maxBytes);
     storagePath = result.path;
   } catch (err) {
+    if (reservation) await refundUsage(reservation).catch(() => undefined);
+    if (err instanceof Error && (err.message.includes("الحد") || err.message.includes("اشتراك") || err.message.includes("الميزة"))) {
+      return NextResponse.json(accessErrorMessage(err, "الملفات"), { status: 403 });
+    }
     logEvent("FILE_UPLOAD_FAILED", { userId: user.id, error: err instanceof Error ? err.message : "unknown" });
     return NextResponse.json({ error: "تعذر رفع الملف. حاول مرة أخرى." }, { status: 500 });
   }

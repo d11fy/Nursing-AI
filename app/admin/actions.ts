@@ -7,6 +7,7 @@ import { subjectSchema, settingsSchema, academicYearSchema, newAcademicYearSchem
 import { archiveSubject, createAcademicYear, createSubject, setStudentAcademicYear, updateAcademicYear, updateSubject } from "@/lib/subjects";
 import { z } from "zod";
 import { revokeAllUserSessions } from "@/lib/auth/session-store";
+import { identityDb } from "@/lib/tutor/db";
 
 export async function setStudentStatusAction(formData: FormData) {
   await requireAdminProfile();
@@ -21,12 +22,13 @@ export async function setStudentStatusAction(formData: FormData) {
 }
 
 export async function resetStudentDeviceAction(formData: FormData) {
-  await requireAdminProfile();
+  const admin = await requireAdminProfile();
   const parsed = z.string().uuid().safeParse(formData.get("userId"));
   if (!parsed.success) return;
   // Device binding lives only on active server sessions. Revoking them releases
   // the account so the next successful login can securely bind a new device.
   await revokeAllUserSessions(parsed.data);
+  await identityDb(admin.user_id).query("insert into admin_audit_logs(event_type,admin_id,target_user_id) values('DEVICE_RESET',$1,$2)", [admin.user_id, parsed.data]);
   revalidatePath("/admin/students");
 }
 

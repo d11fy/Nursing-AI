@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { requireProfile } from "@/lib/auth";
 import { canStudentAccessSubject } from "@/lib/subjects";
 import { createPracticeExam } from "@/lib/exams/practice-service";
+import { accessErrorMessage, canUseFeature } from "@/lib/subscriptions/service";
 
 export async function POST(request: Request) {
   try {
     const profile = await requireProfile();
+    const entitlement = await canUseFeature(profile.user_id, "quiz_enabled");
+    if (!entitlement.allowed && profile.role !== "admin") return NextResponse.json(accessErrorMessage(new Error(entitlement.reason === "subscription_expired" ? "انتهى اشتراكك" : "هذه الميزة غير متاحة ضمن باقتك"), "الاختبارات"), { status: 403 });
     const body = await request.json();
     const { subjectId, topic, questionCount, difficulty, practiceType, mode } = body;
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/db/server";
-import { checkRateLimit, checkDailyLimit } from "@/lib/usage";
+import { checkRateLimit } from "@/lib/usage";
+import { canUseFeature, accessErrorMessage } from "@/lib/subscriptions/service";
 import {
   getStudyPackFlashcards,
 } from "@/features/study-pack/db/flashcards-db";
@@ -53,15 +54,9 @@ export async function POST(
       { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } }
     );
   }
-  const daily = await checkDailyLimit(db, user.id);
-  if (!daily.allowed) {
-    return NextResponse.json(
-      { error: "وصلت للحد اليومي للاستخدام؛ يمكنك العودة غدًا" },
-      { status: 403 }
-    );
-  }
-
   try {
+    const access=await canUseFeature(user.id,"flashcards_enabled");
+    if(!access.allowed) return NextResponse.json(accessErrorMessage(new Error(access.reason==="subscription_expired"?"انتهى اشتراكك":"هذه الميزة غير متاحة ضمن باقتك"),"البطاقات"),{status:403});
     const result = await getOrGenerateFlashcards({
       studyPackId,
       userId: user.id,

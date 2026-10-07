@@ -3,7 +3,8 @@ import { createClient } from "@/lib/db/server";
 import { routeAIRequest, getProviderByName, classifyRequest } from "@/lib/ai";
 import { retrieveCurriculum } from "@/lib/ai/curriculum-search";
 import { answerFromCurriculum } from "@/lib/ai/grounded-answer";
-import { checkDailyLimit, checkRateLimit, logUsage, getMonthlyAiSpend, getSettings } from "@/lib/usage";
+import { checkRateLimit, logUsage, getMonthlyAiSpend, getSettings } from "@/lib/usage";
+import { accessErrorMessage, consumeUsage } from "@/lib/subscriptions/service";
 import { getChatImageDataUri } from "@/lib/storage";
 import { sendMessageSchema } from "@/lib/validations/chat";
 import type { ChatMessageInput } from "@/lib/ai/provider";
@@ -61,13 +62,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const dailyLimit = await checkDailyLimit(db, user.id);
-  if (!dailyLimit.allowed) {
-    return NextResponse.json(
-      { error: "وصلت للحد اليومي للتجربة. يمكنك العودة غدًا." },
-      { status: 403 }
-    );
-  }
+  try { await consumeUsage(user.id, "ai_questions_daily"); }
+  catch (error) { return NextResponse.json(accessErrorMessage(error, "أسئلة الذكاء الاصطناعي"), { status: 403 }); }
 
   // Resolve or create the conversation.
   let activeConversationId = conversationId;

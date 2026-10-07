@@ -64,6 +64,7 @@ export async function establishSession(userId: string, presentedDeviceToken?: st
        values($1,$2,$3,now()+($4 * interval '1 second'),now(),now())`,
       [tokenHash(sessionToken), userId, deviceHash, SESSION_TTL_SECONDS]
     );
+    await client.query("select claim_trial_device($1,$2)", [userId, deviceHash]);
   });
 
   return { sessionToken, deviceToken };

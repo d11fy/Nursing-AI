@@ -2,7 +2,8 @@ import 'server-only';
 import { NextResponse, after } from 'next/server';
 import type { DatabaseClient } from '@/lib/db/server';
 import { sendMessageSchema } from '@/lib/validations/chat';
-import { checkDailyLimit, checkRateLimit, logUsage } from '@/lib/usage';
+import { checkRateLimit, logUsage } from '@/lib/usage';
+import { accessErrorMessage, consumeUsage, refundUsage } from '@/lib/subscriptions/service';
 import { canStudentAccessSubject } from '@/lib/subjects';
 import { getChatImageDataUri } from '@/lib/storage';
 import { getAIProvider } from '@/lib/ai';
@@ -37,7 +38,6 @@ export async function handleTutorChat(request:Request,db:DatabaseClient,schedule
   if(activeSubject&&!await canStudentAccessSubject(uid,activeSubject)) return NextResponse.json({error:'هذه المادة غير متاحة لك'},{status:403});
   const rate=await checkRateLimit(uid);
   if(!rate.allowed) return NextResponse.json({error:'الرجاء الانتظار قليلًا'},{status:429,headers:{'Retry-After':String(rate.retryAfterSeconds)}});
-  if(!(await checkDailyLimit(db,uid)).allowed) return NextResponse.json({error:'وصلت للحد اليومي؛ يمكنك العودة غدًا'},{status:403});
   let image:string|null=null;
   if(imagePath) {try {image=await getChatImageDataUri(db,imagePath);}catch{return NextResponse.json({error:'تعذر تحميل الصورة'},{status:404});}}
   // Validate requested attachment BEFORE creating a conversation or storing a message.
@@ -46,6 +46,9 @@ export async function handleTutorChat(request:Request,db:DatabaseClient,schedule
     if(!owned||owned.conversation_id!==conversationId) return NextResponse.json({error:'المرفق غير موجود في هذه المحادثة'},{status:404});
     if(owned.status!=='ready') return NextResponse.json({error:'المرفق لم يجهز بعد'},{status:409});
   }
+  let usageReservation;
+  try { usageReservation=await consumeUsage(uid,'ai_questions_daily'); }
+  catch(error) { return NextResponse.json(accessErrorMessage(error,'أسئلة الذكاء الاصطناعي'),{status:403}); }
   if(!conversationId) {
     const created=await db.from('conversations').insert({user_id:uid,title:content.replace(/\s+/g,' ').slice(0,60),subject_id:activeSubject,lecture_id:activeLecture}).select('id').single();
     if(created.error||!created.data) return NextResponse.json({error:'تعذر إنشاء المحادثة'},{status:503});
@@ -70,7 +73,7 @@ export async function handleTutorChat(request:Request,db:DatabaseClient,schedule
   schedule(async()=>{await memoryReady;await summarizeConversation(uid,cid).catch(()=>logEvent('MEMORY_UPDATE_FAILED',{userId:uid,conversationId:cid}));});
   const stream=new ReadableStream<Uint8Array>({
     async start(controller) {
-      let answerSaved=false,answerStarted=false;
+      let answerSaved=false,answerStarted=false,providerStarted=false;
       const emit=(delta:string)=>{if(!signal.aborted){controller.enqueue(encoder.encode(sse?`event: delta\ndata: ${JSON.stringify({text:delta})}\n\n`:delta));answerStarted=true;}};
       try {
         let visionCacheHit=false;
@@ -115,6 +118,7 @@ export async function handleTutorChat(request:Request,db:DatabaseClient,schedule
         const sources:KnowledgeChunk[]=[...imageEvidence,...retrieval.sources].slice(0,10);
         logEvent('RETRIEVAL_COMPLETED',{userId:uid,candidates:retrieval.candidates.length,selected:sources.length});
         const pending=subjectChanged?null:context.summary?.pending_quiz_json??null;
+        providerStarted=true;
         const result=await streamTutorAnswer({question:resolved.resolvedQuestion,originalQuestion:content,history:history as ChatMessageInput[],
           context:`${context.text}\nCURRENT SUBJECT: ${context.subjects.find(s=>s.id===activeSubject)?.name_en??''} (semester ${context.subjects.find(s=>s.id===activeSubject)?.semester??'unspecified'})\nACTIVE LIBRARY SOURCES: ${activeLibrary.map(source=>`${source.title} [${source.resource_category}]`).join(' | ')}\nACTIVE PAGE: ${page??''}\nREQUESTED SOURCE RANGE: ${resolved.selectedSectionRange?`${resolved.selectedSectionRange.start}-${resolved.selectedSectionRange.end}`:''}\nREQUESTED END BOUNDARY: ${resolved.requestedBoundary??''}`,sources,pendingQuiz:pending,signal,onDelta:emit});
         emit(result.references);
@@ -143,6 +147,7 @@ export async function handleTutorChat(request:Request,db:DatabaseClient,schedule
         logEvent('MEMORY_UPDATED',{userId:uid,conversationId:cid});
         if(sse&&!signal.aborted)controller.enqueue(encoder.encode(`event: persisted\ndata: ${JSON.stringify({messageId:answer.data.id,userMessageId,conversationId:cid})}\n\n`));
       } catch(error) {
+        if(!providerStarted) await refundUsage(usageReservation).catch(()=>undefined);
         console.error('Tutor request failed',{conversationId:cid,error:error instanceof Error?error.name:'Unknown'});
         if(!signal.aborted&&!answerSaved) emit(`${answerStarted?'\n\n':''}صار خلل مؤقت أثناء تجهيز الإجابة. جرّب مرة ثانية بعد لحظات.`);
         await logUsage({userId:uid,type:'chat',feature:'chat',provider:'openai',model:'gpt-6-luna',inputTokens:0,outputTokens:0,estimatedCost:0,
