@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { CapacitorHandler } from "@/components/mobile/capacitor-handler";
 import "./globals.css";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_ORIGIN } from "@/lib/site";
 
 const cairo = Cairo({
   variable: "--font-sans",
@@ -11,9 +12,21 @@ const cairo = Cairo({
 });
 
 export const metadata: Metadata = {
-  title: "Nursing AI | مساعدك الذكي في دراسة التمريض",
-  description:
-    "منصة تعليمية بالذكاء الاصطناعي لطلاب التمريض: اسأل، ارفع صورة، وافهم أي موضوع تمريضي بطريقة بسيطة وواضحة.",
+  metadataBase: new URL(SITE_ORIGIN),
+  title: { default: "Nursing AI | رفيقك الذكي لدراسة التمريض", template: "%s" },
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
+  keywords: ["Nursing AI", "طلاب التمريض", "دراسة التمريض", "AI Nursing Tutor"],
+  openGraph: {
+    type: "website",
+    locale: "ar_PS",
+    url: "/",
+    siteName: SITE_NAME,
+    title: "Nursing AI | رفيقك الذكي لدراسة التمريض",
+    description: SITE_DESCRIPTION,
+  },
+  twitter: { card: "summary", title: SITE_NAME, description: SITE_DESCRIPTION },
+  robots: { index: true, follow: true },
   icons: { icon: "/icon.svg" },
 };
 

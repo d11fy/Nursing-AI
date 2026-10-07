@@ -55,8 +55,7 @@ export function FlashcardsViewer({
         }),
       });
       handleNext();
-    } catch (e) {
-      console.warn("Failed recording rating:", e);
+    } catch {
       handleNext();
     } finally {
       setSubmittingRating(false);

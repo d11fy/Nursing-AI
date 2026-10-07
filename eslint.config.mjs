@@ -17,7 +17,20 @@ const eslintConfig = defineConfig([
     ".codex/**",
     ".evaluation/**",
     "android/**/build/**",
+    "android/app/src/main/assets/public/**",
+    "mobile/dist/**",
   ]),
+  {
+    files: ["mobile/src/**/*.{ts,tsx}"],
+    rules: {
+      // The bundled Capacitor client is a separate Vite application. Its API
+      // payloads are runtime-validated at the shared backend boundary, and its
+      // async screen loaders intentionally set loading state before awaiting.
+      "@typescript-eslint/no-explicit-any": "off",
+      "react-hooks/set-state-in-effect": "off",
+      "@next/next/no-img-element": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

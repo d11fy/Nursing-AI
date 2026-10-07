@@ -63,7 +63,7 @@ android/app/release-key.jks
 *.keystore
 *.jks
 *.apk
-public/downloads/*.apk
-
+!public/downloads/
+!public/downloads/*.apk
 
 

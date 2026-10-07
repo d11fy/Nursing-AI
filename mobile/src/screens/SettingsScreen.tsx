@@ -1,32 +1,9 @@
-import React, { useEffect, useState } from "react";
-import { Server, Globe, ExternalLink, RefreshCw, Check, Sparkles } from "lucide-react";
-import { getServerUrl, setServerUrl, DEFAULT_SERVER_URL } from "../services/api";
+import React from "react";
+import { Server, Globe, ExternalLink, Sparkles } from "lucide-react";
+import { DEFAULT_SERVER_URL } from "../services/api";
 import { openExternalUrl } from "../services/capacitor";
 
 export function SettingsScreen() {
-  const [serverUrl, setUrlState] = useState("");
-  const [savedSuccess, setSavedSuccess] = useState(false);
-
-  useEffect(() => {
-    getServerUrl().then(setUrlState);
-  }, []);
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (serverUrl.trim()) {
-      await setServerUrl(serverUrl.trim());
-      setSavedSuccess(true);
-      setTimeout(() => setSavedSuccess(false), 2000);
-    }
-  };
-
-  const handleReset = async () => {
-    setUrlState(DEFAULT_SERVER_URL);
-    await setServerUrl(DEFAULT_SERVER_URL);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2000);
-  };
-
   return (
     <div className="space-y-4 pb-nav">
       {/* Backend API Configuration */}
@@ -37,42 +14,11 @@ export function SettingsScreen() {
         </div>
 
         <p className="text-[11px] text-slate-500 leading-relaxed">
-          واجهة هذا التطبيق مدمجة بالكامل ومحفوظة داخل هاتفك (Offline Bundle). الاتصال بالخادم يتم فقط لجلب البيانات واستدعاء الذكاء الاصطناعي.
+          واجهة التطبيق محفوظة داخل الهاتف، والاتصال الآمن بالمنصة مثبت على الخادم الرسمي فقط.
         </p>
-
-        <form onSubmit={handleSave} className="space-y-3 pt-1">
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400">
-              عنوان الخادم (Server URL)
-            </label>
-            <input
-              type="text"
-              value={serverUrl}
-              onChange={(e) => setUrlState(e.target.value)}
-              placeholder={DEFAULT_SERVER_URL}
-              className="w-full h-11 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 text-xs font-mono"
-              dir="ltr"
-            />
-          </div>
-
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={handleReset}
-              className="px-3 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-[11px] font-bold text-slate-600 dark:text-slate-300 active:scale-95"
-            >
-              الافتراضي
-            </button>
-            <div className="flex-1" />
-            <button
-              type="submit"
-              className="flex items-center gap-1.5 px-5 h-10 rounded-xl bg-primary text-white text-xs font-bold active:scale-95 shadow-xs"
-            >
-              {savedSuccess ? <Check className="size-3.5" /> : null}
-              <span>{savedSuccess ? "تم الحفظ" : "حفظ العنوان"}</span>
-            </button>
-          </div>
-        </form>
+        <p className="rounded-xl bg-slate-50 dark:bg-slate-950 px-3 py-2 text-[10px] font-mono text-slate-500" dir="ltr">
+          {DEFAULT_SERVER_URL}
+        </p>
       </div>
 
       {/* External Links */}

@@ -30,6 +30,20 @@ before(async () => {
 
 after(() => db.close());
 
+test("Android and in-app update UI share one version source", () => {
+  const root = process.cwd();
+  const source = JSON.parse(fs.readFileSync(path.join(root, "mobile", "app-version.json"), "utf8"));
+  const gradle = fs.readFileSync(path.join(root, "android", "app", "build.gradle"), "utf8");
+  const mobileConfig = fs.readFileSync(path.join(root, "mobile", "src", "config", "version.ts"), "utf8");
+
+  assert.equal(source.name, "1.0.0");
+  assert.equal(source.code, 1);
+  assert.match(gradle, /mobile\/app-version\.json/);
+  assert.match(gradle, /versionCode appVersion\.code/);
+  assert.match(gradle, /versionName appVersion\.name/);
+  assert.match(mobileConfig, /app-version\.json/);
+});
+
 
 test("mobile version system: defaults and settings persistence", async () => {
   const initial = await getAppVersionInfo();
@@ -69,27 +83,30 @@ test("signed production APK: files exist and have valid digital signature", asyn
   const root = process.cwd();
   const v1Path = path.join(root, "public", "downloads", "nursing-ai-v1.0.0.apk");
   const latestPath = path.join(root, "public", "downloads", "nursing-ai-latest.apk");
-  const releaseBuildPath = path.join(
-    root,
-    "android",
-    "app",
-    "build",
-    "outputs",
-    "apk",
-    "release",
-    "nursing-ai-v1.0.0.apk"
-  );
-
   assert.ok(fs.existsSync(v1Path), "public/downloads/nursing-ai-v1.0.0.apk exists");
   assert.ok(fs.existsSync(latestPath), "public/downloads/nursing-ai-latest.apk exists");
-  assert.ok(fs.existsSync(releaseBuildPath), "release build output exists");
 
   const stat = fs.statSync(v1Path);
-  assert.ok(stat.size > 2 * 1024 * 1024, "APK size is healthy (> 2MB)");
+  assert.ok(stat.size > 750 * 1024, "minified APK size is healthy (> 750KB)");
 
-  // Verify using Android SDK apksigner
-  const apksigner = "C:\\Users\\Alosh2\\AppData\\Local\\Android\\Sdk\\build-tools\\35.0.0\\apksigner.bat";
-  if (fs.existsSync(apksigner)) {
+  const apkBytes = fs.readFileSync(v1Path);
+  assert.notEqual(
+    apkBytes.indexOf(Buffer.from("APK Sig Block 42")),
+    -1,
+    "APK contains a v2+ signing block even when Android SDK tools are unavailable",
+  );
+
+  // Perform cryptographic verification when the Android SDK is available.
+  const androidHome = process.env.ANDROID_HOME || "C:\\Users\\Alosh2\\AppData\\Local\\Android\\Sdk";
+  const buildToolsRoot = path.join(androidHome, "build-tools");
+  const versions = fs.existsSync(buildToolsRoot)
+    ? fs.readdirSync(buildToolsRoot).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+    : [];
+  const executable = process.platform === "win32" ? "apksigner.bat" : "apksigner";
+  const apksigner = versions
+    .map((version) => path.join(buildToolsRoot, version, executable))
+    .find((candidate) => fs.existsSync(candidate));
+  if (apksigner) {
     const output = execSync(`"${apksigner}" verify --verbose "${v1Path}"`, {
       encoding: "utf-8",
     });

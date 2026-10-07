@@ -20,9 +20,11 @@ export async function GET() {
     const fileStream = fs.createReadStream(apkFilePath);
 
     // Convert node readstream to web ReadableStream
-    const webStream = new ReadableStream({
+    const webStream = new ReadableStream<Uint8Array>({
       start(controller) {
-        fileStream.on("data", (chunk) => controller.enqueue(chunk));
+        fileStream.on("data", (chunk) =>
+          controller.enqueue(typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk)
+        );
         fileStream.on("end", () => controller.close());
         fileStream.on("error", (err) => controller.error(err));
       },
@@ -31,7 +33,7 @@ export async function GET() {
       },
     });
 
-    return new NextResponse(webStream as any, {
+    return new NextResponse(webStream, {
       status: 200,
       headers: {
         "Content-Type": "application/vnd.android.package-archive",
@@ -40,8 +42,8 @@ export async function GET() {
         "Cache-Control": "public, max-age=3600",
       },
     });
-  } catch (error) {
-    console.error("APK download error:", error);
+  } catch {
+    console.error("APK download failed");
     return NextResponse.json({ error: "فشل تنزيل ملف الـ APK" }, { status: 500 });
   }
 }

@@ -1,9 +1,34 @@
 apply plugin: 'com.android.application'
 
+import groovy.json.JsonSlurper
+
+def appVersionFile = rootProject.file("../mobile/app-version.json")
+if (!appVersionFile.exists()) {
+    throw new GradleException("mobile/app-version.json is required")
+}
+def appVersion = new JsonSlurper().parse(appVersionFile)
+if (!(appVersion.name ==~ /\d+\.\d+\.\d+/) || !(appVersion.code instanceof Number) || appVersion.code < 1) {
+    throw new GradleException("mobile/app-version.json must contain a semantic name and positive numeric code")
+}
+
 def keystorePropertiesFile = rootProject.file("keystore.properties")
 def keystoreProperties = new Properties()
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+def releaseSigningConfigured = keystorePropertiesFile.exists()
+def releaseStoreFile = null
+if (releaseSigningConfigured) {
+    ['storeFile', 'storePassword', 'keyAlias', 'keyPassword'].each { key ->
+        if (!keystoreProperties[key]) {
+            throw new GradleException("Missing ${key} in android/keystore.properties")
+        }
+    }
+    releaseStoreFile = file(keystoreProperties['storeFile'])
+    if (!releaseStoreFile.exists()) {
+        throw new GradleException("Release keystore not found: ${releaseStoreFile}")
+    }
 }
 
 android {
@@ -13,8 +38,8 @@ android {
         applicationId "com.nursingai.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0.0"
+        versionCode appVersion.code as int
+        versionName appVersion.name as String
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -25,12 +50,8 @@ android {
 
     signingConfigs {
         release {
-            if (keystorePropertiesFile.exists()) {
-                def sf = file(keystoreProperties['storeFile'])
-                if (!sf.exists()) {
-                    sf = rootProject.file("keystore/nursing-ai-release.keystore")
-                }
-                storeFile sf
+            if (releaseSigningConfigured) {
+                storeFile releaseStoreFile
                 storePassword keystoreProperties['storePassword']
                 keyAlias keystoreProperties['keyAlias']
                 keyPassword keystoreProperties['keyPassword']
@@ -42,10 +63,11 @@ android {
 
     buildTypes {
         release {
-            if (keystorePropertiesFile.exists()) {
+            if (releaseSigningConfigured) {
                 signingConfig signingConfigs.release
             }
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
@@ -56,6 +78,17 @@ android {
                 outputFileName = "nursing-ai-v${variant.versionName}.apk"
             }
         }
+    }
+}
+
+gradle.taskGraph.whenReady { graph ->
+    def releaseRequested = graph.allTasks.any { task ->
+        task.name.toLowerCase().contains('release')
+    }
+    if (releaseRequested && !releaseSigningConfigured) {
+        throw new GradleException(
+            "Release signing is required. Run scripts/setup-release-keystore.ps1 or restore android/keystore.properties and the keystore."
+        )
     }
 }
 

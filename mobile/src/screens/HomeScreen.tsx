@@ -9,7 +9,6 @@ import {
   ArrowLeft,
   Sparkles,
   RefreshCw,
-  Library,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useNavigation } from "../context/NavigationContext";
@@ -21,30 +20,45 @@ interface RecentConversation {
   updated_at: string;
 }
 
+interface WeakTopic {
+  subjectId: string;
+  topicKey: string;
+  topicName: string;
+  subjectName: string;
+  masteryScore: number;
+}
+
 export function HomeScreen() {
   const { profile, access, aiUsage, refreshAuth } = useAuth();
   const { navigate, switchTab } = useNavigation();
 
   const [recentConversations, setRecentConversations] = useState<RecentConversation[]>([]);
+  const [weakTopics, setWeakTopics] = useState<WeakTopic[]>([]);
   const [loading, setLoading] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      await refreshAuth();
-      const res = await apiFetch("/api/conversations");
+      const [, res, progress] = await Promise.all([
+        refreshAuth(),
+        apiFetch("/api/conversations"),
+        apiFetch<{ weakTopics?: WeakTopic[] }>("/api/learning-progress").catch(() => ({ weakTopics: [] })),
+      ]);
       if (res.conversations) {
         setRecentConversations(res.conversations.slice(0, 5));
       }
-    } catch (err) {
-      console.warn("Failed loading home data:", err);
+      setWeakTopics((progress.weakTopics ?? []).slice(0, 2));
+    } catch {
+      // Individual screens provide their own retry path when a request fails.
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    void loadData();
+    // The initial hydration intentionally runs only when this screen mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const firstName = profile?.full_name?.split(" ")[0] || "طالب التمريض";
@@ -67,19 +81,37 @@ export function HomeScreen() {
             <button
               onClick={loadData}
               disabled={loading}
-              className="flex size-8 items-center justify-center rounded-full bg-white/15 active:scale-95 text-white"
+              className="flex size-12 items-center justify-center rounded-full bg-white/15 text-white active:scale-95"
+              aria-label="تحديث بيانات الصفحة"
             >
               <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
             </button>
           </div>
           <h2 className="text-xl font-black">
-            مرحبًا، {firstName} 👋
+            مرحبًا، {firstName}
           </h2>
           <p className="text-xs text-teal-100 leading-relaxed max-w-[280px]">
             تابع دراسة مساقاتك، اختبر معلوماتك، أو استشر المعلم الذكي.
           </p>
         </div>
       </div>
+
+      {weakTopics.length > 0 && (
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between px-1">
+            <h3 className="text-xs font-black uppercase tracking-wider text-amber-700 dark:text-amber-400">مواضيع تحتاج مراجعة</h3>
+            <button onClick={() => navigate("progress")} className="min-h-11 px-2 text-[11px] font-bold text-primary">عرض التقدم</button>
+          </div>
+          <div className="space-y-2">
+            {weakTopics.map((topic) => (
+              <button key={`${topic.subjectId}-${topic.topicKey}`} onClick={() => navigate("progress")} className="flex min-h-14 w-full items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 p-3.5 text-start dark:border-amber-900/50 dark:bg-amber-950/30">
+                <span><b className="block text-xs text-slate-900 dark:text-white">{topic.topicName}</b><span className="text-[10px] text-slate-500">{topic.subjectName}</span></span>
+                <span className="text-xs font-black text-amber-700 dark:text-amber-400">{topic.masteryScore}%</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Daily Usage Card */}
       <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4.5 shadow-xs space-y-3">

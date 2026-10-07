@@ -5,12 +5,10 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Preserve Capacitor plugin discovery metadata and the app's native secure vault.
+-keepattributes RuntimeVisibleAnnotations,AnnotationDefault
+-keep @com.getcapacitor.annotation.CapacitorPlugin class * { *; }
+-keep class com.nursingai.app.SecureStoragePlugin { *; }
 
 # Uncomment this to preserve the line number information for
 # debugging stack traces.

@@ -4,11 +4,11 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Nursing AI",
     short_name: "Nursing AI",
-    description: "مساعدك الذكي في دراسة التمريض",
+    description: "رفيقك الذكي لدراسة التمريض",
     start_url: "/dashboard",
     display: "standalone",
-    background_color: "#f8fafc",
-    theme_color: "#2563eb",
+    background_color: "#f6fafc",
+    theme_color: "#0f5d75",
     lang: "ar",
     dir: "rtl",
     icons: [

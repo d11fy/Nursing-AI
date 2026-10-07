@@ -3,7 +3,7 @@ import { Download, AlertCircle, ArrowUpCircle, X } from "lucide-react";
 import { Browser } from "@capacitor/browser";
 import { Capacitor } from "@capacitor/core";
 import { APP_VERSION_NAME } from "../config/version";
-import { getServerUrl } from "../services/api";
+import { resolveOfficialUrl } from "../services/api";
 
 interface UpdateModalProps {
   latestVersion: string;
@@ -23,20 +23,15 @@ export function UpdateModal({
 }: UpdateModalProps) {
   const handleUpdate = async () => {
     try {
-      let fullUrl = apkUrl;
-      if (!fullUrl.startsWith("http")) {
-        const base = await getServerUrl();
-        fullUrl = `${base}${fullUrl.startsWith("/") ? "" : "/"}${fullUrl}`;
-      }
+      const fullUrl = resolveOfficialUrl(apkUrl);
 
       if (Capacitor.isNativePlatform()) {
         await Browser.open({ url: fullUrl });
       } else {
         window.open(fullUrl, "_blank");
       }
-    } catch (e) {
-      console.error("Failed opening update URL:", e);
-      window.location.href = apkUrl;
+    } catch {
+      // Keep the user on the update screen if the published URL is invalid.
     }
   };
 
@@ -49,7 +44,7 @@ export function UpdateModal({
         {!forceUpdate && onDismiss && (
           <button
             onClick={onDismiss}
-            className="absolute top-4 left-4 p-1.5 rounded-full text-muted-foreground hover:bg-muted transition-colors"
+            className="absolute left-3 top-3 flex size-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted"
             aria-label="إغلاق"
           >
             <X className="size-4" />
@@ -91,7 +86,7 @@ export function UpdateModal({
         <div className="mt-6 flex flex-col gap-2.5">
           <button
             onClick={handleUpdate}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 text-sm font-bold text-primary-foreground shadow-md shadow-primary/25 hover:bg-primary/95 transition-all active:scale-[0.98]"
+            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 text-sm font-bold text-primary-foreground shadow-md shadow-primary/25 transition-all hover:bg-primary/95 active:scale-[0.98]"
           >
             <Download className="size-4" />
             تحديث الآن
@@ -100,7 +95,7 @@ export function UpdateModal({
           {!forceUpdate && onDismiss && (
             <button
               onClick={onDismiss}
-              className="w-full rounded-2xl border border-border bg-card py-2.5 text-xs font-semibold text-muted-foreground hover:bg-muted transition-colors"
+              className="min-h-12 w-full rounded-2xl border border-border bg-card py-2.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted"
             >
               لاحقًا
             </button>

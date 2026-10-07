@@ -1,8 +1,7 @@
 import React, { useState } from "react";
-import { Sparkles, Mail, Lock, Eye, EyeOff, AlertCircle, Settings } from "lucide-react";
+import { Sparkles, Mail, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useNavigation } from "../context/NavigationContext";
-import { getServerUrl, setServerUrl, DEFAULT_SERVER_URL } from "../services/api";
 
 export function LoginScreen() {
   const { login } = useAuth();
@@ -13,10 +12,6 @@ export function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  // Server URL config sheet
-  const [showServerConfig, setShowServerConfig] = useState(false);
-  const [serverUrlInput, setServerUrlInput] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,23 +24,10 @@ export function LoginScreen() {
     setLoading(true);
     try {
       await login(email.trim(), password);
-    } catch (err: any) {
-      setError(err.message || "تعذر تسجيل الدخول؛ يرجى التحقق من البيانات");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "تعذر تسجيل الدخول؛ يرجى التحقق من البيانات");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const openServerConfig = async () => {
-    const url = await getServerUrl();
-    setServerUrlInput(url);
-    setShowServerConfig(true);
-  };
-
-  const handleSaveServerUrl = async () => {
-    if (serverUrlInput.trim()) {
-      await setServerUrl(serverUrlInput.trim());
-      setShowServerConfig(false);
     }
   };
 
@@ -140,59 +122,6 @@ export function LoginScreen() {
         </div>
       </div>
 
-      {/* Footer / Server endpoint config button */}
-      <div className="text-center pt-6">
-        <button
-          onClick={openServerConfig}
-          className="inline-flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-slate-600"
-        >
-          <Settings className="size-3" />
-          <span>خادم المنصة</span>
-        </button>
-      </div>
-
-      {/* Server URL Config Modal */}
-      {showServerConfig && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 p-6 space-y-4 shadow-xl">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-              عنوان خادم Nursing AI
-            </h3>
-            <p className="text-xs text-slate-500">
-              عنوان الـ Backend API الذي يتصل به التطبيق:
-            </p>
-            <input
-              type="text"
-              value={serverUrlInput}
-              onChange={(e) => setServerUrlInput(e.target.value)}
-              placeholder={DEFAULT_SERVER_URL}
-              className="w-full h-11 rounded-xl border border-slate-200 dark:border-slate-800 px-3 text-xs font-mono"
-              dir="ltr"
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={() => setServerUrlInput(DEFAULT_SERVER_URL)}
-                className="px-3 h-10 rounded-xl bg-slate-100 text-[11px] font-bold text-slate-700"
-              >
-                الافتراضي
-              </button>
-              <div className="flex-1" />
-              <button
-                onClick={() => setShowServerConfig(false)}
-                className="px-4 h-10 rounded-xl bg-slate-100 text-xs font-bold text-slate-700"
-              >
-                إلغاء
-              </button>
-              <button
-                onClick={handleSaveServerUrl}
-                className="px-4 h-10 rounded-xl bg-primary text-xs font-bold text-white"
-              >
-                حفظ
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

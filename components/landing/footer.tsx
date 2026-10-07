@@ -1,18 +1,31 @@
 import Link from "next/link";
 import { BrandMark } from "@/components/brand/brand-mark";
 
+const columns = [
+  {
+    title: "المنصة",
+    links: [["الرئيسية", "/"], ["المميزات", "/#platform"], ["الباقات", "/#pricing"], ["تحميل التطبيق", "/download"]],
+  },
+  {
+    title: "الدعم",
+    links: [["الأسئلة الشائعة", "/#faq"], ["تواصل معنا", "/#contact"]],
+  },
+  {
+    title: "القانوني",
+    links: [["الخصوصية", "/privacy"], ["الشروط", "/terms"], ["سياسة الاشتراك", "/subscription-policy"], ["سياسة الملفات", "/file-policy"], ["التنويه التعليمي", "/disclaimer"]],
+  },
+] as const;
+
 export function LandingFooter() {
   return (
-    <footer className="border-t border-border bg-card py-8">
-      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-5 px-4 text-center text-sm text-muted-foreground sm:flex-row sm:px-6 sm:text-start">
-        <BrandMark />
-        <div className="flex items-center gap-6 text-xs">
-          <Link href="/download" className="text-primary hover:underline font-semibold">
-            تحميل تطبيق الأندرويد (APK)
-          </Link>
-          <p>© {new Date().getFullYear()} Nursing AI — منصة تعليمية لطلاب التمريض.</p>
+    <footer className="border-t border-border bg-card">
+      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.3fr_2fr]">
+        <div><BrandMark /><p className="mt-4 max-w-sm text-sm leading-7 text-muted-foreground">منصة تعليمية تساعد طلاب التمريض على الفهم والمراجعة والتدرب ومتابعة التقدم عبر الويب والأندرويد.</p></div>
+        <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
+          {columns.map((column) => <div key={column.title}><h2 className="text-sm font-black text-foreground">{column.title}</h2><ul className="mt-4 space-y-3">{column.links.map(([label, href]) => <li key={href}><Link href={href} className="text-sm text-muted-foreground transition-colors hover:text-primary">{label}</Link></li>)}</ul></div>)}
         </div>
       </div>
+      <div className="border-t border-border px-4 py-5 text-center text-xs text-muted-foreground">© {new Date().getFullYear()} Nursing AI. جميع الحقوق محفوظة.</div>
     </footer>
   );
 }

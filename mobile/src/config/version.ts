@@ -1,3 +1,4 @@
-// Centralized Mobile App Version Configuration
-export const APP_VERSION_NAME = "1.0.0";
-export const APP_VERSION_CODE = 1;
+import version from "../../app-version.json";
+
+export const APP_VERSION_NAME = version.name;
+export const APP_VERSION_CODE = version.code;

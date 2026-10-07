@@ -1,16 +1,12 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
-// Live Production VPS Server URL
-const SERVER_URL = process.env.CAPACITOR_SERVER_URL || "https://nursing.alisohail.tech";
-
 const config: CapacitorConfig = {
   appId: "com.nursingai.app",
   appName: "Nursing AI",
   webDir: "mobile/dist",
   server: {
-    cleartext: true,
+    cleartext: false,
     androidScheme: "https",
-    allowNavigation: ["nursing.alisohail.tech", "*.alisohail.tech"],
   },
   plugins: {
     SplashScreen: {

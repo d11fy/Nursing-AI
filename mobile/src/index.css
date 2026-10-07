@@ -25,6 +25,16 @@ html, body {
   overflow-x: hidden;
   user-select: none;
   -webkit-user-select: none;
+  min-width: 320px;
+}
+
+button, a, input, textarea, select {
+  touch-action: manipulation;
+}
+
+:where(button, a, input, textarea, select):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
 }
 
 /* Allow text selection only in markdown and messages */
@@ -74,4 +84,13 @@ html, body {
 .touch-active:active {
   transform: scale(0.97);
   transition: transform 0.1s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
