@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, MessageSquareText, Search, ShieldCheck } from "lucide-react";
+import { ArrowLeft, CheckCircle2, MessageSquareText, Search, ShieldCheck, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function Hero({ dashboardHref }: { dashboardHref: string | null }) {
@@ -46,6 +46,18 @@ export function Hero({ dashboardHref }: { dashboardHref: string | null }) {
             className="w-full bg-card px-6 sm:w-auto"
             nativeButton={false}
             render={<Link href={primaryHref}>{dashboardHref ? "فتح المنصة" : "جرب مجانًا"}</Link>}
+          />
+          <Button
+            size="lg"
+            variant="secondary"
+            className="w-full border border-emerald-500/20 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-400 sm:w-auto"
+            nativeButton={false}
+            render={
+              <Link href="/download" className="flex items-center gap-2">
+                <Smartphone className="size-4" />
+                تحميل تطبيق Nursing AI للأندرويد
+              </Link>
+            }
           />
         </div>
         </div>

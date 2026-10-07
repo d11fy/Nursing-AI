@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/brand/brand-mark";
 
@@ -13,6 +14,10 @@ export function LandingHeader({ dashboardHref }: { dashboardHref: string | null 
         <nav className="hidden items-center gap-7 text-sm font-semibold text-muted-foreground md:flex" aria-label="روابط الصفحة">
           <a href="#how-it-works" className="transition-colors hover:text-primary">كيف تعمل المنصة</a>
           <a href="#features" className="transition-colors hover:text-primary">المزايا</a>
+          <Link href="/download" className="flex items-center gap-1.5 font-bold text-primary transition-colors hover:text-primary/80">
+            <Smartphone className="size-4" />
+            تطبيق الأندرويد
+          </Link>
         </nav>
 
         <div className="flex items-center gap-1.5 sm:gap-2">

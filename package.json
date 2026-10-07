@@ -25,7 +25,10 @@
     "cap:sync": "cap sync",
     "cap:open": "cap open android",
     "cap:build:debug": "node scripts/build-android.mjs",
-    "cap:build:release": "node scripts/build-android.mjs --release"
+    "cap:build:release": "node scripts/build-android.mjs --release",
+    "mobile:dev": "npm --prefix mobile run dev",
+    "mobile:build": "npm --prefix mobile run build",
+    "mobile:sync": "npm run mobile:build && npx cap sync android"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
