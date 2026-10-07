@@ -1,0 +1,29 @@
+import { after, before, test } from "node:test";
+import assert from "node:assert/strict";
+import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite-pgvector";
+import { migrate } from "../scripts/migrate.mjs";
+import { consumeUsage, getStudentEntitlements } from "../lib/subscriptions/service";
+import { createPaymentRequest, reviewPayment } from "../lib/subscriptions/payments";
+import { identityDb } from "../lib/tutor/db";
+
+const db=new PGlite({extensions:{vector}});
+const userId="91000000-0000-4000-8000-000000000001",strangerId="91000000-0000-4000-8000-000000000002",adminId="91000000-0000-4000-8000-000000000003";
+const query=async(sql:string,values?:unknown[])=>{if(!values&&(sql.includes(";")||sql.includes("--"))){await db.exec(sql);return {rows:[]};}return db.query(sql,values);};
+let planId:string,methodId:string;
+
+before(async()=>{process.env.DATABASE_URL="postgresql://subscriptions-test";process.env.AUTH_SECRET="subscription-test-secret-".repeat(3);Object.assign(globalThis,{nursingPool:{query,connect:async()=>({query,release(){}})}});await migrate({query});
+  for(const [id,role] of [[userId,"student"],[strangerId,"student"],[adminId,"admin"]] as const){await db.query("insert into app_users(id,email,password_hash) values($1,$2,'x')",[id,`${id}@example.test`]);await db.query("insert into profiles(user_id,email,full_name,role) values($1,$2,$3,$4)",[id,`${id}@example.test`,id===userId?"طالب":"Test",role]);}
+  planId=(await db.query<{id:string}>("select id from subscription_plans where slug='one-month'")).rows[0].id;
+  methodId=(await db.query<{id:string}>("insert into payment_methods(name,type,instructions) values('PalPay','wallet','حوّل المبلغ') returning id")).rows[0].id;
+});
+after(()=>db.close());
+
+test("new account receives one configurable three-day trial",async()=>{const access=await getStudentEntitlements(userId);assert.equal(access.kind,"trial");assert.equal(access.entitlements.ai_questions_daily,10);assert.ok(new Date(access.endsAt!).getTime()-new Date(access.startsAt!).getTime()>=3*86400000-1000);});
+
+test("trial daily AI and total image limits are atomically enforced",async()=>{for(let i=0;i<10;i++)await consumeUsage(userId,"ai_questions_daily");await assert.rejects(consumeUsage(userId,"ai_questions_daily"),/استخدمت الحد/);for(let i=0;i<3;i++)await consumeUsage(userId,"images_limit");await assert.rejects(consumeUsage(userId,"images_limit"),/استخدمت الحد/);});
+
+test("payment snapshots price and approval is idempotent",async()=>{const receipt=new File([Buffer.from("receipt")],"receipt.png",{type:"image/png"});const payment=await createPaymentRequest(userId,planId,methodId,receipt);await db.query("update subscription_plans set price=99 where id=$1",[planId]);const snapshot=(await identityDb(userId).query<{price_snapshot:number}>("select price_snapshot from payment_requests where id=$1",[payment.id])).rows[0];assert.equal(Number(snapshot.price_snapshot),15);
+  const first=await reviewPayment(adminId,payment.id,"approved"),second=await reviewPayment(adminId,payment.id,"approved");assert.equal(first.unchanged,false);assert.equal(second.unchanged,true);assert.equal((await db.query<{count:number}>("select count(*)::int count from user_subscriptions where payment_request_id=$1",[payment.id])).rows[0].count,1);const access=await getStudentEntitlements(userId);assert.equal(access.kind,"paid");});
+
+test("renewal preserves remaining paid time",async()=>{const receipt=new File([Buffer.from("second")],"receipt.pdf",{type:"application/pdf"});const payment=await createPaymentRequest(userId,planId,methodId,receipt);const prior=(await db.query<{ends_at:string}>("select ends_at from user_subscriptions where user_id=$1 and kind='paid' order by ends_at desc limit 1",[userId])).rows[0];await reviewPayment(adminId,payment.id,"approved");const renewed=(await db.query<{starts_at:string;ends_at:string}>("select starts_at,ends_at from user_subscriptions where payment_request_id=$1",[payment.id])).rows[0];assert.equal(new Date(renewed.starts_at).getTime(),new Date(prior.ends_at).getTime());assert.ok(new Date(renewed.ends_at)>new Date(renewed.starts_at));});

@@ -1,6 +1,7 @@
 import "server-only";
 
 import nodemailer from "nodemailer";
+import { enqueueTemplateEmail, processEmailQueue } from "@/lib/email-queue";
 
 type EmailMessage = { to: string; subject: string; text: string; html: string };
 
@@ -23,24 +24,11 @@ export async function sendEmail(message: EmailMessage) {
 }
 
 export async function sendWelcomeEmail(name: string, email: string) {
-  const appUrl = new URL(process.env.APP_URL!).origin;
-  await sendEmail({
-    to: email,
-    subject: "Nursing AI — أهلًا بك في المنصة",
-    text: `مرحبًا ${name}،\n\nتم إنشاء حسابك في Nursing AI بنجاح.\nيمكنك البدء من هنا: ${appUrl}/dashboard\n\nفريق Nursing AI`,
-    html: `<div dir="rtl" style="font-family:Arial,sans-serif;line-height:1.8"><h2>مرحبًا ${escapeHtml(name)} 👋</h2><p>تم إنشاء حسابك في Nursing AI بنجاح.</p><p><a href="${appUrl}/dashboard">ابدأ الدراسة الآن</a></p><p>فريق Nursing AI</p></div>`,
-  });
+  await enqueueTemplateEmail(email, "welcome", { student_name: name });
+  await processEmailQueue(1);
 }
 
 export async function sendPasswordResetEmail(email: string, url: string) {
-  await sendEmail({
-    to: email,
-    subject: "Nursing AI — إعادة تعيين كلمة المرور",
-    text: `رابط إعادة تعيين كلمة المرور صالح لمدة 30 دقيقة:\n${url}`,
-    html: `<div dir="rtl" style="font-family:Arial,sans-serif;line-height:1.8"><h2>إعادة تعيين كلمة المرور</h2><p>هذا الرابط صالح لمدة 30 دقيقة:</p><p><a href="${escapeHtml(url)}">إعادة تعيين كلمة المرور</a></p><p>إذا لم تطلب ذلك، تجاهل الرسالة.</p></div>`,
-  });
-}
-
-function escapeHtml(value: string) {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+  await enqueueTemplateEmail(email, "password_reset", { reset_url: url });
+  await processEmailQueue(1);
 }

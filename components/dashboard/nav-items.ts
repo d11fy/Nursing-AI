@@ -18,6 +18,7 @@ import {
   HelpCircle,
   TrendingUp,
   CircleAlert,
+  CreditCard,
   type LucideIcon,
 } from "lucide-react";
 
@@ -34,6 +35,7 @@ export const studentNavItems: NavItem[] = [
   { href: "/dashboard/subjects", label: "المواد", icon: BookOpen },
   { href: "/dashboard/progress", label: "تقدمي", icon: TrendingUp },
   { href: "/dashboard/mistakes", label: "أخطائي", icon: CircleAlert },
+  { href: "/dashboard/subscription", label: "اشتراكي", icon: CreditCard },
   { href: "/dashboard/profile", label: "حسابي", icon: UserRound },
 ];
 
@@ -43,6 +45,7 @@ export const adminNavItems: NavItem[] = [
   { href: "/admin/exams", label: "نماذج الامتحانات", icon: FileCheck2 },
   { href: "/admin/question-bank", label: "بنك الأسئلة", icon: HelpCircle },
   { href: "/admin/students", label: "الطلاب", icon: GraduationCap },
+  { href: "/admin/subscriptions", label: "الاشتراكات والمدفوعات", icon: CreditCard },
   { href: "/admin/knowledge", label: "قاعدة المعرفة", icon: Database },
   { href: "/admin/knowledge/contributions", label: "مراجعة المساهمات", icon: ShieldCheck },
   { href: "/admin/lectures", label: "محاضرات الطلاب", icon: FileText },

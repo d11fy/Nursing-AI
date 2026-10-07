@@ -2,7 +2,7 @@ import "server-only";
 import { getPool, transaction } from "@/lib/db/pool";
 import { hashPassword, verifyPassword, newToken, tokenHash } from "./password";
 import { startSession, endSession } from "./session";
-import { sendPasswordResetEmail, sendWelcomeEmail, smtpConfigured } from "@/lib/email";
+import { sendPasswordResetEmail, sendWelcomeEmail } from "@/lib/email";
 import type { RegisterInput } from "@/lib/validations/auth";
 
 export class AccountAlreadyExistsError extends Error {
@@ -57,9 +57,7 @@ export async function registerAccount(input: RegisterInput) {
     return rows[0].id as string;
   });
   await startSession(id);
-  if (smtpConfigured()) {
-    void sendWelcomeEmail(input.fullName, email).catch((error) => console.error("Welcome email failed", error));
-  }
+  void sendWelcomeEmail(input.fullName, email).catch((error) => console.error("Welcome email failed", error instanceof Error ? error.message : "unknown"));
 }
 export async function loginAccount(emailInput: string, password: string) {
   const email = emailInput.toLowerCase();
@@ -74,7 +72,7 @@ export async function loginAccount(emailInput: string, password: string) {
   return true;
 }
 export async function requestPasswordReset(emailInput: string) {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_FROM || !process.env.APP_URL) throw new Error("خدمة استعادة كلمة المرور غير مفعّلة؛ تواصل مع الإدارة");
+  if (!process.env.APP_URL) throw new Error("APP_URL غير مضبوط");
   const email = emailInput.toLowerCase();
   if (!await allowAttempt(`reset:${email}`, 3) || !await allowAttempt("reset:global", 100)) return;
   const { rows } = await getPool().query("SELECT id FROM app_users WHERE email=$1", [email]);

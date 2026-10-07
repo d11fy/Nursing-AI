@@ -2,7 +2,7 @@ import Link from "next/link";
 import { MessageSquare, History, BookOpen, ArrowLeft, Gauge, Clock3 } from "lucide-react";
 import { requireProfile } from "@/lib/auth";
 import { createClient } from "@/lib/db/server";
-import { checkDailyLimit } from "@/lib/usage";
+import { getRemainingUsage, getStudentEntitlements } from "@/lib/subscriptions/service";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,7 +18,11 @@ import { EmptyState } from "@/components/ui/empty-state";
 export default async function DashboardHomePage() {
   const profile = await requireProfile();
   const db = await createClient();
-  const { used, limit } = await checkDailyLimit(db, profile.user_id);
+  const [access, aiUsage] = await Promise.all([
+    getStudentEntitlements(profile.user_id),
+    getRemainingUsage(profile.user_id, "ai_questions_daily"),
+  ]);
+  const { used, limit } = aiUsage;
 
   const { data: recentConversations } = await db
     .from("conversations")
@@ -39,11 +43,9 @@ export default async function DashboardHomePage() {
         <CardHeader className="grid grid-cols-[1fr_auto] items-center">
           <div>
           <CardTitle className="flex items-center gap-2 text-base"><Gauge className="size-4 text-primary" /> استخدامك اليوم</CardTitle>
-          <CardDescription>
-            {used} / {limit} سؤال اليوم
-          </CardDescription>
+          <CardDescription>{access.active ? `${used} / ${limit} سؤال اليوم · ${access.planName}` : "انتهى اشتراكك — بياناتك محفوظة"}</CardDescription>
           </div>
-          <span className="rounded-full bg-accent px-3 py-1 text-xs font-bold text-primary">{Math.max(0, limit - used)} متبقٍ</span>
+          <span className="rounded-full bg-accent px-3 py-1 text-xs font-bold text-primary">{access.active ? `${Math.max(0, limit - used)} متبقٍ` : "جدّد الآن"}</span>
         </CardHeader>
         <CardContent>
           <Progress value={Math.min(100, (used / limit) * 100)} />

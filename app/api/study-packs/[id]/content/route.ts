@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/db/server";
-import { checkRateLimit, checkDailyLimit } from "@/lib/usage";
+import { checkRateLimit } from "@/lib/usage";
+import { accessErrorMessage, consumeUsage, refundUsage } from "@/lib/subscriptions/service";
 import { contentRequestSchema } from "@/features/study-pack/schemas";
 import { getOrGenerateContent } from "@/features/study-pack/services/study-pack-service";
 
@@ -33,15 +34,9 @@ export async function POST(
       { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } }
     );
   }
-  const daily = await checkDailyLimit(db, user.id);
-  if (!daily.allowed) {
-    return NextResponse.json(
-      { error: "وصلت للحد اليومي للاستخدام؛ يمكنك العودة غدًا" },
-      { status: 403 }
-    );
-  }
-
+  let reservation;
   try {
+    reservation = await consumeUsage(user.id, "study_pack_limit");
     const result = await getOrGenerateContent({
       studyPackId,
       contentType: type,
@@ -49,8 +44,11 @@ export async function POST(
       regenerate,
     });
 
+    if (result.fromCache) await refundUsage(reservation);
     return NextResponse.json(result);
   } catch (err) {
+    if (reservation) await refundUsage(reservation).catch(() => undefined);
+    if (err instanceof Error && (err.message.includes("الحد") || err.message.includes("اشتراك") || err.message.includes("الميزة"))) return NextResponse.json(accessErrorMessage(err,"إنشاء حزمة الدراسة"),{status:403});
     const message = err instanceof Error ? err.message : "تعذر إنشاء المحتوى";
     return NextResponse.json({ error: message }, { status: 500 });
   }

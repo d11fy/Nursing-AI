@@ -4,6 +4,7 @@ import { createClient } from "@/lib/db/server";
 import { uploadChatImage } from "@/lib/storage";
 import { getSettings } from "@/lib/usage";
 import { ACCEPTED_IMAGE_TYPES } from "@/lib/validations/chat";
+import { accessErrorMessage, consumeUsage, refundUsage } from "@/lib/subscriptions/service";
 
 export async function POST(request: Request) {
   const db = await createClient();
@@ -37,10 +38,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "حجم الصورة كبير جدًا" }, { status: 400 });
   }
 
+  let reservation;
   try {
+    reservation = await consumeUsage(user.id, "images_limit");
     const { path, signedUrl } = await uploadChatImage(db, user.id, file);
     return NextResponse.json({ path, url: signedUrl });
-  } catch {
+  } catch (error) {
+    if (reservation) await refundUsage(reservation).catch(() => undefined);
+    if (error instanceof Error && (error.message.includes("الحد") || error.message.includes("اشتراك") || error.message.includes("الميزة"))) {
+      return NextResponse.json(accessErrorMessage(error, "الصور"), { status: 403 });
+    }
     return NextResponse.json(
       { error: "صار خطأ أثناء رفع الصورة، جرب مرة ثانية" },
       { status: 500 }
