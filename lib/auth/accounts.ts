@@ -30,7 +30,7 @@ async function allowAttempt(key: string, maximum: number) {
      RETURNING attempts`, [tokenHash(key)]);
   return rows[0].attempts <= maximum;
 }
-export async function registerAccount(input: RegisterInput) {
+export async function registerAccount(input: RegisterInput, customDeviceToken?: string) {
   const email = input.email.toLowerCase();
   if (!await allowAttempt(`register:${email}`, 5) || !await allowAttempt("register:global", 100)) throw new Error("حاول مرة أخرى لاحقًا");
   const passwordHash = await hashPassword(input.password);
@@ -56,10 +56,11 @@ export async function registerAccount(input: RegisterInput) {
       [rows[0].id, email, input.fullName, input.university, input.nursingYear, academicYear?.id ?? null]);
     return rows[0].id as string;
   });
-  await startSession(id);
+  const session = await startSession(id, customDeviceToken);
   void sendWelcomeEmail(input.fullName, email).catch((error) => console.error("Welcome email failed", error instanceof Error ? error.message : "unknown"));
+  return session;
 }
-export async function loginAccount(emailInput: string, password: string) {
+export async function loginAccount(emailInput: string, password: string, customDeviceToken?: string) {
   const email = emailInput.toLowerCase();
   if (!await allowAttempt(`login:${email}`, 10) || !await allowAttempt("login:global", 500)) return false;
   const { rows } = await getPool().query("SELECT u.id,u.password_hash,p.status FROM app_users u JOIN profiles p ON p.user_id=u.id WHERE u.email=$1", [email]);
@@ -68,8 +69,8 @@ export async function loginAccount(emailInput: string, password: string) {
   const valid = await verifyPassword(password, user?.password_hash ?? dummy);
   if (!user || !valid || user.status !== "active") return false;
   await getPool().query("DELETE FROM auth_attempts WHERE key=$1", [tokenHash(`login:${email}`)]);
-  await startSession(user.id);
-  return true;
+  const session = await startSession(user.id, customDeviceToken);
+  return session;
 }
 export async function requestPasswordReset(emailInput: string) {
   if (!process.env.APP_URL) throw new Error("APP_URL غير مضبوط");

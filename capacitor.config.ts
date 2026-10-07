@@ -6,12 +6,11 @@ const SERVER_URL = process.env.CAPACITOR_SERVER_URL || "https://nursing.alisohai
 const config: CapacitorConfig = {
   appId: "com.nursingai.app",
   appName: "Nursing AI",
-  webDir: "public",
+  webDir: "mobile/dist",
   server: {
-    url: SERVER_URL,
     cleartext: true,
     androidScheme: "https",
-    allowNavigation: ["*"],
+    allowNavigation: ["nursing.alisohail.tech", "*.alisohail.tech"],
   },
   plugins: {
     SplashScreen: {

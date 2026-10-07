@@ -1,5 +1,5 @@
 import "server-only";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import {
   DEVICE_TTL_SECONDS,
   establishSession,
@@ -23,22 +23,44 @@ export function deviceCookieOptions(maxAge = DEVICE_TTL_SECONDS) {
 export async function readSession(token?: string, deviceToken?: string) {
   return findSessionProfile(token, deviceToken);
 }
+
 export async function currentProfile() {
   const jar = await cookies();
-  return readSession(jar.get(SESSION_COOKIE)?.value, jar.get(DEVICE_COOKIE)?.value);
+  const sessionToken = jar.get(SESSION_COOKIE)?.value;
+  const deviceToken = jar.get(DEVICE_COOKIE)?.value;
+  if (sessionToken) {
+    return readSession(sessionToken, deviceToken);
+  }
+  try {
+    const head = await headers();
+    const authHeader = head.get("authorization");
+    const deviceHeader = head.get("x-device-token");
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const bearerToken = authHeader.slice(7).trim();
+      return readSession(bearerToken, deviceHeader ?? undefined);
+    }
+  } catch {}
+  return null;
 }
-export async function startSession(userId: string) {
+
+export async function startSession(userId: string, customDeviceToken?: string) {
   const jar = await cookies();
-  const issued = await establishSession(userId, jar.get(DEVICE_COOKIE)?.value);
+  const presentedDevice = customDeviceToken || jar.get(DEVICE_COOKIE)?.value;
+  const issued = await establishSession(userId, presentedDevice);
   jar.set(DEVICE_COOKIE, issued.deviceToken, deviceCookieOptions());
   jar.set(SESSION_COOKIE, issued.sessionToken, sessionCookieOptions());
+  return issued;
 }
+
 export async function refreshSession(token?: string, deviceToken?: string) {
   return renewSession(token, deviceToken);
 }
-export async function endSession() {
+
+export async function endSession(customSessionToken?: string) {
   const jar = await cookies();
-  const token = jar.get(SESSION_COOKIE)?.value;
-  await revokeSessionToken(token);
+  const token = customSessionToken || jar.get(SESSION_COOKIE)?.value;
+  if (token) {
+    await revokeSessionToken(token);
+  }
   jar.delete(SESSION_COOKIE);
 }
