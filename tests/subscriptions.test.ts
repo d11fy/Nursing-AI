@@ -19,6 +19,14 @@ before(async()=>{process.env.DATABASE_URL="postgresql://subscriptions-test";proc
 });
 after(()=>db.close());
 
+test("production payment methods are seeded with the configured recipient",async()=>{
+  const methods=await db.query<{name:string;account_holder:string;account_number:string|null;wallet_number:string|null;active:boolean}>("select name,account_holder,account_number,wallet_number,active from payment_methods where name in ('بنك فلسطين','جوال باي','بال باي') order by sort_order");
+  assert.deepEqual(methods.rows.map(method=>method.name),['بنك فلسطين','جوال باي','بال باي']);
+  assert.ok(methods.rows.every(method=>method.account_holder==='علي سهيل محمد الكحلوت'&&method.active));
+  assert.equal(methods.rows[0].account_number,'0567508786');
+  assert.ok(methods.rows.slice(1).every(method=>method.wallet_number==='0567508786'));
+});
+
 test("new account receives one configurable three-day trial",async()=>{const access=await getStudentEntitlements(userId);assert.equal(access.kind,"trial");assert.equal(access.entitlements.ai_questions_daily,10);assert.ok(new Date(access.endsAt!).getTime()-new Date(access.startsAt!).getTime()>=3*86400000-1000);});
 
 test("trial daily AI and total image limits are atomically enforced",async()=>{for(let i=0;i<10;i++)await consumeUsage(userId,"ai_questions_daily");await assert.rejects(consumeUsage(userId,"ai_questions_daily"),/استخدمت الحد/);for(let i=0;i<3;i++)await consumeUsage(userId,"images_limit");await assert.rejects(consumeUsage(userId,"images_limit"),/استخدمت الحد/);});
