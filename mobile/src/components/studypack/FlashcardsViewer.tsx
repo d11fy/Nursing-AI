@@ -1,5 +1,12 @@
 import React, { useState } from "react";
-import { RotateCw, CheckCircle2, RotateCcw, ChevronRight, ChevronLeft, Sparkles } from "lucide-react";
+import {
+  RotateCw,
+  CheckCircle2,
+  RotateCcw,
+  ChevronRight,
+  ChevronLeft,
+  Sparkles,
+} from "lucide-react";
 import { apiFetch } from "../../services/api";
 
 interface Flashcard {
@@ -7,6 +14,9 @@ interface Flashcard {
   front: string;
   back: string;
   topic?: string | null;
+  explanation?: string | null;
+  source_reference?: string | null;
+  progress_status?: string;
   clinical_pearl?: string | null;
   mastery_level?: number;
 }
@@ -21,6 +31,7 @@ export function FlashcardsViewer({
   const [cards, setCards] = useState<Flashcard[]>(initialCards);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
+  const [error, setError] = useState("");
   const [submittingRating, setSubmittingRating] = useState(false);
 
   const currentCard = cards[currentIndex];
@@ -46,17 +57,30 @@ export function FlashcardsViewer({
   const handleRate = async (rating: "again" | "good" | "easy") => {
     if (!currentCard || submittingRating) return;
     setSubmittingRating(true);
+    setError("");
     try {
       await apiFetch(`/api/study-packs/${studyPackId}/flashcards/progress`, {
         method: "POST",
         body: JSON.stringify({
-          cardId: currentCard.id,
-          rating,
+          flashcardId: currentCard.id,
+          status: rating === "again" ? "review_again" : "known",
         }),
       });
+      setCards((prev) =>
+        prev.map((card) =>
+          card.id === currentCard.id
+            ? {
+                ...card,
+                progress_status: rating === "again" ? "review_again" : "known",
+              }
+            : card,
+        ),
+      );
       handleNext();
-    } catch {
-      handleNext();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "تعذر حفظ المراجعة؛ حاول مجددًا",
+      );
     } finally {
       setSubmittingRating(false);
     }
@@ -72,6 +96,11 @@ export function FlashcardsViewer({
 
   return (
     <div className="space-y-4">
+      {error && (
+        <p role="alert" className="surface text-red-600 text-sm">
+          {error}
+        </p>
+      )}
       {/* Progress & Counter */}
       <div className="flex items-center justify-between text-xs font-bold text-slate-500 px-1">
         <span>
@@ -93,6 +122,15 @@ export function FlashcardsViewer({
 
       {/* Interactive 3D Flip Card */}
       <div
+        role="button"
+        tabIndex={0}
+        aria-label="قلب البطاقة"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleFlip();
+          }
+        }}
         onClick={handleFlip}
         className="perspective-1000 min-h-[260px] cursor-pointer"
       >
@@ -104,7 +142,9 @@ export function FlashcardsViewer({
           }`}
         >
           {/* Card Front (Question / Term) */}
-          <div className={`backface-hidden flex flex-col justify-between h-full ${isFlipped ? "hidden" : "flex"}`}>
+          <div
+            className={`backface-hidden flex flex-col justify-between h-full ${isFlipped ? "hidden" : "flex"}`}
+          >
             <div className="space-y-3">
               <span className="inline-flex items-center gap-1 text-[11px] font-bold text-primary">
                 <Sparkles className="size-3" />
@@ -122,7 +162,9 @@ export function FlashcardsViewer({
           </div>
 
           {/* Card Back (Answer / Explanation) */}
-          <div className={`rotate-y-180 backface-hidden flex flex-col justify-between h-full ${isFlipped ? "flex" : "hidden"}`}>
+          <div
+            className={`rotate-y-180 backface-hidden flex flex-col justify-between h-full ${isFlipped ? "flex" : "hidden"}`}
+          >
             <div className="space-y-3">
               <span className="inline-flex items-center gap-1 text-[11px] font-bold text-teal-300">
                 <CheckCircle2 className="size-3" />
@@ -131,9 +173,10 @@ export function FlashcardsViewer({
               <p className="text-xs font-bold text-slate-100 leading-relaxed selectable-text">
                 {currentCard.back}
               </p>
-              {currentCard.clinical_pearl && (
+              {(currentCard.explanation || currentCard.clinical_pearl) && (
                 <div className="rounded-xl bg-teal-800/80 p-2.5 text-[11px] text-teal-100 mt-2">
-                  💡 <strong>نقطة سريرية:</strong> {currentCard.clinical_pearl}
+                  💡 <strong>نقطة سريرية:</strong>{" "}
+                  {currentCard.explanation || currentCard.clinical_pearl}
                 </div>
               )}
             </div>

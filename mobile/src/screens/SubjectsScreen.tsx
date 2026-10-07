@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { BookOpen, Search, Calendar, ChevronLeft, RefreshCw, AlertCircle } from "lucide-react";
+import { BookOpen, Search, Calendar, ChevronLeft, RefreshCw } from "lucide-react";
 import { useNavigation } from "../context/NavigationContext";
 import { apiFetch } from "../services/api";
 

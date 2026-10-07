@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+} from "react";
 import { registerBackHandler } from "../services/capacitor";
 
 export type TabType = "home" | "subjects" | "chat" | "library" | "profile";
@@ -15,6 +21,7 @@ interface NavigationContextType {
   switchTab: (tab: TabType) => void;
   navigate: (screenName: string, params?: any) => void;
   goBack: () => void;
+  exitQuiz: () => void;
   replace: (screenName: string, params?: any) => void;
   canGoBack: boolean;
   activeModal: string | null;
@@ -30,15 +37,23 @@ interface NavigationContextType {
 
 const NavigationContext = createContext<NavigationContextType | null>(null);
 
-export function NavigationProvider({ children }: { children: React.ReactNode }) {
+export function NavigationProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [activeTab, setActiveTab] = useState<TabType>("home");
-  const [screenStack, setScreenStack] = useState<ScreenState[]>([{ name: "home" }]);
+  const [screenStack, setScreenStack] = useState<ScreenState[]>([
+    { name: "home" },
+  ]);
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [isQuizActive, setIsQuizActive] = useState(false);
   const [showQuizExitConfirm, setShowQuizExitConfirm] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const currentScreen = screenStack[screenStack.length - 1] || { name: activeTab };
+  const currentScreen = screenStack[screenStack.length - 1] || {
+    name: activeTab,
+  };
   const canGoBack = screenStack.length > 1;
 
   const showToast = useCallback((msg: string) => {
@@ -87,6 +102,14 @@ export function NavigationProvider({ children }: { children: React.ReactNode }) 
     });
   }, [activeModal, isQuizActive, currentScreen.name, showQuizExitConfirm]);
 
+  const exitQuiz = useCallback(() => {
+    setIsQuizActive(false);
+    setShowQuizExitConfirm(false);
+    setScreenStack((prev) =>
+      prev.length > 1 ? prev.slice(0, -1) : [{ name: "home" }],
+    );
+  }, []);
+
   const openModal = useCallback((id: string) => {
     setActiveModal(id);
   }, []);
@@ -131,7 +154,15 @@ export function NavigationProvider({ children }: { children: React.ReactNode }) 
       // 6. At home root -> allow default double tap to exit
       return false;
     });
-  }, [activeModal, isQuizActive, currentScreen.name, screenStack.length, activeTab, switchTab, showQuizExitConfirm]);
+  }, [
+    activeModal,
+    isQuizActive,
+    currentScreen.name,
+    screenStack.length,
+    activeTab,
+    switchTab,
+    showQuizExitConfirm,
+  ]);
 
   return (
     <NavigationContext.Provider
@@ -142,6 +173,7 @@ export function NavigationProvider({ children }: { children: React.ReactNode }) 
         switchTab,
         navigate,
         goBack,
+        exitQuiz,
         replace,
         canGoBack,
         activeModal,

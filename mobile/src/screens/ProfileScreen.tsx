@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { User, Mail, GraduationCap, ShieldCheck, LogOut, Settings, Edit2, Check, Sparkles } from "lucide-react";
+import { User, GraduationCap, ShieldCheck, LogOut, Settings, Edit2, Sparkles } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useNavigation } from "../context/NavigationContext";
 import { apiFetch } from "../services/api";
@@ -98,12 +98,12 @@ export function ProfileScreen() {
               {profile?.nursing_year === "year1"
                 ? "السنة الأولى"
                 : profile?.nursing_year === "year2"
-                ? "السنة الثانية"
-                : profile?.nursing_year === "year3"
-                ? "السنة الثالثة"
-                : profile?.nursing_year === "year4"
-                ? "السنة الرابعة"
-                : "تمريض"}
+                  ? "السنة الثانية"
+                  : profile?.nursing_year === "year3"
+                    ? "السنة الثالثة"
+                    : profile?.nursing_year === "year4"
+                      ? "السنة الرابعة"
+                      : "تمريض"}
             </span>
           </div>
 
@@ -119,6 +119,14 @@ export function ProfileScreen() {
         </div>
       </div>
 
+      <button
+        onClick={() => navigate("subscription")}
+        className="btn-primary w-full"
+      >
+        <Sparkles className="size-4" />
+        اشتراكي والباقات وطلبات الدفع
+      </button>
+
       {/* Single Device Policy Banner */}
       <div className="p-4 rounded-3xl bg-teal-50 dark:bg-teal-950/30 border border-teal-200 dark:border-teal-900/60 space-y-1.5 text-xs">
         <div className="flex items-center gap-2 font-black text-primary dark:text-teal-300">
@@ -126,7 +134,8 @@ export function ProfileScreen() {
           <span>حماية الحساب وجهاز الطالب</span>
         </div>
         <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
-          هذا الحساب محمي بنظام الجهاز الواحد. جلستك الحالية مخصصة لهذا الهاتف للحفاظ على خصوصيتك وسجل تقدمك.
+          هذا الحساب محمي بنظام الجهاز الواحد. جلستك الحالية مخصصة لهذا الهاتف
+          للحفاظ على خصوصيتك وسجل تقدمك.
         </p>
       </div>
 
@@ -138,7 +147,7 @@ export function ProfileScreen() {
         >
           <div className="flex items-center gap-2.5">
             <Settings className="size-4 text-slate-400" />
-            <span>إعدادات التطبيق والخادم</span>
+            <span>تفضيلات الدراسة وإعدادات التطبيق</span>
           </div>
           <span className="text-slate-400">›</span>
         </button>
@@ -160,7 +169,9 @@ export function ProfileScreen() {
       >
         <form onSubmit={handleSaveProfile} className="space-y-4">
           <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700">الاسم الكامل</label>
+            <label className="text-xs font-bold text-slate-700">
+              الاسم الكامل
+            </label>
             <input
               type="text"
               value={fullName}

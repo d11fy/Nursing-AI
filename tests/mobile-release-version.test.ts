@@ -6,7 +6,11 @@ import { execSync } from "node:child_process";
 import { PGlite } from "@electric-sql/pglite";
 import { vector } from "@electric-sql/pglite-pgvector";
 import { migrate } from "../scripts/migrate.mjs";
-import { getAppVersionInfo, setAppVersionInfo, DEFAULT_APP_VERSION } from "../lib/version/app-version";
+import {
+  getAppVersionInfo,
+  setAppVersionInfo,
+  DEFAULT_APP_VERSION,
+} from "../lib/version/app-version";
 
 const db = new PGlite({ extensions: { vector } });
 const query = async (sql: string, values?: unknown[]) => {
@@ -32,18 +36,25 @@ after(() => db.close());
 
 test("Android and in-app update UI share one version source", () => {
   const root = process.cwd();
-  const source = JSON.parse(fs.readFileSync(path.join(root, "mobile", "app-version.json"), "utf8"));
-  const gradle = fs.readFileSync(path.join(root, "android", "app", "build.gradle"), "utf8");
-  const mobileConfig = fs.readFileSync(path.join(root, "mobile", "src", "config", "version.ts"), "utf8");
+  const source = JSON.parse(
+    fs.readFileSync(path.join(root, "mobile", "app-version.json"), "utf8"),
+  );
+  const gradle = fs.readFileSync(
+    path.join(root, "android", "app", "build.gradle"),
+    "utf8",
+  );
+  const mobileConfig = fs.readFileSync(
+    path.join(root, "mobile", "src", "config", "version.ts"),
+    "utf8",
+  );
 
-  assert.equal(source.name, "1.0.1");
-  assert.equal(source.code, 2);
+  assert.equal(source.name, "1.1.0");
+  assert.equal(source.code, 3);
   assert.match(gradle, /mobile\/app-version\.json/);
   assert.match(gradle, /versionCode appVersion\.code/);
   assert.match(gradle, /versionName appVersion\.name/);
   assert.match(mobileConfig, /app-version\.json/);
 });
-
 
 test("mobile version system: defaults and settings persistence", async () => {
   const initial = await getAppVersionInfo();
@@ -81,10 +92,26 @@ test("mobile version system: defaults and settings persistence", async () => {
 
 test("signed production APK: files exist and have valid digital signature", async () => {
   const root = process.cwd();
-  const v1Path = path.join(root, "public", "downloads", "nursing-ai-v1.0.1.apk");
-  const latestPath = path.join(root, "public", "downloads", "nursing-ai-latest.apk");
-  assert.ok(fs.existsSync(v1Path), "public/downloads/nursing-ai-v1.0.1.apk exists");
-  assert.ok(fs.existsSync(latestPath), "public/downloads/nursing-ai-latest.apk exists");
+  const v1Path = path.join(
+    root,
+    "public",
+    "downloads",
+    "nursing-ai-v1.0.1.apk",
+  );
+  const latestPath = path.join(
+    root,
+    "public",
+    "downloads",
+    "nursing-ai-latest.apk",
+  );
+  assert.ok(
+    fs.existsSync(v1Path),
+    "public/downloads/nursing-ai-v1.0.1.apk exists",
+  );
+  assert.ok(
+    fs.existsSync(latestPath),
+    "public/downloads/nursing-ai-latest.apk exists",
+  );
 
   const stat = fs.statSync(v1Path);
   assert.ok(stat.size > 750 * 1024, "minified APK size is healthy (> 750KB)");
@@ -97,12 +124,17 @@ test("signed production APK: files exist and have valid digital signature", asyn
   );
 
   // Perform cryptographic verification when the Android SDK is available.
-  const androidHome = process.env.ANDROID_HOME || "C:\\Users\\Alosh2\\AppData\\Local\\Android\\Sdk";
+  const androidHome =
+    process.env.ANDROID_HOME ||
+    "C:\\Users\\Alosh2\\AppData\\Local\\Android\\Sdk";
   const buildToolsRoot = path.join(androidHome, "build-tools");
   const versions = fs.existsSync(buildToolsRoot)
-    ? fs.readdirSync(buildToolsRoot).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+    ? fs
+        .readdirSync(buildToolsRoot)
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
     : [];
-  const executable = process.platform === "win32" ? "apksigner.bat" : "apksigner";
+  const executable =
+    process.platform === "win32" ? "apksigner.bat" : "apksigner";
   const apksigner = versions
     .map((version) => path.join(buildToolsRoot, version, executable))
     .find((candidate) => fs.existsSync(candidate));
@@ -111,12 +143,19 @@ test("signed production APK: files exist and have valid digital signature", asyn
       encoding: "utf-8",
     });
     assert.match(output, /Verifies/, "APK signature verification passes");
-    assert.match(output, /Verified using v2 scheme \(APK Signature Scheme v2\): true/);
+    assert.match(
+      output,
+      /Verified using v2 scheme \(APK Signature Scheme v2\): true/,
+    );
   }
 });
 
 test("version comparison logic detects newer releases and force update flag", () => {
-  function checkShouldUpdate(currentCode: number, latestCode: number, force: boolean) {
+  function checkShouldUpdate(
+    currentCode: number,
+    latestCode: number,
+    force: boolean,
+  ) {
     return {
       hasUpdate: latestCode > currentCode,
       mustForce: latestCode > currentCode && force,

@@ -1,15 +1,5 @@
 import React, { useEffect, useState } from "react";
-import {
-  TrendingUp,
-  Brain,
-  BookOpen,
-  ClipboardCheck,
-  CircleAlert,
-  Target,
-  RefreshCw,
-  Play,
-  ChevronLeft,
-} from "lucide-react";
+import { Brain, Target, RefreshCw, Play } from "lucide-react";
 import { useNavigation } from "../context/NavigationContext";
 import { apiFetch } from "../services/api";
 
@@ -17,15 +7,17 @@ export function ProgressScreen() {
   const { navigate } = useNavigation();
 
   const [data, setData] = useState<any>(null);
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
   const fetchProgress = async () => {
     setLoading(true);
+    setError("");
     try {
       const res = await apiFetch("/api/learning-progress");
       setData(res);
-    } catch {
-      setData(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "تعذر تحميل التقدم");
     } finally {
       setLoading(false);
     }
@@ -35,7 +27,10 @@ export function ProgressScreen() {
     fetchProgress();
   }, []);
 
-  const handleLaunchTargeted = async (subjectId?: string, topicKey?: string) => {
+  const handleLaunchTargeted = async (
+    subjectId?: string,
+    topicKey?: string,
+  ) => {
     try {
       const res = await apiFetch("/api/learning-progress/targeted-review", {
         method: "POST",
@@ -62,10 +57,22 @@ export function ProgressScreen() {
     return (
       <div className="flex flex-col items-center justify-center py-20 space-y-2">
         <RefreshCw className="size-6 text-primary animate-spin" />
-        <span className="text-xs text-slate-400">جارٍ تحليل تقدم التعلم...</span>
+        <span className="text-xs text-slate-400">
+          جارٍ تحليل تقدم التعلم...
+        </span>
       </div>
     );
   }
+
+  if (error)
+    return (
+      <div role="alert" className="surface space-y-3 text-red-600">
+        <p>{error}</p>
+        <button className="btn-primary" onClick={fetchProgress}>
+          إعادة المحاولة
+        </button>
+      </div>
+    );
 
   if (!data || !data.topics || data.topics.length === 0) {
     return (
@@ -75,13 +82,20 @@ export function ProgressScreen() {
           نحتاج لمزيد من النشاط لحساب التقدم
         </h4>
         <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
-          ابدأ بحل بعض الاختبارات (Quizzes) أو مراجعة البطاقات ليتمكن النظام من قياس نسبة إتقانك بدقة.
+          ابدأ بحل بعض الاختبارات (Quizzes) أو مراجعة البطاقات ليتمكن النظام من
+          قياس نسبة إتقانك بدقة.
         </p>
       </div>
     );
   }
 
-  const { summary, subjects = [], weakTopics = [], strongTopics = [], recommendation } = data;
+  const {
+    summary,
+    subjects = [],
+    weakTopics = [],
+    strongTopics = [],
+    recommendation,
+  } = data;
 
   return (
     <div className="space-y-4 pb-nav">
@@ -93,25 +107,35 @@ export function ProgressScreen() {
             التقدم الإجمالي العام
           </span>
           <span className="text-2xl font-black">
-            {summary?.overallMastery != null ? `${summary.overallMastery}%` : "—"}
+            {summary?.overallMastery != null
+              ? `${summary.overallMastery}%`
+              : "—"}
           </span>
         </div>
 
         <div className="grid grid-cols-4 gap-2 pt-2 border-t border-white/20 text-center">
           <div>
-            <span className="block font-black text-sm">{summary?.subjectsStudied || 0}</span>
+            <span className="block font-black text-sm">
+              {summary?.subjectsStudied || 0}
+            </span>
             <span className="text-[10px] text-teal-200">مواد</span>
           </div>
           <div>
-            <span className="block font-black text-sm">{summary?.questionsAnswered || 0}</span>
+            <span className="block font-black text-sm">
+              {summary?.questionsAnswered || 0}
+            </span>
             <span className="text-[10px] text-teal-200">أسئلة</span>
           </div>
           <div>
-            <span className="block font-black text-sm text-red-300">{summary?.currentMistakes || 0}</span>
+            <span className="block font-black text-sm text-red-300">
+              {summary?.currentMistakes || 0}
+            </span>
             <span className="text-[10px] text-teal-200">أخطاء</span>
           </div>
           <div>
-            <span className="block font-black text-sm text-amber-300">{summary?.topicsNeedingReview || 0}</span>
+            <span className="block font-black text-sm text-amber-300">
+              {summary?.topicsNeedingReview || 0}
+            </span>
             <span className="text-[10px] text-teal-200">مواضيع للمراجعة</span>
           </div>
         </div>
@@ -129,7 +153,12 @@ export function ProgressScreen() {
           </p>
           {weakTopics[0] && (
             <button
-              onClick={() => handleLaunchTargeted(weakTopics[0].subjectId, weakTopics[0].topicKey)}
+              onClick={() =>
+                handleLaunchTargeted(
+                  weakTopics[0].subjectId,
+                  weakTopics[0].topicKey,
+                )
+              }
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 text-white font-bold text-[11px] active:scale-95"
             >
               <Play className="size-3" />
@@ -167,6 +196,17 @@ export function ProgressScreen() {
                 />
               </div>
 
+              <button
+                className="btn-secondary w-full"
+                onClick={() =>
+                  navigate("subject-detail", {
+                    subjectId: sub.subjectId,
+                    subjectName: sub.subjectName,
+                  })
+                }
+              >
+                فتح المادة
+              </button>
               <p className="text-[10px] text-slate-400">
                 {sub.topicsStudied} مواضيع · {sub.questionsAnswered} أسئلة مجابة
               </p>
@@ -175,6 +215,25 @@ export function ProgressScreen() {
         </div>
       </div>
 
+      {strongTopics.length > 0 && (
+        <section className="space-y-3">
+          <h3 className="font-bold text-primary">مواضيع قوية</h3>
+          {strongTopics.map((topic: any) => (
+            <div
+              key={`${topic.subjectId}-${topic.topicKey}`}
+              className="surface flex justify-between gap-3"
+            >
+              <div>
+                <b className="text-sm">{topic.topicName}</b>
+                <p className="text-xs text-slate-500 mt-1">
+                  {topic.evidenceCount} تفاعلات ذات معنى
+                </p>
+              </div>
+              <b className="text-primary">{topic.masteryScore}%</b>
+            </div>
+          ))}
+        </section>
+      )}
       {/* Weak Topics */}
       {weakTopics.length > 0 && (
         <div className="space-y-2.5">
@@ -193,7 +252,9 @@ export function ProgressScreen() {
                     <h4 className="text-xs font-bold text-slate-900 dark:text-white">
                       {topic.topicName}
                     </h4>
-                    <span className="text-[10px] text-slate-400">{topic.subjectName}</span>
+                    <span className="text-[10px] text-slate-400">
+                      {topic.subjectName}
+                    </span>
                   </div>
                   <span className="text-xs font-black text-amber-600">
                     {topic.masteryScore}%
@@ -201,7 +262,9 @@ export function ProgressScreen() {
                 </div>
 
                 <button
-                  onClick={() => handleLaunchTargeted(topic.subjectId, topic.topicKey)}
+                  onClick={() =>
+                    handleLaunchTargeted(topic.subjectId, topic.topicKey)
+                  }
                   className="w-full flex items-center justify-center gap-1.5 h-8 rounded-xl bg-amber-50 dark:bg-slate-800 text-amber-700 dark:text-amber-300 font-bold text-[11px] active:scale-95 transition-all"
                 >
                   <Play className="size-3" />

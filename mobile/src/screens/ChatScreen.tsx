@@ -6,12 +6,25 @@ import {
   Paperclip,
   History,
   Sparkles,
-  RefreshCw,
   X,
   FileText,
   StopCircle,
+  BookOpen,
+  Copy,
+  ThumbsUp,
+  ThumbsDown,
 } from "lucide-react";
 import { useNavigation } from "../context/NavigationContext";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { BottomSheet } from "../components/common/BottomSheet";
+import { LibraryScreen } from "./LibraryScreen";
+import {
+  type ActiveLibrarySource,
+  type LibraryResource,
+} from "../config/library";
+import { waitForChatFile } from "../../../lib/chat/attachments";
+import { resolveOfficialUrl } from "../services/api";
 import { apiFetch, apiStream, apiUpload } from "../services/api";
 
 interface Message {
@@ -34,22 +47,42 @@ export function ChatScreen({
   conversationId: initialConversationId,
   subjectId: initialSubjectId,
   subjectName: initialSubjectName,
+  lectureId: initialLectureId,
 }: {
   conversationId?: string | null;
   subjectId?: string | null;
   subjectName?: string | null;
+  lectureId?: string | null;
 }) {
-  const { navigate } = useNavigation();
+  const { navigate, showToast } = useNavigation();
 
-  const [conversationId, setConversationId] = useState<string | null>(initialConversationId || null);
-  const [subjectId, setSubjectId] = useState<string | null>(initialSubjectId || null);
-  const [subjectName, setSubjectName] = useState<string | null>(initialSubjectName || null);
+  const [conversationId, setConversationId] = useState<string | null>(
+    initialConversationId || null,
+  );
+  const [subjectId, setSubjectId] = useState<string | null>(
+    initialSubjectId || null,
+  );
+  const [subjectName, setSubjectName] = useState<string | null>(
+    initialSubjectName || null,
+  );
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [pendingAttachment, setPendingAttachment] = useState<PendingAttachment | null>(null);
+  const [pendingAttachment, setPendingAttachment] =
+    useState<PendingAttachment | null>(null);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
-  const [availableSubjects, setAvailableSubjects] = useState<Array<{ id: string; name_ar: string }>>([]);
+  const [error, setError] = useState("");
+  const [attachmentStatus, setAttachmentStatus] = useState("");
+  const [loadingConversation, setLoadingConversation] = useState(false);
+  const [subjectPickerOpen, setSubjectPickerOpen] = useState(false);
+  const [pickerSubject, setPickerSubject] = useState("");
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [activeSources, setActiveSources] = useState<ActiveLibrarySource[]>([]);
+  const uploadControllerRef = useRef<AbortController | null>(null);
+  const previewUrlsRef = useRef(new Set<string>());
+  const [availableSubjects, setAvailableSubjects] = useState<
+    Array<{ id: string; name_ar: string }>
+  >([]);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -65,6 +98,15 @@ export function ChatScreen({
     scrollToBottom();
   }, [messages, isGenerating]);
 
+  useEffect(
+    () => () => {
+      abortControllerRef.current?.abort();
+      uploadControllerRef.current?.abort();
+      for (const url of previewUrlsRef.current) URL.revokeObjectURL(url);
+    },
+    [],
+  );
+
   // Load subjects for selector
   useEffect(() => {
     apiFetch("/api/subjects")
@@ -74,35 +116,120 @@ export function ChatScreen({
       .catch(() => {});
   }, []);
 
-  // Load existing conversation if id provided
+  // Cancel stale requests when the student changes conversations.
   useEffect(() => {
+    const controller = new AbortController();
     if (initialConversationId) {
-      apiFetch(`/api/conversations/${initialConversationId}`)
+      setLoadingConversation(true);
+      apiFetch(`/api/conversations/${initialConversationId}`, {
+        signal: controller.signal,
+      })
         .then((res) => {
-          if (res.messages) {
-            setMessages(res.messages);
-            setConversationId(res.conversation.id);
-            setSubjectId(res.conversation.subject_id);
-          }
+          setMessages(res.messages || []);
+          setConversationId(res.conversation.id);
+          setSubjectId(res.conversation.subject_id);
+          setActiveSources(res.activeSources || []);
         })
-        .catch(() => setMessages([]));
+        .catch((err) => {
+          if (!controller.signal.aborted) setError(err.message);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoadingConversation(false);
+        });
     }
+    return () => controller.abort();
   }, [initialConversationId]);
 
   const handleStartNewChat = () => {
+    abortControllerRef.current?.abort();
+    uploadControllerRef.current?.abort();
+    setIsGenerating(false);
+    setUploadingAttachment(false);
     setConversationId(null);
     setMessages([]);
     setInput("");
     setPendingAttachment(null);
+    setActiveSources([]);
+    setError("");
+  };
+  const openDocumentPicker = () => {
+    if (subjectId) {
+      docInputRef.current?.click();
+      return;
+    }
+    if (availableSubjects.length === 1) {
+      setSubjectId(availableSubjects[0].id);
+      setPickerSubject(availableSubjects[0].id);
+      setSubjectPickerOpen(true);
+      return;
+    }
+    if (!availableSubjects.length) {
+      showToast("لا توجد مادة متاحة لربط الملف بها");
+      return;
+    }
+    setSubjectPickerOpen(true);
+  };
+  const attachSource = async (resource: LibraryResource) => {
+    const res = await apiFetch("/api/library/sources", {
+      method: "POST",
+      body: JSON.stringify({
+        conversationId,
+        documentId: resource.id,
+        subjectId: subjectId || resource.subjectId,
+      }),
+    });
+    setConversationId(res.conversationId);
+    setSubjectId((id) => id || resource.subjectId);
+    setActiveSources((prev) => [
+      ...prev.filter((item) => item.id !== res.source.id),
+      res.source,
+    ]);
+    setLibraryOpen(false);
+    showToast("تم إرفاق المصدر للمحادثة");
+  };
+  const removeSource = async (id: string) => {
+    if (!conversationId || isGenerating) return;
+    try {
+      await apiFetch("/api/library/sources", {
+        method: "DELETE",
+        body: JSON.stringify({ conversationId, documentId: id }),
+      });
+      setActiveSources((prev) => prev.filter((item) => item.id !== id));
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "تعذر إزالة المصدر");
+    }
+  };
+  const feedback = async (messageId: string, isPositive: boolean) => {
+    try {
+      await apiFetch("/api/feedback", {
+        method: "POST",
+        body: JSON.stringify({ messageId, isPositive }),
+      });
+      showToast("شكرًا لتقييمك");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "تعذر إرسال التقييم");
+    }
   };
 
   // Image Selection (Gallery)
-  const handleImageSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageSelected = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (
+      !["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(
+        file.type,
+      )
+    ) {
+      showToast("استخدم صورة JPG أو PNG أو WEBP");
+      return;
+    }
+    setError("");
     setUploadingAttachment(true);
     try {
       const previewUrl = URL.createObjectURL(file);
+      previewUrlsRef.current.add(previewUrl);
       const form = new FormData();
       form.append("file", file);
       const res = await apiUpload("/api/upload", form);
@@ -113,7 +240,7 @@ export function ChatScreen({
         path: res.path,
       });
     } catch (err: any) {
-      alert(err.message || "فشل رفع الصورة");
+      setError(err.message || "فشل رفع الصورة");
     } finally {
       setUploadingAttachment(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -121,12 +248,24 @@ export function ChatScreen({
   };
 
   // Camera Capture
-  const handleCameraSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCameraSelected = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (
+      !["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(
+        file.type,
+      )
+    ) {
+      showToast("استخدم صورة JPG أو PNG أو WEBP");
+      return;
+    }
+    setError("");
     setUploadingAttachment(true);
     try {
       const previewUrl = URL.createObjectURL(file);
+      previewUrlsRef.current.add(previewUrl);
       const form = new FormData();
       form.append("file", file);
       const res = await apiUpload("/api/upload", form);
@@ -137,7 +276,7 @@ export function ChatScreen({
         path: res.path,
       });
     } catch (err: any) {
-      alert(err.message || "فشل التقاط الصورة");
+      setError(err.message || "فشل التقاط الصورة");
     } finally {
       setUploadingAttachment(false);
       if (cameraInputRef.current) cameraInputRef.current.value = "";
@@ -148,37 +287,87 @@ export function ChatScreen({
   const handleDocSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = "";
     if (!subjectId) {
-      alert("يرجى اختيار المادة أولاً لربط الملف الدراسي بها");
+      setSubjectPickerOpen(true);
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      showToast("الحد الأقصى لملف المحادثة 10MB");
+      return;
+    }
+    if (!/\.(pdf|docx|pptx|txt)$/i.test(file.name)) {
+      showToast("استخدم PDF أو DOCX أو PPTX أو TXT");
       return;
     }
     setUploadingAttachment(true);
+    setError("");
+    setAttachmentStatus("جارٍ رفع الملف...");
+    const controller = new AbortController();
+    uploadControllerRef.current = controller;
     try {
       const form = new FormData();
       form.append("file", file);
       if (conversationId) form.append("conversationId", conversationId);
-      if (subjectId) form.append("subjectId", subjectId);
-      const res = await apiUpload("/api/chat/files", form);
-      if (res.conversationId) setConversationId(res.conversationId);
+      form.append("subjectId", subjectId);
+      const uploaded = await apiUpload(
+        "/api/chat/files",
+        form,
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
+      setConversationId(uploaded.conversationId);
+      const ready = await waitForChatFile(
+        uploaded,
+        (cid, lectureId) =>
+          apiFetch(
+            `/api/chat/files?${new URLSearchParams({ conversationId: cid, lectureId })}`,
+            { signal: controller.signal },
+          ),
+        {
+          signal: controller.signal,
+          onStatus: () =>
+            setAttachmentStatus(
+              "جارٍ تجهيز الملف للدراسة... يمكنك إلغاء الانتظار",
+            ),
+        },
+      );
       setPendingAttachment({
         type: "file",
         file,
-        attachmentId: res.attachmentId,
-        lectureId: res.lectureId,
+        attachmentId: ready.attachmentId,
+        lectureId: ready.lectureId,
       });
-    } catch (err: any) {
-      alert(err.message || "فشل رفع الملف");
+      showToast("الملف جاهز للدراسة");
+    } catch (err) {
+      if (!controller.signal.aborted)
+        setError(err instanceof Error ? err.message : "فشل رفع الملف");
     } finally {
-      setUploadingAttachment(false);
-      if (docInputRef.current) docInputRef.current.value = "";
+      if (uploadControllerRef.current === controller) {
+        setUploadingAttachment(false);
+        setAttachmentStatus("");
+        uploadControllerRef.current = null;
+      }
     }
   };
 
   const handleSend = async () => {
     const text = input.trim();
-    if (!text && !pendingAttachment) return;
+    if (
+      isGenerating ||
+      uploadingAttachment ||
+      loadingConversation ||
+      abortControllerRef.current ||
+      (!text && !pendingAttachment)
+    )
+      return;
+    setError("");
 
-    const currentText = text || (pendingAttachment?.type === "image" ? "اشرح محتوى هذه الصورة بشكل سريري تعليمي لطالب تمريض." : "لخص أهم محتويات هذا الملف واشرحها.");
+    const currentText =
+      text ||
+      (pendingAttachment?.type === "image"
+        ? "اشرح محتوى هذه الصورة بشكل سريري تعليمي لطالب تمريض."
+        : "لخص أهم محتويات هذا الملف واشرحها.");
 
     const userMessage: Message = {
       id: `local-user-${Date.now()}`,
@@ -211,7 +400,7 @@ export function ChatScreen({
           conversationId: conversationId || undefined,
           content: currentText,
           subjectId: subjectId || undefined,
-          lectureId: uploadedLectureId || undefined,
+          lectureId: uploadedLectureId || initialLectureId || undefined,
           imagePath: attachmentPath || undefined,
           attachmentId: attachmentId || undefined,
         },
@@ -220,25 +409,43 @@ export function ChatScreen({
           onChunk: (chunk) => {
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === assistantMessage.id ? { ...m, content: m.content + chunk } : m
-              )
+                m.id === assistantMessage.id
+                  ? { ...m, content: m.content + chunk }
+                  : m,
+              ),
+            );
+          },
+          onMessageIds: (assistantId, userId) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMessage.id
+                  ? { ...m, id: assistantId }
+                  : m.id === userMessage.id
+                    ? { ...m, id: userId }
+                    : m,
+              ),
             );
           },
           onComplete: () => {
             setIsGenerating(false);
           },
           onError: (err) => {
-            alert(err.message || "حدث خطأ أثناء الاتصال بالمعلم الذكي");
+            setError(err.message || "حدث خطأ أثناء الاتصال بالمعلم الذكي");
             setIsGenerating(false);
           },
         },
-        controller.signal
+        controller.signal,
       );
     } catch (err: any) {
       if (err.name !== "AbortError") {
-        alert("حدث خطأ أثناء المحادثة");
+        setError("حدث خطأ أثناء المحادثة");
       }
       setIsGenerating(false);
+    } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+        setIsGenerating(false);
+      }
     }
   };
 
@@ -253,6 +460,11 @@ export function ChatScreen({
       <div className="flex items-center justify-between pb-2.5 border-b border-slate-200 dark:border-slate-800">
         {/* Subject Pill Dropdown */}
         <select
+          disabled={
+            isGenerating || uploadingAttachment || Boolean(conversationId)
+          }
+          aria-label="المادة الدراسية"
+          title={subjectName || "اختر المادة"}
           value={subjectId || ""}
           onChange={(e) => {
             const id = e.target.value || null;
@@ -272,6 +484,7 @@ export function ChatScreen({
 
         <div className="flex items-center gap-1.5">
           <button
+            disabled={uploadingAttachment || loadingConversation}
             onClick={handleStartNewChat}
             className="flex items-center gap-1 px-2.5 h-8 rounded-xl bg-teal-50 dark:bg-slate-800 text-primary text-[11px] font-bold active:scale-95 transition-all"
           >
@@ -300,7 +513,8 @@ export function ChatScreen({
                 أنا معلمك التمريضي الذكي
               </h3>
               <p className="text-xs text-slate-500 leading-relaxed">
-                اسألني عن الحالات السريرية، جرعات الأدوية، فسيولوجيا الأمراض، أو أرفق صورة وملفًا للشرح.
+                اسألني عن الحالات السريرية، جرعات الأدوية، فسيولوجيا الأمراض، أو
+                أرفق صورة وملفًا للشرح.
               </p>
             </div>
 
@@ -337,13 +551,61 @@ export function ChatScreen({
                 {/* Image if attached */}
                 {m.imageUrl && (
                   <img
-                    src={m.imageUrl}
+                    src={
+                      m.imageUrl.startsWith("blob:")
+                        ? m.imageUrl
+                        : resolveOfficialUrl(m.imageUrl)
+                    }
                     alt="مرفق"
                     className="max-h-56 w-full rounded-2xl object-cover mb-2"
                   />
                 )}
                 {/* Message text formatted with line breaks */}
-                <div className="whitespace-pre-wrap">{m.content}</div>
+                {m.role === "assistant" ? (
+                  <div className="markdown">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {m.content}
+                    </ReactMarkdown>
+                  </div>
+                ) : (
+                  <div className="whitespace-pre-wrap break-words">
+                    {m.content}
+                  </div>
+                )}
+                {m.role === "assistant" && m.content && (
+                  <div className="flex gap-1 mt-2 border-t border-slate-100 pt-1">
+                    <button
+                      aria-label="نسخ الإجابة"
+                      className="min-h-11 min-w-11"
+                      onClick={() =>
+                        navigator.clipboard
+                          .writeText(m.content)
+                          .then(() => showToast("تم النسخ"))
+                          .catch(() => showToast("يمكنك تحديد النص ونسخه"))
+                      }
+                    >
+                      <Copy className="size-4 mx-auto" />
+                    </button>
+                    {!m.id.startsWith("local-") && (
+                      <>
+                        <button
+                          aria-label="إجابة مفيدة"
+                          className="min-h-11 min-w-11"
+                          onClick={() => feedback(m.id, true)}
+                        >
+                          <ThumbsUp className="size-4 mx-auto" />
+                        </button>
+                        <button
+                          aria-label="إجابة غير مفيدة"
+                          className="min-h-11 min-w-11"
+                          onClick={() => feedback(m.id, false)}
+                        >
+                          <ThumbsDown className="size-4 mx-auto" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           ))
@@ -359,6 +621,49 @@ export function ChatScreen({
         <div ref={messagesEndRef} />
       </div>
 
+      {error && (
+        <div
+          role="alert"
+          className="shrink-0 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 mb-2"
+        >
+          <p>{error}</p>
+          <button className="min-h-11 underline" onClick={() => setError("")}>
+            إغلاق
+          </button>
+        </div>
+      )}
+      {attachmentStatus && (
+        <div
+          role="status"
+          className="shrink-0 flex items-center justify-between rounded-xl bg-teal-50 p-2 text-sm text-primary"
+        >
+          <span>{attachmentStatus}</span>
+          <button
+            className="min-h-11 px-3"
+            onClick={() => uploadControllerRef.current?.abort()}
+          >
+            إلغاء
+          </button>
+        </div>
+      )}
+      {activeSources.length > 0 && (
+        <div className="flex shrink-0 gap-2 overflow-x-auto no-scrollbar py-2">
+          {activeSources.map((source) => (
+            <span key={source.id} className="chip max-w-[240px]">
+              <BookOpen className="size-4 shrink-0" />
+              <span className="truncate">{source.title}</span>
+              <button
+                disabled={isGenerating}
+                aria-label={`إزالة ${source.title}`}
+                className="min-h-11"
+                onClick={() => removeSource(source.id)}
+              >
+                <X className="size-4" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       {/* Pending Attachment Preview */}
       {pendingAttachment && (
         <div className="flex items-center justify-between p-2.5 rounded-2xl bg-teal-50 dark:bg-slate-800 border border-teal-200 dark:border-slate-700 mb-2">
@@ -387,7 +692,20 @@ export function ChatScreen({
 
       {/* Input Composer */}
       <div className="shrink-0 border-t border-slate-200 dark:border-slate-800 pt-2 pb-1 bg-slate-50 dark:bg-slate-950">
-        <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-1.5 shadow-xs">
+        <div className="flex items-center gap-1 mb-2">
+          <button
+            onClick={() => setLibraryOpen(true)}
+            disabled={isGenerating || uploadingAttachment}
+            className="chip"
+          >
+            <BookOpen className="size-4" />
+            المكتبة
+          </button>
+          <span className="text-[11px] text-slate-500">
+            PDF، DOCX، PPTX، TXT حتى 10MB
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-1.5 shadow-xs">
           {/* Gallery Pick */}
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -425,7 +743,7 @@ export function ChatScreen({
 
           {/* Document Pick */}
           <button
-            onClick={() => docInputRef.current?.click()}
+            onClick={openDocumentPicker}
             disabled={uploadingAttachment || isGenerating}
             className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-95"
             aria-label="ملف"
@@ -441,16 +759,24 @@ export function ChatScreen({
           />
 
           {/* Text Input */}
-          <input
-            type="text"
+          <textarea
+            rows={2}
+            aria-label="رسالتك للمعلم"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void handleSend();
+              }
+            }}
             placeholder={
-              uploadingAttachment ? "جارٍ رفع المرفق..." : "اسأل المعلم عن أي شيء..."
+              uploadingAttachment
+                ? "جارٍ رفع المرفق..."
+                : "اسأل المعلم عن أي شيء..."
             }
-            disabled={uploadingAttachment}
-            className="flex-1 h-9 px-2 text-xs bg-transparent text-slate-900 dark:text-white placeholder:text-slate-400 outline-hidden"
+            disabled={uploadingAttachment || loadingConversation}
+            className="w-full order-first min-w-0 resize-none min-h-12 max-h-32 px-2 text-xs bg-transparent text-slate-900 dark:text-white placeholder:text-slate-400 outline-hidden"
           />
 
           {/* Send / Stop */}
@@ -465,7 +791,11 @@ export function ChatScreen({
           ) : (
             <button
               onClick={handleSend}
-              disabled={(!input.trim() && !pendingAttachment) || uploadingAttachment}
+              disabled={
+                (!input.trim() && !pendingAttachment) ||
+                uploadingAttachment ||
+                loadingConversation
+              }
               className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-white active:scale-95 disabled:opacity-40 shadow-xs"
               aria-label="إرسال"
             >
@@ -474,6 +804,48 @@ export function ChatScreen({
           )}
         </div>
       </div>
+      <BottomSheet
+        isOpen={subjectPickerOpen}
+        onClose={() => setSubjectPickerOpen(false)}
+        title="اختر مادة الملف"
+      >
+        <p className="text-sm text-slate-500 mb-3">
+          نربط الملف بالمادة حتى يشرح المعلم محتواه ضمن منهجك.
+        </p>
+        <select
+          aria-label="مادة الملف"
+          value={pickerSubject}
+          onChange={(e) => setPickerSubject(e.target.value)}
+          className="field w-full"
+        >
+          <option value="">اختر المادة</option>
+          {availableSubjects.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name_ar}
+            </option>
+          ))}
+        </select>
+        <button
+          className="btn-primary w-full mt-3"
+          disabled={!pickerSubject}
+          onClick={() => {
+            setSubjectId(pickerSubject);
+            setSubjectPickerOpen(false);
+          }}
+        >
+          تأكيد المادة
+        </button>
+        <p className="text-xs text-slate-500 mt-3">
+          بعد التأكيد، اضغط زر الملف لاختيار المرفق.
+        </p>
+      </BottomSheet>
+      <BottomSheet
+        isOpen={libraryOpen}
+        onClose={() => setLibraryOpen(false)}
+        title="مصادر المكتبة للمحادثة"
+      >
+        <LibraryScreen subjectId={subjectId} onAttach={attachSource} />
+      </BottomSheet>
     </div>
   );
 }

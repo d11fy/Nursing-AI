@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   BookOpen,
   Sparkles,
@@ -9,19 +9,19 @@ import {
   TrendingUp,
   MessageSquare,
   RefreshCw,
-  Clock,
-  CheckCircle2,
   AlertCircle,
   ChevronLeft,
 } from "lucide-react";
 import { useNavigation } from "../context/NavigationContext";
-import { apiFetch, apiUpload } from "../services/api";
+import { ApiError, apiFetch, apiUpload } from "../services/api";
 import { BottomSheet } from "../components/common/BottomSheet";
 
 export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
   const { navigate, switchTab } = useNavigation();
 
-  const [activeTab, setActiveTab] = useState<"lectures" | "smart" | "exams" | "insights">("lectures");
+  const [activeTab, setActiveTab] = useState<
+    "lectures" | "smart" | "exams" | "insights"
+  >("lectures");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,16 +31,27 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [largeFileAcknowledged, setLargeFileAcknowledged] = useState(false);
+  const [contributionConsent, setContributionConsent] = useState(false);
+  const [contributionOwnership, setContributionOwnership] = useState(false);
+  const [duplicateLecture, setDuplicateLecture] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Smart Practice settings
-  const [practiceType, setPracticeType] = useState<"UNIVERSITY_STYLE" | "PAST_EXAM" | "MIXED">("UNIVERSITY_STYLE");
+  const [practiceType, setPracticeType] = useState<
+    "UNIVERSITY_STYLE" | "PAST_EXAM" | "MIXED"
+  >("UNIVERSITY_STYLE");
   const [examMode, setExamMode] = useState<"STUDY" | "EXAM">("STUDY");
   const [questionCount, setQuestionCount] = useState("10");
-  const [difficulty, setDifficulty] = useState<"EASY" | "MEDIUM" | "HARD">("MEDIUM");
+  const [difficulty, setDifficulty] = useState<"EASY" | "MEDIUM" | "HARD">(
+    "MEDIUM",
+  );
   const [generatingPractice, setGeneratingPractice] = useState(false);
 
-  const loadSubjectData = async () => {
+  const loadSubjectData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -51,13 +62,16 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [subjectId]);
 
   useEffect(() => {
     loadSubjectData();
-  }, [subjectId]);
+  }, [loadSubjectData]);
 
-  const handleStartSmartPractice = async (overrideType?: any, topicOverride?: string) => {
+  const handleStartSmartPractice = async (
+    overrideType?: any,
+    topicOverride?: string,
+  ) => {
     setGeneratingPractice(true);
     try {
       const res = await apiFetch("/api/practice/generate", {
@@ -98,23 +112,57 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
       setUploadError("يرجى اختيار ملف المحاضرة");
       return;
     }
+    if (
+      data?.settings?.lectureMaxFileMb &&
+      uploadFile.size > data.settings.lectureMaxFileMb * 1024 * 1024
+    ) {
+      setUploadError(`الحد الأقصى للملف ${data.settings.lectureMaxFileMb}MB`);
+      return;
+    }
+    if (
+      uploadFile.size >
+        (data?.settings?.lectureLargeFileMb || 20) * 1024 * 1024 &&
+      !largeFileAcknowledged
+    ) {
+      setUploadError("يرجى الموافقة على تنبيه الملف الكبير أولًا");
+      return;
+    }
+    if (contributionConsent && !contributionOwnership) {
+      setUploadError("أكد ملكيتك وحق مشاركة الملف أولًا");
+      return;
+    }
+    setDuplicateLecture(null);
     setUploading(true);
     setUploadError(null);
     try {
       const form = new FormData();
       form.append("file", uploadFile);
-      form.append("title", uploadTitle.trim() || uploadFile.name.replace(/\.[^/.]+$/, ""));
+      form.append(
+        "title",
+        uploadTitle.trim() || uploadFile.name.replace(/\.[^/.]+$/, ""),
+      );
       form.append("subjectId", subjectId);
-      form.append("largeFileAcknowledged", "true");
-      form.append("contributionConsent", "true");
-      form.append("contributionOwnershipConfirmed", "true");
+      form.append("largeFileAcknowledged", String(largeFileAcknowledged));
+      form.append("contributionConsent", String(contributionConsent));
+      form.append(
+        "contributionOwnershipConfirmed",
+        String(contributionOwnership),
+      );
 
       await apiUpload("/api/lectures", form);
       setShowUploadSheet(false);
       setUploadFile(null);
       setUploadTitle("");
+      setContributionConsent(false);
+      setContributionOwnership(false);
+      setLargeFileAcknowledged(false);
       await loadSubjectData();
     } catch (err: any) {
+      if (err instanceof ApiError && err.data?.duplicate)
+        setDuplicateLecture({
+          id: err.data.existingLectureId,
+          title: err.data.existingTitle,
+        });
       setUploadError(err.message || "تعذر رفع المحاضرة");
     } finally {
       setUploading(false);
@@ -125,7 +173,9 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
     return (
       <div className="flex flex-col items-center justify-center py-24 space-y-3">
         <RefreshCw className="size-6 text-primary animate-spin" />
-        <span className="text-xs text-slate-400">جارٍ تجهيز مساحة المادة...</span>
+        <span className="text-xs text-slate-400">
+          جارٍ تجهيز مساحة المادة...
+        </span>
       </div>
     );
   }
@@ -134,7 +184,9 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
     return (
       <div className="rounded-3xl border border-red-200 bg-red-50 p-6 text-center space-y-3 my-6">
         <AlertCircle className="size-8 text-red-500 mx-auto" />
-        <p className="text-xs text-red-600 font-bold">{error || "المادة غير متوفرة"}</p>
+        <p className="text-xs text-red-600 font-bold">
+          {error || "المادة غير متوفرة"}
+        </p>
         <button
           onClick={loadSubjectData}
           className="px-4 py-2 rounded-xl bg-red-600 text-white font-bold text-xs"
@@ -145,7 +197,14 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
     );
   }
 
-  const { subject, lectures, pastExams, repeatedTopics, smartReviewRecommendations, learningProgress } = data;
+  const {
+    subject,
+    lectures,
+    pastExams,
+    repeatedTopics,
+    smartReviewRecommendations,
+    learningProgress,
+  } = data;
 
   return (
     <div className="space-y-4 pb-nav">
@@ -166,7 +225,10 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
             <button
               onClick={() => {
                 switchTab("chat");
-                navigate("chat-detail", { subjectId: subject.id, subjectName: subject.name_ar });
+                navigate("chat-detail", {
+                  subjectId: subject.id,
+                  subjectName: subject.name_ar,
+                });
               }}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white text-primary text-xs font-bold active:scale-95 transition-all shadow-xs"
             >
@@ -199,7 +261,9 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
           <div className="h-2 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
             <div
               className="h-full bg-primary rounded-full transition-all"
-              style={{ width: `${learningProgress.subject.masteryScore ?? 0}%` }}
+              style={{
+                width: `${learningProgress.subject.masteryScore ?? 0}%`,
+              }}
             />
           </div>
         </div>
@@ -292,7 +356,10 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
                       {lec.title}
                     </h4>
                     <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                      {lec.file_name} · {lec.status === "ready" ? "جاهزة للدراسة" : "جارٍ المعالجة"}
+                      {lec.file_name} ·{" "}
+                      {lec.status === "ready"
+                        ? "جاهزة للدراسة"
+                        : "جارٍ المعالجة"}
                     </p>
                   </div>
                 </div>
@@ -319,7 +386,8 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
                 توليد امتحان تدريبي بنمط الجامعة
               </h3>
               <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                يحلل النظام صياغة أسئلة الامتحانات السابقة ويولد أسئلة جديدة موثقة ومربوطة بمصادر المنهج.
+                يحلل النظام صياغة أسئلة الامتحانات السابقة ويولد أسئلة جديدة
+                موثقة ومربوطة بمصادر المنهج.
               </p>
             </div>
 
@@ -334,8 +402,12 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
                   onChange={(e: any) => setPracticeType(e.target.value)}
                   className="w-full h-11 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 text-xs font-bold"
                 >
-                  <option value="UNIVERSITY_STYLE">أسئلة جديدة بنمط امتحانات الجامعة</option>
-                  <option value="PAST_EXAM">أسئلة أصلية من الامتحانات السابقة</option>
+                  <option value="UNIVERSITY_STYLE">
+                    أسئلة جديدة بنمط امتحانات الجامعة
+                  </option>
+                  <option value="PAST_EXAM">
+                    أسئلة أصلية من الامتحانات السابقة
+                  </option>
                   <option value="MIXED">تدريب مختلط (سابق + نمط جامعي)</option>
                 </select>
               </div>
@@ -350,8 +422,12 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
                   onChange={(e: any) => setExamMode(e.target.value)}
                   className="w-full h-11 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 text-xs font-bold"
                 >
-                  <option value="STUDY">نمط الدراسة (عرض الشرح والمصدر فورًا بعد كل سؤال)</option>
-                  <option value="EXAM">نمط الامتحان (حجب الإجابات حتى الانتهاء وحساب النتيجة)</option>
+                  <option value="STUDY">
+                    نمط الدراسة (عرض الشرح والمصدر فورًا بعد كل سؤال)
+                  </option>
+                  <option value="EXAM">
+                    نمط الامتحان (حجب الإجابات حتى الانتهاء وحساب النتيجة)
+                  </option>
                 </select>
               </div>
 
@@ -396,7 +472,11 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
               className="w-full h-12 rounded-2xl bg-primary text-white font-bold text-sm shadow-md active:scale-97 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
             >
               <Play className="size-4" />
-              <span>{generatingPractice ? "جارٍ تجهيز الامتحان..." : "ابدأ التدريب الآن"}</span>
+              <span>
+                {generatingPractice
+                  ? "جارٍ تجهيز الامتحان..."
+                  : "ابدأ التدريب الآن"}
+              </span>
             </button>
           </div>
         </div>
@@ -472,7 +552,9 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
                       </p>
                     </div>
                     <button
-                      onClick={() => handleStartSmartPractice("MIXED", rec.topic)}
+                      onClick={() =>
+                        handleStartSmartPractice("MIXED", rec.topic)
+                      }
                       className="px-3 py-1.5 rounded-xl bg-amber-500 text-white font-bold text-[11px] active:scale-95"
                     >
                       تدرب على هذا الموضوع
@@ -495,8 +577,12 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
                 {repeatedTopics.map((topic: any) => (
                   <div key={topic.topic} className="space-y-1.5">
                     <div className="flex items-center justify-between text-xs font-bold">
-                      <span className="text-slate-800 dark:text-slate-200">{topic.topic}</span>
-                      <span className="text-primary">{topic.frequencyPercentage}%</span>
+                      <span className="text-slate-800 dark:text-slate-200">
+                        {topic.topic}
+                      </span>
+                      <span className="text-primary">
+                        {topic.frequencyPercentage}%
+                      </span>
                     </div>
                     <div className="h-2 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
                       <div
@@ -504,7 +590,9 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
                         style={{ width: `${topic.frequencyPercentage}%` }}
                       />
                     </div>
-                    <p className="text-[10px] text-slate-400">{topic.phrasingLabel}</p>
+                    <p className="text-[10px] text-slate-400">
+                      {topic.phrasingLabel}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -524,6 +612,22 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
         title="رفع محاضرة جديدة"
       >
         <form onSubmit={handleUploadLecture} className="space-y-4">
+          {duplicateLecture && (
+            <button
+              type="button"
+              className="btn-secondary w-full"
+              onClick={() => {
+                setShowUploadSheet(false);
+                navigate("study-pack", {
+                  id: duplicateLecture.id,
+                  type: "lecture",
+                  title: duplicateLecture.title,
+                });
+              }}
+            >
+              فتح المحاضرة المرفوعة سابقًا
+            </button>
+          )}
           {uploadError && (
             <div className="p-3 rounded-xl bg-red-50 text-red-600 text-xs font-bold">
               {uploadError}
@@ -531,7 +635,9 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
           )}
 
           <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700">عنوان المحاضرة</label>
+            <label className="text-xs font-bold text-slate-700">
+              عنوان المحاضرة
+            </label>
             <input
               type="text"
               value={uploadTitle}
@@ -542,7 +648,9 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700">الملف (PDF, DOCX, PPTX, TXT)</label>
+            <label className="text-xs font-bold text-slate-700">
+              الملف (PDF, DOCX, PPTX, TXT)
+            </label>
             <input
               type="file"
               accept=".pdf,.docx,.pptx,.txt"
@@ -552,6 +660,37 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
             />
           </div>
 
+          {uploadFile &&
+            uploadFile.size >
+              (data?.settings?.lectureLargeFileMb || 20) * 1024 * 1024 && (
+              <label className="flex gap-3 text-sm leading-6">
+                <input
+                  type="checkbox"
+                  checked={largeFileAcknowledged}
+                  onChange={(e) => setLargeFileAcknowledged(e.target.checked)}
+                />
+                أفهم أن الملف الكبير قد يُحذف أصله تلقائيًا بحسب سياسة الملفات،
+                مع بقاء محتوى الدراسة.
+              </label>
+            )}
+          <label className="flex gap-3 text-sm leading-6">
+            <input
+              type="checkbox"
+              checked={contributionConsent}
+              onChange={(e) => setContributionConsent(e.target.checked)}
+            />
+            أرغب بمشاركة هذا الملف في المكتبة بعد مراجعة الإدارة (اختياري).
+          </label>
+          {contributionConsent && (
+            <label className="flex gap-3 text-sm leading-6">
+              <input
+                type="checkbox"
+                checked={contributionOwnership}
+                onChange={(e) => setContributionOwnership(e.target.checked)}
+              />
+              أؤكد أن لدي الحق في مشاركة هذا الملف.
+            </label>
+          )}
           <button
             type="submit"
             disabled={uploading}

@@ -6,25 +6,40 @@ export async function consumeChatResponse(
     onConversationId: (id: string) => void;
     onChunk: (text: string) => void;
     onComplete: (id: string | null) => void;
-    onMessageIds?: (assistantId:string,userId:string) => void;
-  }
+    onMessageIds?: (assistantId: string, userId: string) => void;
+  },
 ) {
   const id = response.headers.get("X-Conversation-Id");
   if (id) callbacks.onConversationId(id);
   const reader = response.body?.getReader();
   if (!reader) throw new Error("Missing chat response body");
   const decoder = new TextDecoder();
-  const sse=response.headers.get('Content-Type')?.includes('text/event-stream');
-  let buffer='',persisted=false;
-  function consume(text:string){
-    if(!sse){callbacks.onChunk(text);return;}
-    buffer+=text;
-    let boundary:number;
-    while((boundary=buffer.indexOf('\n\n'))>=0){const event=buffer.slice(0,boundary);buffer=buffer.slice(boundary+2);
-      const kind=event.match(/^event: (.+)$/m)?.[1],data=event.match(/^data: (.+)$/m)?.[1];if(!data)continue;
-      const payload=JSON.parse(data);
-      if(kind==='delta')callbacks.onChunk(payload.text);
-      if(kind==='persisted'){persisted=true;callbacks.onMessageIds?.(payload.messageId,payload.userMessageId);}
+  const sse = response.headers
+    .get("Content-Type")
+    ?.includes("text/event-stream");
+  let buffer = "",
+    persisted = false;
+  function consume(text: string) {
+    if (!sse) {
+      callbacks.onChunk(text);
+      return;
+    }
+    buffer = (buffer + text).replace(/\r\n/g, "\n");
+    let boundary: number;
+    while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+      const event = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const kind = event.match(/^event:\s*(.+)$/m)?.[1]?.trim(),
+        data = event.match(/^data:\s*(.+)$/m)?.[1];
+      if (!data) continue;
+      const payload = JSON.parse(data);
+      if (kind === "delta") callbacks.onChunk(payload.text);
+      if (kind === "error")
+        throw new Error(payload.error || "تعذر إكمال الإجابة");
+      if (kind === "persisted") {
+        persisted = true;
+        callbacks.onMessageIds?.(payload.messageId, payload.userMessageId);
+      }
     }
   }
   try {
@@ -39,5 +54,9 @@ export async function consumeChatResponse(
   } finally {
     reader.releaseLock();
   }
-  if(!sse||persisted)callbacks.onComplete(id);
+  if (sse && !persisted)
+    throw new Error(
+      "انقطع الاتصال قبل حفظ الإجابة؛ افتح سجل المحادثة للتحقق ثم حاول مجددًا.",
+    );
+  callbacks.onComplete(id);
 }

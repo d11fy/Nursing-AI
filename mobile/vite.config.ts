@@ -14,6 +14,9 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    rollupOptions: {
+      output: { manualChunks: { markdown: ["react-markdown", "remark-gfm"] } },
+    },
   },
   server: {
     port: 3001,

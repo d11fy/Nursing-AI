@@ -1,5 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Sparkles, Mail, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { startGoogleLogin } from "../services/googleAuth";
+import { apiFetch } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useNavigation } from "../context/NavigationContext";
 
@@ -13,6 +15,42 @@ export function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    const handle = (event: Event) => {
+      setError((event as CustomEvent<string>).detail);
+      setLoading(false);
+    };
+    window.addEventListener("nursing:auth-error", handle);
+    return () => window.removeEventListener("nursing:auth-error", handle);
+  }, []);
+  const googleLogin = async () => {
+    setError(null);
+    try {
+      await startGoogleLogin();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "تعذر فتح Google");
+    }
+  };
+  const forgotPassword = async () => {
+    setError(null);
+    if (!email.trim()) {
+      setError("أدخل بريدك الإلكتروني أولًا لإرسال رابط الاستعادة");
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await apiFetch("/api/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      setError(result.message);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "تعذر إرسال الرابط");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -25,7 +63,11 @@ export function LoginScreen() {
     try {
       await login(email.trim(), password);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "تعذر تسجيل الدخول؛ يرجى التحقق من البيانات");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "تعذر تسجيل الدخول؛ يرجى التحقق من البيانات",
+      );
     } finally {
       setLoading(false);
     }
@@ -94,7 +136,11 @@ export function LoginScreen() {
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute left-3.5 top-3.5 text-slate-400 hover:text-slate-600"
               >
-                {showPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
+                {showPassword ? (
+                  <EyeOff className="size-5" />
+                ) : (
+                  <Eye className="size-5" />
+                )}
               </button>
             </div>
           </div>
@@ -108,6 +154,22 @@ export function LoginScreen() {
           </button>
         </form>
 
+        <div className="space-y-3">
+          <button
+            onClick={googleLogin}
+            disabled={loading}
+            className="w-full min-h-12 rounded-2xl border border-slate-200 bg-white dark:bg-slate-900 font-bold text-sm"
+          >
+            المتابعة باستخدام Google
+          </button>
+          <button
+            onClick={forgotPassword}
+            disabled={loading}
+            className="w-full min-h-11 text-primary text-sm font-bold"
+          >
+            نسيت كلمة المرور؟
+          </button>
+        </div>
         {/* Link to Register */}
         <div className="text-center pt-2">
           <p className="text-xs text-slate-500">
@@ -121,7 +183,6 @@ export function LoginScreen() {
           </p>
         </div>
       </div>
-
     </div>
   );
 }

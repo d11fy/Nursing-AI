@@ -14,21 +14,33 @@
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
   width: 100%;
   height: 100%;
   background-color: #f8fafc;
   color: #0f172a;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Cairo', sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    "Cairo",
+    sans-serif;
   overflow-x: hidden;
   user-select: none;
   -webkit-user-select: none;
   min-width: 320px;
 }
 
-button, a, input, textarea, select {
+button,
+a,
+input,
+textarea,
+select {
   touch-action: manipulation;
 }
 
@@ -58,8 +70,14 @@ button, a, input, textarea, select {
 
 /* Fill only the space between the sticky header and fixed bottom navigation. */
 .chat-viewport {
-  height: calc(100vh - max(env(safe-area-inset-top), 12px) - max(env(safe-area-inset-bottom), 12px) - 132px);
-  height: calc(100dvh - max(env(safe-area-inset-top), 12px) - max(env(safe-area-inset-bottom), 12px) - 132px);
+  height: calc(
+    100vh - max(env(safe-area-inset-top), 12px) -
+      max(env(safe-area-inset-bottom), 12px) - 132px
+  );
+  height: calc(
+    100dvh - max(env(safe-area-inset-top), 12px) -
+      max(env(safe-area-inset-bottom), 12px) - 132px
+  );
 }
 
 /* Tailwind 4 compatibility utility used by the shared screen styles. */
@@ -99,10 +117,75 @@ button, a, input, textarea, select {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+@layer components {
+  .surface {
+    @apply rounded-3xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900;
+  }
+  .field {
+    @apply min-h-12 rounded-2xl border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900;
+  }
+  .btn-primary {
+    @apply inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-primary px-4 text-sm font-bold text-white disabled:opacity-50;
+  }
+  .btn-secondary {
+    @apply inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-bold text-primary disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900;
+  }
+  .chip {
+    @apply inline-flex min-h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-slate-200 px-3 text-xs font-bold dark:border-slate-700;
+  }
+}
+.markdown {
+  overflow-wrap: anywhere;
+  font-size: 0.875rem;
+  line-height: 1.9;
+}
+.markdown > * + * {
+  margin-top: 0.75rem;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  font-weight: 800;
+}
+.markdown ul,
+.markdown ol {
+  padding-inline-start: 1.5rem;
+}
+.markdown ul {
+  list-style: disc;
+}
+.markdown ol {
+  list-style: decimal;
+}
+.markdown pre,
+.markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.markdown pre {
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  background: #f1f5f9;
+  color: #0f172a;
+  direction: ltr;
+}
+.markdown th,
+.markdown td {
+  padding: 0.5rem;
+  border: 1px solid #cbd5e1;
+}
+.markdown a {
+  color: #0f5d75;
+  text-decoration: underline;
 }

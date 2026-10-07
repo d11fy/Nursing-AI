@@ -1,18 +1,20 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Clock,
   CheckCircle2,
   XCircle,
-  HelpCircle,
-  ChevronLeft,
-  ChevronRight,
-  Sparkles,
-  BookOpen,
+  ArrowRight,
+  ArrowLeft,
 } from "lucide-react";
 import { useNavigation } from "../context/NavigationContext";
 import { apiFetch } from "../services/api";
+import {
+  questionText,
+  questionAnswer,
+  questionOptions,
+  isCorrectAnswer,
+} from "../services/quiz";
 import { QuizExitConfirmModal } from "../components/common/QuizExitConfirmModal";
-
 export function QuizRunner({
   attemptId,
   quizId,
@@ -29,286 +31,305 @@ export function QuizRunner({
   title?: string;
 }) {
   const {
-    navigate,
+    replace,
     goBack,
+    exitQuiz,
     setIsQuizActive,
     showQuizExitConfirm,
     setShowQuizExitConfirm,
   } = useNavigation();
-
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedAnswers, setSelectedAnswers] = useState<Record<number, string>>({});
-  const [revealedExplanations, setRevealedExplanations] = useState<Record<number, boolean>>({});
+  const [answers, setAnswers] = useState<Record<number, unknown>>({});
+  const [saved, setSaved] = useState<Record<number, boolean>>({});
   const [seconds, setSeconds] = useState(0);
-  const [submitting, setSubmitting] = useState(false);
-
-  // Mark quiz active for Hardware Back Button protection
+  const [pending, setPending] = useState(false);
+  const busyRef = useRef(false);
+  const [error, setError] = useState("");
+  const serverAttemptRef = useRef(attemptId);
   useEffect(() => {
     setIsQuizActive(true);
-    return () => {
-      setIsQuizActive(false);
-    };
+    return () => setIsQuizActive(false);
   }, [setIsQuizActive]);
-
-  // Timer
   useEffect(() => {
-    const timer = setInterval(() => {
-      setSeconds((prev) => prev + 1);
-    }, 1000);
+    const timer = setInterval(() => setSeconds((v) => v + 1), 1000);
     return () => clearInterval(timer);
   }, []);
-
-  const formatTimer = (totalSec: number) => {
-    const m = Math.floor(totalSec / 60);
-    const s = totalSec % 60;
-    return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  const timer = `${Math.floor(seconds / 60)
+    .toString()
+    .padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
+  const isStudyPack = Boolean(studyPackId && quizId);
+  const ensureAttempt = async () => {
+    if (serverAttemptRef.current) return serverAttemptRef.current;
+    if (!isStudyPack)
+      throw new Error("معرف محاولة الاختبار غير متوفر؛ أعد بدء التدريب");
+    const result = await apiFetch(
+      `/api/study-packs/${studyPackId}/quiz/attempt?action=start`,
+      { method: "POST", body: JSON.stringify({ quizId }) },
+    );
+    serverAttemptRef.current = result.id;
+    return result.id as string;
   };
-
-  const currentQ = questions[currentIndex];
-  if (!currentQ) return null;
-
-  // Options normalization
-  const options = Array.isArray(currentQ.options)
-    ? currentQ.options.map((opt: any, idx: number) => {
-        if (typeof opt === "string") {
-          const letter = ["A", "B", "C", "D"][idx] || String(idx);
-          return { id: letter, text: opt };
+  const saveAnswer = async (index: number, answer: unknown) => {
+    const id = await ensureAttempt();
+    const endpoint = isStudyPack
+      ? `/api/study-packs/${studyPackId}/quiz/attempt?action=answer`
+      : "/api/practice/submit-answer";
+    await apiFetch(endpoint, {
+      method: "POST",
+      body: JSON.stringify(
+        isStudyPack
+          ? {
+              attemptId: id,
+              questionId: questions[index].id,
+              studentAnswer: answer,
+            }
+          : {
+              attemptId: id,
+              questionId: questions[index].id,
+              selectedAnswer: answer,
+            },
+      ),
+    });
+  };
+  const confirmAnswer = async () => {
+    if (busyRef.current || answers[currentIndex] == null || saved[currentIndex])
+      return;
+    busyRef.current = true;
+    setPending(true);
+    setError("");
+    try {
+      await saveAnswer(currentIndex, answers[currentIndex]);
+      setSaved((prev) => ({ ...prev, [currentIndex]: true }));
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "تعذر حفظ الإجابة؛ حاول مجددًا",
+      );
+    } finally {
+      busyRef.current = false;
+      setPending(false);
+    }
+  };
+  const finish = async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setPending(true);
+    setError("");
+    try {
+      const id = await ensureAttempt();
+      for (let index = 0; index < questions.length; index++)
+        if (!saved[index] && answers[index] != null) {
+          await saveAnswer(index, answers[index]);
+          setSaved((prev) => ({ ...prev, [index]: true }));
         }
-        return {
-          id: opt.id || opt.key || ["A", "B", "C", "D"][idx],
-          text: opt.text || opt.option || String(opt),
-        };
-      })
-    : [];
-
-  const handleSelectOption = (optionId: string) => {
-    if (selectedAnswers[currentIndex] && mode === "STUDY") return;
-
-    setSelectedAnswers((prev) => ({ ...prev, [currentIndex]: optionId }));
-
-    if (mode === "STUDY") {
-      setRevealedExplanations((prev) => ({ ...prev, [currentIndex]: true }));
-
-      // If attemptId exists, record answer on server
-      if (attemptId && currentQ.id) {
-        apiFetch("/api/practice/submit-answer", {
+      const summary = await apiFetch(
+        isStudyPack
+          ? `/api/study-packs/${studyPackId}/quiz/attempt?action=complete`
+          : "/api/practice/submit-answer",
+        {
           method: "POST",
           body: JSON.stringify({
-            attemptId,
-            questionId: currentQ.id,
-            selectedOptionId: optionId,
+            attemptId: id,
+            ...(isStudyPack ? {} : { action: "COMPLETE" }),
           }),
-        }).catch(() => {});
-      }
-    }
-  };
-
-  const handleNext = () => {
-    if (currentIndex < questions.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-    }
-  };
-
-  const handlePrev = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1);
-    }
-  };
-
-  const handleFinishQuiz = async () => {
-    setSubmitting(true);
-    try {
-      // Calculate scores
-      let correctCount = 0;
-      const questionResults = questions.map((q, idx) => {
-        const userChoice = selectedAnswers[idx];
-        const correctChoice = q.correctOptionId || q.correct_option_id || q.correctAnswer || "A";
-        const isCorrect = userChoice === correctChoice;
-        if (isCorrect) correctCount++;
-        return {
-          questionText: q.stem || q.question,
-          userChoice,
-          correctChoice,
-          isCorrect,
-          explanation: q.rationale || q.explanation,
-          sourceCitation: q.sourceCitation || q.source,
-        };
-      });
-
-      const scorePercent = Math.round((correctCount / questions.length) * 100);
-
-      // Record study pack attempt if applicable
-      if (studyPackId && quizId) {
-        try {
-          await apiFetch(`/api/study-packs/${studyPackId}/quiz/attempt`, {
-            method: "POST",
-            body: JSON.stringify({
-              quizId,
-              score: scorePercent,
-              answers: selectedAnswers,
-            }),
-          });
-        } catch {}
-      }
-
+        },
+      );
+      const results = questions.map((q, index) => ({
+        questionText: questionText(q),
+        userChoice:
+          answers[index] == null
+            ? "لم تتم الإجابة"
+            : Array.isArray(answers[index])
+              ? (answers[index] as string[]).join("، ")
+              : String(answers[index]),
+        correctChoice: Array.isArray(questionAnswer(q))
+          ? (questionAnswer(q) as string[]).join("، ")
+          : String(questionAnswer(q) ?? ""),
+        isCorrect: isCorrectAnswer(q, answers[index], isStudyPack),
+        explanation: q.rationale || q.explanation,
+        sourceCitation: q.source_reference || q.sourceLabel || q.sourceCitation,
+      }));
       setIsQuizActive(false);
-      navigate("quiz-results", {
-        scorePercent,
-        correctCount,
+      replace("quiz-results", {
+        scorePercent: summary.score ?? summary.scorePercentage,
+        correctCount: summary.correctCount ?? summary.correctAnswers,
         totalQuestions: questions.length,
-        timeSpent: formatTimer(seconds),
-        results: questionResults,
+        timeSpent: timer,
+        results,
       });
-    } catch (e: any) {
-      alert("حدث خطأ أثناء إنهاء الاختبار");
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "تعذر إنهاء الاختبار. إجاباتك محفوظة؛ حاول مجددًا",
+      );
     } finally {
-      setSubmitting(false);
+      busyRef.current = false;
+      setPending(false);
     }
   };
-
-  const currentSelection = selectedAnswers[currentIndex];
-  const correctAnswerId = currentQ.correctOptionId || currentQ.correct_option_id || currentQ.correctAnswer;
-  const isExplanationShown = mode === "STUDY" && Boolean(revealedExplanations[currentIndex]);
-
+  const q = questions[currentIndex];
+  if (!q)
+    return (
+      <div role="alert" className="surface">
+        <p>لا توجد أسئلة متاحة.</p>
+        <button onClick={goBack} className="btn-secondary mt-3">
+          الرجوع
+        </button>
+      </div>
+    );
+  const answer = answers[currentIndex];
+  const revealed = mode === "STUDY" && saved[currentIndex];
+  const multi = q.questionType === "SATA" || q.question_type === "SATA";
+  const options = questionOptions(q);
+  const select = (value: string) => {
+    if (pending || revealed) return;
+    setAnswers((prev) => ({
+      ...prev,
+      [currentIndex]: multi
+        ? Array.isArray(prev[currentIndex])
+          ? (prev[currentIndex] as string[]).includes(value)
+            ? (prev[currentIndex] as string[]).filter((x) => x !== value)
+            : [...(prev[currentIndex] as string[]), value]
+          : [value]
+        : value,
+    }));
+  };
   return (
     <div className="space-y-4 pb-nav">
-      {/* Top Bar with Timer and Progress */}
-      <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-        <div className="flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-lg bg-teal-50 dark:bg-slate-800 text-primary font-black text-xs">
-            {currentIndex + 1}
-          </span>
-          <span className="text-xs font-bold text-slate-500">
-            من {questions.length} سؤال
-          </span>
+      <div className="surface flex items-center justify-between">
+        <div>
+          <h2 className="font-bold text-sm">{title}</h2>
+          <p className="text-xs text-slate-500 mt-1">
+            السؤال {currentIndex + 1} من {questions.length}
+          </p>
         </div>
-
-        <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
-          <Clock className="size-3.5 text-primary" />
-          <span>{formatTimer(seconds)}</span>
-        </div>
+        <span className="flex items-center gap-2 font-mono text-sm">
+          <Clock className="size-4 text-primary" />
+          {timer}
+        </span>
       </div>
-
-      {/* Progress Bar */}
-      <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+      <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
         <div
-          className="h-full bg-primary rounded-full transition-all duration-300"
+          className="h-full bg-primary"
           style={{ width: `${((currentIndex + 1) / questions.length) * 100}%` }}
         />
       </div>
-
-      {/* Question Card */}
-      <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
-        {currentQ.topic && (
-          <span className="inline-block rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-[10px] font-bold text-slate-600 dark:text-slate-300">
-            {currentQ.topic}
-          </span>
-        )}
-
-        <h3 className="text-sm font-black text-slate-900 dark:text-white leading-relaxed selectable-text">
-          {currentQ.stem || currentQ.question}
+      {error && (
+        <div role="alert" className="surface text-red-600 text-sm">
+          {error}
+        </div>
+      )}
+      <article className="surface space-y-4">
+        <p className="text-xs text-slate-500">{q.topic}</p>
+        <h3 className="text-base font-bold leading-8 selectable-text">
+          {questionText(q)}
         </h3>
-
-        {/* Options */}
-        <div className="space-y-2.5 pt-1">
-          {options.map((opt: any) => {
-            const isSelected = currentSelection === opt.id;
-            const isCorrect = opt.id === correctAnswerId;
-
-            let optionStyle =
-              "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 hover:border-slate-300";
-
-            if (isExplanationShown) {
-              if (isCorrect) {
-                optionStyle = "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 font-bold";
-              } else if (isSelected && !isCorrect) {
-                optionStyle = "border-red-500 bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-200 font-bold";
-              }
-            } else if (isSelected) {
-              optionStyle = "border-primary bg-teal-50 dark:bg-teal-950/40 text-primary font-bold shadow-xs";
-            }
-
+        {multi && (
+          <p className="text-sm text-primary">
+            اختر جميع الإجابات الصحيحة، ثم أكد الإجابة.
+          </p>
+        )}
+        <div className="space-y-2">
+          {options.map((option) => {
+            const selected = multi
+              ? Array.isArray(answer) && answer.includes(option.value)
+              : answer === option.value;
+            const correct =
+              revealed &&
+              (multi
+                ? Array.isArray(questionAnswer(q)) &&
+                  (questionAnswer(q) as string[]).includes(option.value)
+                : isCorrectAnswer(q, option.value, isStudyPack));
             return (
               <button
-                key={opt.id}
-                onClick={() => handleSelectOption(opt.id)}
-                className={`w-full flex items-center justify-between p-3.5 rounded-2xl border text-xs leading-relaxed text-start active:scale-98 transition-all ${optionStyle}`}
+                key={option.id}
+                disabled={pending || revealed}
+                aria-pressed={selected}
+                onClick={() => select(option.value)}
+                className={`w-full min-h-14 rounded-2xl border p-3 text-start text-sm leading-6 flex items-center justify-between gap-2 ${revealed && correct ? "border-emerald-500 bg-emerald-50 text-emerald-800" : revealed && selected ? "border-red-500 bg-red-50 text-red-800" : selected ? "border-primary bg-teal-50 text-primary" : "border-slate-200 dark:border-slate-700"}`}
               >
-                <div className="flex items-center gap-3">
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-[11px] font-mono font-bold">
-                    {opt.id}
-                  </span>
-                  <span>{opt.text}</span>
-                </div>
-
-                {isExplanationShown && isCorrect && (
-                  <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
-                )}
-                {isExplanationShown && isSelected && !isCorrect && (
-                  <XCircle className="size-4 text-red-600 shrink-0" />
-                )}
+                <span>{option.text}</span>
+                {revealed && correct ? (
+                  <CheckCircle2 className="size-5 shrink-0" />
+                ) : revealed && selected ? (
+                  <XCircle className="size-5 shrink-0" />
+                ) : null}
               </button>
             );
           })}
         </div>
-
-        {/* Study Mode Instant Explanation */}
-        {isExplanationShown && (currentQ.rationale || currentQ.explanation) && (
-          <div className="rounded-2xl bg-teal-50 dark:bg-slate-800/80 p-4 border border-teal-200 dark:border-slate-700 space-y-2 animate-in fade-in">
-            <div className="flex items-center gap-1.5 text-xs font-black text-primary dark:text-teal-300">
-              <Sparkles className="size-3.5" />
-              <span>التفسير السريري المعتمد</span>
-            </div>
-            <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-300 selectable-text">
-              {currentQ.rationale || currentQ.explanation}
+        {!options.length && (
+          <textarea
+            aria-label="إجابتك"
+            className="field w-full p-3"
+            disabled={pending || revealed}
+            value={typeof answer === "string" ? answer : ""}
+            onChange={(e) =>
+              setAnswers((prev) => ({
+                ...prev,
+                [currentIndex]: e.target.value,
+              }))
+            }
+            placeholder="اكتب إجابتك..."
+          />
+        )}
+        {mode === "STUDY" && !revealed && (
+          <button
+            className="btn-primary w-full"
+            disabled={
+              pending ||
+              answer == null ||
+              answer === "" ||
+              (Array.isArray(answer) && !answer.length)
+            }
+            onClick={confirmAnswer}
+          >
+            {pending ? "جارٍ حفظ الإجابة..." : "تأكيد الإجابة وعرض الشرح"}
+          </button>
+        )}
+        {revealed && (
+          <div className="rounded-2xl bg-teal-50 dark:bg-slate-800 p-4 space-y-2">
+            <b className="text-primary">
+              {isCorrectAnswer(q, answer, isStudyPack)
+                ? "إجابة صحيحة"
+                : "راجع الإجابة"}
+            </b>
+            <p className="text-sm leading-7 selectable-text">
+              {q.rationale || q.explanation}
             </p>
-            {currentQ.sourceCitation && (
-              <p className="text-[10px] text-slate-400 pt-1">
-                📚 <strong>المصدر:</strong> {currentQ.sourceCitation}
-              </p>
-            )}
+            <p className="text-xs text-slate-500">
+              {q.source_reference || q.sourceLabel || q.sourceCitation}
+            </p>
           </div>
         )}
-      </div>
-
-      {/* Navigation & Submit Buttons */}
-      <div className="flex items-center justify-between pt-1">
+      </article>
+      <div className="flex justify-between gap-2">
         <button
-          onClick={handlePrev}
-          disabled={currentIndex === 0}
-          className="flex items-center gap-1 px-4 h-11 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold disabled:opacity-30 active:scale-95"
+          className="btn-secondary"
+          disabled={currentIndex === 0 || pending}
+          onClick={() => setCurrentIndex((v) => v - 1)}
         >
-          <ChevronRight className="size-4" />
-          <span>السابق</span>
+          <ArrowRight className="size-4" />
+          السابق
         </button>
-
         {currentIndex === questions.length - 1 ? (
-          <button
-            onClick={handleFinishQuiz}
-            disabled={submitting}
-            className="flex items-center gap-1.5 px-6 h-11 rounded-2xl bg-primary text-white text-xs font-black shadow-md active:scale-97 transition-all disabled:opacity-60"
-          >
-            <span>{submitting ? "جارٍ الحساب..." : "تسليم النتيجة"}</span>
+          <button className="btn-primary" disabled={pending} onClick={finish}>
+            {pending ? "جارٍ الحفظ والتقييم..." : "إنهاء الاختبار"}
           </button>
         ) : (
           <button
-            onClick={handleNext}
-            className="flex items-center gap-1 px-5 h-11 rounded-xl bg-primary text-white text-xs font-bold active:scale-95 shadow-xs"
+            className="btn-primary"
+            disabled={pending}
+            onClick={() => setCurrentIndex((v) => v + 1)}
           >
-            <span>التالي</span>
-            <ChevronLeft className="size-4" />
+            التالي
+            <ArrowLeft className="size-4" />
           </button>
         )}
       </div>
-
-      {/* Hardware Back Button Protection Modal */}
       <QuizExitConfirmModal
         isOpen={showQuizExitConfirm}
-        onConfirm={() => {
-          setIsQuizActive(false);
-          setShowQuizExitConfirm(false);
-          goBack();
-        }}
+        onConfirm={exitQuiz}
         onCancel={() => setShowQuizExitConfirm(false)}
       />
     </div>

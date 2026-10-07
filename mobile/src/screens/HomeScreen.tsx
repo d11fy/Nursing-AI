@@ -32,7 +32,9 @@ export function HomeScreen() {
   const { profile, access, aiUsage, refreshAuth } = useAuth();
   const { navigate, switchTab } = useNavigation();
 
-  const [recentConversations, setRecentConversations] = useState<RecentConversation[]>([]);
+  const [recentConversations, setRecentConversations] = useState<
+    RecentConversation[]
+  >([]);
   const [weakTopics, setWeakTopics] = useState<WeakTopic[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -42,7 +44,9 @@ export function HomeScreen() {
       const [, res, progress] = await Promise.all([
         refreshAuth(),
         apiFetch("/api/conversations"),
-        apiFetch<{ weakTopics?: WeakTopic[] }>("/api/learning-progress").catch(() => ({ weakTopics: [] })),
+        apiFetch<{ weakTopics?: WeakTopic[] }>("/api/learning-progress").catch(
+          () => ({ weakTopics: [] }),
+        ),
       ]);
       if (res.conversations) {
         setRecentConversations(res.conversations.slice(0, 5));
@@ -64,7 +68,10 @@ export function HomeScreen() {
   const firstName = profile?.full_name?.split(" ")[0] || "طالب التمريض";
   const used = aiUsage?.used ?? 0;
   const limit = aiUsage?.limit ?? 10;
-  const percentage = Math.min(100, Math.round((used / limit) * 100));
+  const percentage = Math.min(
+    100,
+    Math.round((limit > 0 ? used / limit : 0) * 100),
+  );
   const remaining = Math.max(0, limit - used);
 
   return (
@@ -84,12 +91,12 @@ export function HomeScreen() {
               className="flex size-12 items-center justify-center rounded-full bg-white/15 text-white active:scale-95"
               aria-label="تحديث بيانات الصفحة"
             >
-              <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`size-3.5 ${loading ? "animate-spin" : ""}`}
+              />
             </button>
           </div>
-          <h2 className="text-xl font-black">
-            مرحبًا، {firstName}
-          </h2>
+          <h2 className="text-xl font-black">مرحبًا، {firstName}</h2>
           <p className="text-xs text-teal-100 leading-relaxed max-w-[280px]">
             تابع دراسة مساقاتك، اختبر معلوماتك، أو استشر المعلم الذكي.
           </p>
@@ -99,14 +106,34 @@ export function HomeScreen() {
       {weakTopics.length > 0 && (
         <div className="space-y-2.5">
           <div className="flex items-center justify-between px-1">
-            <h3 className="text-xs font-black uppercase tracking-wider text-amber-700 dark:text-amber-400">مواضيع تحتاج مراجعة</h3>
-            <button onClick={() => navigate("progress")} className="min-h-11 px-2 text-[11px] font-bold text-primary">عرض التقدم</button>
+            <h3 className="text-xs font-black uppercase tracking-wider text-amber-700 dark:text-amber-400">
+              مواضيع تحتاج مراجعة
+            </h3>
+            <button
+              onClick={() => navigate("progress")}
+              className="min-h-11 px-2 text-[11px] font-bold text-primary"
+            >
+              عرض التقدم
+            </button>
           </div>
           <div className="space-y-2">
             {weakTopics.map((topic) => (
-              <button key={`${topic.subjectId}-${topic.topicKey}`} onClick={() => navigate("progress")} className="flex min-h-14 w-full items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 p-3.5 text-start dark:border-amber-900/50 dark:bg-amber-950/30">
-                <span><b className="block text-xs text-slate-900 dark:text-white">{topic.topicName}</b><span className="text-[10px] text-slate-500">{topic.subjectName}</span></span>
-                <span className="text-xs font-black text-amber-700 dark:text-amber-400">{topic.masteryScore}%</span>
+              <button
+                key={`${topic.subjectId}-${topic.topicKey}`}
+                onClick={() => navigate("progress")}
+                className="flex min-h-14 w-full items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 p-3.5 text-start dark:border-amber-900/50 dark:bg-amber-950/30"
+              >
+                <span>
+                  <b className="block text-xs text-slate-900 dark:text-white">
+                    {topic.topicName}
+                  </b>
+                  <span className="text-[10px] text-slate-500">
+                    {topic.subjectName}
+                  </span>
+                </span>
+                <span className="text-xs font-black text-amber-700 dark:text-amber-400">
+                  {topic.masteryScore}%
+                </span>
               </button>
             ))}
           </div>
@@ -125,7 +152,8 @@ export function HomeScreen() {
                 استخدامك اليوم
               </h3>
               <p className="text-[11px] text-slate-500">
-                {used} من أصل {limit} سؤال · {access?.planName || "الخطة التجريبية"}
+                {used} من أصل {limit} سؤال ·{" "}
+                {access?.planName || "الخطة التجريبية"}
               </p>
             </div>
           </div>
@@ -142,6 +170,13 @@ export function HomeScreen() {
           />
         </div>
       </div>
+
+      <button
+        onClick={() => navigate("subscription")}
+        className="btn-secondary w-full"
+      >
+        {access?.active === false ? "تجديد الاشتراك" : "عرض الباقات والاستخدام"}
+      </button>
 
       {/* Quick Actions Grid */}
       <div className="space-y-2.5">
@@ -234,7 +269,9 @@ export function HomeScreen() {
             {recentConversations.map((c) => (
               <div
                 key={c.id}
-                onClick={() => navigate("chat-detail", { conversationId: c.id })}
+                onClick={() =>
+                  navigate("chat-detail", { conversationId: c.id })
+                }
                 className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs active:scale-98 transition-all cursor-pointer"
               >
                 <div className="flex items-center gap-3 min-w-0">
