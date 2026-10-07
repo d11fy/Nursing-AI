@@ -43,28 +43,38 @@ export async function establishSession(userId: string, presentedDeviceToken?: st
 
   await transaction(async (client) => {
     // Serializes concurrent login attempts for this account without a global lock.
-    const locked = await client.query("select id from app_users where id=$1 for update", [userId]);
-    if (!locked.rows[0]) throw new Error("Account not found");
-
-    await client.query("delete from app_sessions where expires_at<=now() or revoked_at is not null");
-    const active = await client.query<{ device_hash: string | null }>(
-      `select device_hash from app_sessions
-        where user_id=$1 and expires_at>now() and revoked_at is null
-        order by created_at desc limit 1`,
+    const locked = await client.query<{ id: string; role: "student" | "admin" }>(
+      "select u.id,p.role from app_users u join profiles p on p.user_id=u.id where u.id=$1 for update of u",
       [userId]
     );
-    if (active.rows[0]?.device_hash && active.rows[0].device_hash !== deviceHash) {
-      throw new DeviceConflictError();
+    if (!locked.rows[0]) throw new Error("Account not found");
+    const isAdmin = locked.rows[0].role === "admin";
+
+    await client.query("delete from app_sessions where expires_at<=now() or revoked_at is not null");
+    if (isAdmin) {
+      // Rotate only this browser/device. Other administrator devices remain
+      // signed in with independent, revocable server-side sessions.
+      await client.query("delete from app_sessions where user_id=$1 and device_hash=$2", [userId, deviceHash]);
+    } else {
+      const active = await client.query<{ device_hash: string | null }>(
+        `select device_hash from app_sessions
+          where user_id=$1 and expires_at>now() and revoked_at is null
+          order by created_at desc limit 1`,
+        [userId]
+      );
+      if (active.rows[0]?.device_hash && active.rows[0].device_hash !== deviceHash) {
+        throw new DeviceConflictError();
+      }
+      // Students retain the existing single-device behavior.
+      await client.query("delete from app_sessions where user_id=$1", [userId]);
     }
 
-    // One server-side session per account. Tabs share the same HttpOnly cookie.
-    await client.query("delete from app_sessions where user_id=$1", [userId]);
     await client.query(
-      `insert into app_sessions(token_hash,user_id,device_hash,expires_at,created_at,last_seen_at)
-       values($1,$2,$3,now()+($4 * interval '1 second'),now(),now())`,
-      [tokenHash(sessionToken), userId, deviceHash, SESSION_TTL_SECONDS]
+      `insert into app_sessions(token_hash,user_id,device_hash,is_admin_session,expires_at,created_at,last_seen_at)
+       values($1,$2,$3,$4,now()+($5 * interval '1 second'),now(),now())`,
+      [tokenHash(sessionToken), userId, deviceHash, isAdmin, SESSION_TTL_SECONDS]
     );
-    await client.query("select claim_trial_device($1,$2)", [userId, deviceHash]);
+    if (!isAdmin) await client.query("select claim_trial_device($1,$2)", [userId, deviceHash]);
   });
 
   return { sessionToken, deviceToken };

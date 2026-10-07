@@ -282,6 +282,26 @@ test("persistent sessions enforce one device while allowing the same device to r
   assert.equal((await readSession(afterAdminReset.sessionToken, firstDevice))?.user_id, bob.user_id);
   await revokeAllUserSessions(bob.user_id);
 });
+test("administrators can keep independent sessions on multiple devices", async () => {
+  const firstDevice = newToken();
+  const secondDevice = newToken();
+  const first = await establishSession(admin.user_id, firstDevice);
+  const second = await establishSession(admin.user_id, secondDevice);
+
+  assert.equal((await readSession(first.sessionToken, firstDevice))?.role, "admin");
+  assert.equal((await readSession(second.sessionToken, secondDevice))?.role, "admin");
+  assert.equal((await db.query<{ count: number }>(
+    "select count(*)::int count from app_sessions where user_id=$1 and revoked_at is null",
+    [admin.user_id]
+  )).rows[0].count, 2);
+
+  // Signing in again on the same device rotates only that device's session.
+  const rotated = await establishSession(admin.user_id, firstDevice);
+  assert.equal(await readSession(first.sessionToken, firstDevice), null);
+  assert.equal((await readSession(second.sessionToken, secondDevice))?.role, "admin");
+  assert.equal((await readSession(rotated.sessionToken, firstDevice))?.role, "admin");
+  await revokeAllUserSessions(admin.user_id);
+});
 test("database constraint prevents two active sessions for one account", async () => {
   const firstToken = newToken();
   const secondToken = newToken();
