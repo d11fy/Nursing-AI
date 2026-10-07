@@ -6,6 +6,7 @@ import { getAIProvider } from "../lib/ai";
 import { extractPagesFromFile } from "../lib/knowledge";
 import { chunkText } from "../lib/ai/rag";
 import { needsOcr } from "../lib/ai/document-ocr";
+import type { GenerateTextParams } from "../lib/ai/provider";
 
 test("word-aware chunking covers the whole page without dropping words or units",()=>{
   const words=Array.from({length:500},(_,i)=>`word${i}`);const chunks=chunkText(words.join(" "),200,35);
@@ -31,7 +32,7 @@ test("PDF pages with sparse text trigger OCR and retain real page numbers",async
   t.mock.method(PDFParse.prototype,'getTable',async()=>({pages:[],total:0}));
   let scanned:number[]=[];
   t.mock.method(PDFParse.prototype,"getScreenshot",async(options:{partial:number[]})=>{scanned=options.partial;return{pages:[{dataUrl:"data:image/png;base64,AA==",pageNumber:2}],total:2};});
-  t.mock.method(getAIProvider(),"generateVisionResponse",async()=>({content:"Transcribed second page with visible labels.",inputTokens:1,outputTokens:1,model:"test"}));
+  t.mock.method(getAIProvider(),"generateVisionResponse",async(params:GenerateTextParams & {imageUrl:string})=>{assert.equal(params.allowEmptyOutput,true);return{content:"Transcribed second page with visible labels.",inputTokens:1,outputTokens:1,model:"test"};});
   const result=await extractPagesFromFile(Buffer.from("%PDF-1.7\n"),"scan.pdf");
   assert.deepEqual(scanned,[2]);assert.equal(result.length,2);assert.equal(result[1].pageNumber,2);assert.equal(result[1].ocr,true);
   assert.equal(result[0].text,native.trim());assert.equal(needsOcr(""),true);

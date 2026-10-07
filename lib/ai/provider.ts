@@ -29,6 +29,8 @@ export interface GenerateTextParams {
   maxOutputTokens?: number;
   /** Trusted server task instructions, never populated from request JSON. */
   taskPrompt?: string;
+  /** Allow a completed response with no text for trusted tasks where an empty result is meaningful (for example, a blank OCR page). */
+  allowEmptyOutput?: boolean;
   jsonSchema?: { name: string; schema: Record<string, unknown> };
   reasoningEffort?: 'none' | 'low' | 'medium' | 'high';
   userId?: string;

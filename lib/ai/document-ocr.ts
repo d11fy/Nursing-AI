@@ -21,7 +21,7 @@ export async function transcribePage(imageUrl: string, provider: AIProvider, use
   const result = await provider.generateVisionResponse({
     taskPrompt: TRANSCRIPTION_PROMPT,
     messages: [{role:"user",content:"Transcribe this page faithfully."}],
-    imageUrl, maxOutputTokens: 7000, signal: AbortSignal.timeout(90_000),
+    imageUrl, maxOutputTokens: 7000, signal: AbortSignal.timeout(90_000), allowEmptyOutput: true,
   });
   if(userId) {
     const { logUsage }=await import('@/lib/usage');

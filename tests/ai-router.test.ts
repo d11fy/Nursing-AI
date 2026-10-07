@@ -6,6 +6,8 @@ import { calculateAICost } from '../lib/ai/cost';
 import { responseRequest } from '../lib/ai/providers/openai';
 import { AnswerStreamDecoder } from '../lib/tutor/stream-json';
 import { gradeQuizOption } from '../lib/tutor/answer';
+import type { Response } from 'openai/resources/responses/responses';
+import { responseResult } from '../lib/ai/providers/openai';
 
 test('all workloads use GPT-6 Luna without provider or model fallback',()=>{
   for(const complexity of ['UTILITY','SIMPLE','NORMAL','COMPLEX','VISION'] as const) {
@@ -20,6 +22,11 @@ test('Responses request keeps stable instructions separate and does not persist 
   const request=responseRequest({messages:[{role:'user',content:'Explain',imageUrl:'data:image/png;base64,AA=='}],personalizationContext:'Ahmad',reasoningEffort:'high'});
   assert.equal(request.store,false);assert.equal(request.reasoning?.effort,'high');assert.equal(request.model,'gpt-6-luna');
   assert.ok(Array.isArray(request.input));assert.ok(!request.instructions?.includes('Ahmad'));
+});
+test('only trusted callers can accept an empty completed OpenAI response',()=>{
+  const response={status:'completed',output_text:'',output:[],model:'gpt-6-luna',usage:{input_tokens:10,output_tokens:0,input_tokens_details:{cached_tokens:0}}} as unknown as Response;
+  assert.throws(()=>responseResult(response,'medium'),/no usable answer/);
+  assert.equal(responseResult(response,'medium',true).content,'');
 });
 test('cost excludes cached tokens from ordinary input billing',()=>{
   assert.equal(calculateAICost({provider:'openai',model:'gpt-6-luna',inputTokens:1000,cachedInputTokens:800,outputTokens:200}),0.000128);

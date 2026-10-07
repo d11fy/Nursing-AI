@@ -39,11 +39,11 @@ export function responseRequest(params: GenerateTextParams): ResponseCreateParam
     max_output_tokens: params.maxOutputTokens ?? 7000, prompt_cache_key: `nursing-ai:${params.feature ?? 'tutor'}:v2`,
     text: params.jsonSchema ? { format: { type: 'json_schema', strict: true, name:params.jsonSchema.name,schema:strictResponseSchema(params.jsonSchema.schema) } } : undefined };
 }
-function resultOf(response: Response, effort: GenerateTextParams['reasoningEffort']): GenerateResult {
+export function responseResult(response: Response, effort: GenerateTextParams['reasoningEffort'], allowEmptyOutput = false): GenerateResult {
   if (response.status !== 'completed') throw new Error(`OpenAI response did not complete (${response.status})`);
   const content = response.output_text || response.output.flatMap(item => item.type === 'message'
     ? item.content.flatMap(part => part.type === 'output_text' ? [part.text] : []) : []).join('');
-  if (!content.trim()) throw new Error('OpenAI returned no usable answer');
+  if (!content.trim() && !allowEmptyOutput) throw new Error('OpenAI returned no usable answer');
   return { content, inputTokens: response.usage?.input_tokens ?? 0, outputTokens: response.usage?.output_tokens ?? 0,
     cachedInputTokens: response.usage?.input_tokens_details?.cached_tokens ?? 0,
     model: response.model, reasoningEffort: effort ?? 'medium' };
@@ -62,7 +62,7 @@ export class OpenAIProvider implements AIProvider {
   }
   async generateText(params: GenerateTextParams): Promise<GenerateResult> {
     const response = await this.client.responses.create(responseRequest(params), { signal: params.signal });
-    return resultOf(response, params.reasoningEffort);
+    return responseResult(response, params.reasoningEffort, params.allowEmptyOutput);
   }
   async *generateStream(params: GenerateTextParams): AsyncGenerator<StreamChunk, GenerateResult> {
     const stream = await this.client.responses.create({ ...responseRequest(params), stream: true }, { signal: params.signal });
@@ -73,7 +73,7 @@ export class OpenAIProvider implements AIProvider {
       else if (event.type === 'response.failed' || event.type === 'response.incomplete' || event.type === 'error') throw new Error('OpenAI stream did not complete');
     }
     if (!completed) throw new Error('OpenAI stream ended without completion');
-    return resultOf(completed, params.reasoningEffort);
+    return responseResult(completed, params.reasoningEffort, params.allowEmptyOutput);
   }
   async generateVisionResponse(params: GenerateTextParams & { imageUrl: string }) { return this.generateText(this.visionParams(params)); }
   generateVisionStream(params: GenerateTextParams & { imageUrl: string }) { return this.generateStream(this.visionParams(params)); }
