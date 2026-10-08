@@ -1,5 +1,4 @@
 import { Capacitor } from "@capacitor/core";
-import { StatusBar, Style } from "@capacitor/status-bar";
 import { SplashScreen } from "@capacitor/splash-screen";
 import { Network } from "@capacitor/network";
 import { App as CapApp } from "@capacitor/app";
@@ -9,11 +8,6 @@ export const isNative = Capacitor.isNativePlatform();
 
 export async function initNativePlugins(): Promise<void> {
   if (!isNative) return;
-
-  try {
-    await StatusBar.setStyle({ style: Style.Dark });
-    await StatusBar.setBackgroundColor({ color: "#0f5d75" });
-  } catch {}
 
   try {
     await SplashScreen.hide();
@@ -29,7 +23,9 @@ export async function checkNetworkStatus(): Promise<boolean> {
   }
 }
 
-export function subscribeNetworkStatus(callback: (connected: boolean) => void): () => void {
+export function subscribeNetworkStatus(
+  callback: (connected: boolean) => void,
+): () => void {
   let removeListener: (() => void) | null = null;
 
   if (isNative) {

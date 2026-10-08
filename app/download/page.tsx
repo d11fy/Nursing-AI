@@ -42,7 +42,7 @@ export default async function DownloadPage() {
     file_size: `${(apk.size / 1024 / 1024).toFixed(2)} MB`,
     published_at: apk.mtime.toISOString(),
     release_notes:
-      "المكتبة والاشتراك ودخول Google، وإصلاح تجهيز الملفات والمحادثة والاختبارات والبطاقات والتقدم الدراسي.",
+      "ثيم فاتح وداكن مع اختيار المظهر واللون من أعلى التطبيق، بالإضافة إلى المكتبة والاشتراك ودخول Google وتحسينات الدراسة والمحادثة.",
   };
 
   const formattedDate = new Date(versionInfo.published_at).toLocaleDateString(

@@ -383,13 +383,11 @@ test("document upload selects a subject and blocks sending until processing fini
   await page.getByRole("button", { name: "المحادثة مع AI" }).click();
   await page.getByRole("button", { name: "ملف", exact: true }).click();
   await page.getByRole("button", { name: "تأكيد المادة" }).click();
-  await page
-    .locator('input[accept=".pdf,.docx,.pptx,.txt"]')
-    .setInputFiles({
-      name: "lecture.txt",
-      mimeType: "text/plain",
-      buffer: Buffer.from("Nursing lecture"),
-    });
+  await page.locator('input[accept=".pdf,.docx,.pptx,.txt"]').setInputFiles({
+    name: "lecture.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Nursing lecture"),
+  });
   await expect(
     page.getByRole("button", { name: "إرسال", exact: true }),
   ).toBeDisabled();
@@ -418,13 +416,11 @@ test("subscription submits a real multipart receipt with the selected plan and m
   await page
     .getByRole("button", { name: "اختيار الباقة وإرسال الدفع" })
     .click();
-  await page
-    .locator('input[type="file"]')
-    .setInputFiles({
-      name: "receipt.pdf",
-      mimeType: "application/pdf",
-      buffer: Buffer.from("%PDF-1.4\n%%EOF"),
-    });
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "receipt.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.4\n%%EOF"),
+  });
   await page.getByRole("button", { name: "إرسال الطلب للمراجعة" }).click();
   await expect(page.getByText("PAY-123", { exact: true })).toBeVisible();
   const request = requests.find(
@@ -551,4 +547,60 @@ test("study preferences are saved and mistake recovery sends the student's answe
     ),
   ).toEqual({ studentAnswer: "تقييم المريض" });
   expect(errors).toEqual([]);
+});
+
+test("theme picker saves mode and accent, follows the device only when selected", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await setup(page);
+  // First launch remains light, even on a device set to dark.
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
+  await page.getByRole("button", { name: "تخصيص المظهر", exact: true }).click();
+  await page.getByRole("button", { name: "داكن", exact: true }).click();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect(page.locator("body")).toHaveCSS(
+    "background-color",
+    "rgb(16, 20, 25)",
+  );
+  await expect(page.locator("header")).toHaveCSS("color", "rgb(241, 245, 249)");
+  await page.getByRole("button", { name: "بنفسجي", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-accent", "violet");
+  await page.getByRole("button", { name: "إغلاق", exact: true }).click();
+  await page.screenshot({ path: "/tmp/nursing-theme-dark.png" });
+  await page.reload();
+  await page.getByRole("button", { name: "تخصيص المظهر", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "داكن", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: "بنفسجي", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "فاتح", exact: true }).click();
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
+  await page.getByRole("button", { name: "إغلاق", exact: true }).click();
+  await page.screenshot({ path: "/tmp/nursing-theme-light.png" });
+  await page.getByRole("button", { name: "تخصيص المظهر", exact: true }).click();
+  await page.getByRole("button", { name: "حسب الجهاز", exact: true }).click();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
+});
+
+test("appearance is available before login and stays synchronized in settings", async ({
+  page,
+}) => {
+  await setup(page, false);
+  await page.getByRole("button", { name: "تخصيص المظهر", exact: true }).click();
+  await page.getByRole("button", { name: "داكن", exact: true }).click();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await page.getByRole("button", { name: "إغلاق", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "المتابعة باستخدام Google" }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await page.getByRole("button", { name: "تخصيص المظهر", exact: true }).click();
+  await page.getByRole("button", { name: "فاتح", exact: true }).click();
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
 });

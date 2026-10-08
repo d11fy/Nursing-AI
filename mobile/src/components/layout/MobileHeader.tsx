@@ -1,4 +1,5 @@
 import React from "react";
+import { ThemePicker } from "../common/ThemePicker";
 import { ArrowRight, Sparkles } from "lucide-react";
 import { useNavigation } from "../../context/NavigationContext";
 
@@ -57,7 +58,10 @@ export function MobileHeader({
           </div>
         </div>
 
-        {actions && <div className="flex items-center gap-1.5">{actions}</div>}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {actions}
+          <ThemePicker />
+        </div>
       </div>
     </header>
   );

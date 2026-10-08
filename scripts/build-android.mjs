@@ -117,7 +117,28 @@ try {
     }
 
     const srcPath = path.join(releaseDir, releaseApk);
-    verifyReleaseSignature(srcPath, env);
+    const signature = verifyReleaseSignature(srcPath, env);
+    const previousApk = path.join(
+      root,
+      "public",
+      "downloads",
+      "nursing-ai-latest.apk",
+    );
+    if (fs.existsSync(previousApk)) {
+      const previousSignature = verifyReleaseSignature(previousApk, env);
+      const certificate = (output) =>
+        output
+          .match(/Signer #1 certificate SHA-256 digest:\s*([a-f0-9]+)/i)?.[1]
+          ?.toLowerCase();
+      if (
+        !certificate(signature) ||
+        certificate(signature) !== certificate(previousSignature)
+      ) {
+        throw new Error(
+          "The release certificate does not match the existing production APK. Restore the original signing key before publishing an update.",
+        );
+      }
+    }
     const destDir = path.join(root, "public", "downloads");
     if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
 

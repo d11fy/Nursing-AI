@@ -3,12 +3,9 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
 
-const storedTheme = localStorage.getItem("nursing_theme");
-document.documentElement.classList.toggle(
-  "dark",
-  storedTheme === "dark" ||
-    (!storedTheme && window.matchMedia("(prefers-color-scheme: dark)").matches),
-);
+import { applyTheme, readTheme } from "./context/ThemeContext";
+const theme = readTheme();
+applyTheme(theme.mode, theme.accent);
 
 const rootElement = document.getElementById("root");
 if (rootElement) {
