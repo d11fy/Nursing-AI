@@ -1,5 +1,5 @@
 import React from "react";
-import { Award, CheckCircle2, XCircle, Clock, ArrowRight, RotateCcw } from "lucide-react";
+import { Award, CheckCircle2, XCircle } from "lucide-react";
 import { useNavigation } from "../context/NavigationContext";
 
 export function QuizResultsScreen({

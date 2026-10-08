@@ -1,64 +1,91 @@
 import React, { useEffect, useState } from "react";
-import { BookMarked, Search, Star, Sparkles, Filter, ChevronLeft, RefreshCw, FileText } from "lucide-react";
+import {
+  BookMarked,
+  Search,
+  Star,
+  Sparkles,
+  RefreshCw,
+  Eye,
+  Download,
+  MessageSquare,
+} from "lucide-react";
 import { useNavigation } from "../context/NavigationContext";
 import { apiFetch } from "../services/api";
+import { openAuthenticatedFile } from "../services/files";
+import {
+  RESOURCE_CATEGORIES,
+  categoryLabel,
+  type LibraryCatalog,
+  type LibraryResource,
+} from "../config/library";
 
-interface Resource {
-  id: string;
-  title: string;
-  category: string;
-  description?: string | null;
+interface Resource extends Omit<LibraryResource, "subjectName"> {
   subjectName?: string | null;
-  pageCount?: number | null;
   favorite?: boolean;
 }
+const CATEGORIES = [{ value: "all", label: "الكل" }, ...RESOURCE_CATEGORIES];
 
-const CATEGORIES = [
-  { value: "all", label: "الكل" },
-  { value: "books", label: "كتب ومراجع" },
-  { value: "guides", label: "أدلة سريرية" },
-  { value: "summaries", label: "ملخصات" },
-  { value: "questions", label: "نماذج وأسئلة" },
-];
-
-export function LibraryScreen() {
-  const { navigate } = useNavigation();
-
+export function LibraryScreen({
+  onAttach,
+  subjectId: initialSubjectId,
+}: {
+  onAttach?: (resource: LibraryResource) => Promise<void>;
+  subjectId?: string | null;
+}) {
+  const { navigate, showToast } = useNavigation();
   const [resources, setResources] = useState<Resource[]>([]);
+  const [catalog, setCatalog] = useState<LibraryCatalog | null>(null);
   const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
+  const [subjectId, setSubjectId] = useState(initialSubjectId || "");
+  const [semester, setSemester] = useState("");
   const [onlyFavorites, setOnlyFavorites] = useState(false);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-
-  const fetchResources = async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (selectedCategory !== "all") params.append("category", selectedCategory);
-      if (search.trim()) params.append("q", search.trim());
-      params.append("pageSize", "25");
-
-      const res = await apiFetch(`/api/library?${params.toString()}`);
-      setResources(res.items || res.resources || []);
-    } catch {
-      setResources([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchResources();
-  }, [selectedCategory]);
+    const controller = new AbortController();
+    setLoading(true);
+    setError("");
+    const params = new URLSearchParams({ page: String(page), pageSize: "18" });
+    if (selectedCategory !== "all") params.set("category", selectedCategory);
+    if (query) params.set("q", query);
+    if (subjectId) params.set("subjectId", subjectId);
+    if (semester) params.set("semester", semester);
+    apiFetch<LibraryCatalog>(`/api/library?${params}`, {
+      signal: controller.signal,
+    })
+      .then((res) => {
+        setCatalog(res);
+        setResources(res.resources || []);
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted)
+          setError(err.message || "تعذر تحميل المكتبة");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [selectedCategory, query, subjectId, semester, page, retry]);
 
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    fetchResources();
-  };
-
-  const toggleFavorite = async (docId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const run = async (id: string, action: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(id);
     try {
+      await action();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "تعذر تنفيذ الطلب");
+    } finally {
+      setBusy(null);
+    }
+  };
+  const toggleFavorite = async (docId: string) =>
+    run(docId, async () => {
       const resource = resources.find((item) => item.id === docId);
       const favorite = !resource?.favorite;
       await apiFetch("/api/library/favorites", {
@@ -66,15 +93,11 @@ export function LibraryScreen() {
         body: JSON.stringify({ documentId: docId, favorite }),
       });
       setResources((prev) =>
-        prev.map((r) => (r.id === docId ? { ...r, favorite } : r))
+        prev.map((r) => (r.id === docId ? { ...r, favorite } : r)),
       );
-    } catch (err: any) {
-      alert(err.message || "تعذر تحديث المفضلة");
-    }
-  };
-
-  const openStudyPack = async (resource: Resource) => {
-    try {
+    });
+  const openStudyPack = async (resource: Resource) =>
+    run(resource.id, async () => {
       const res = await apiFetch(`/api/library/${resource.id}/study-pack`, {
         method: "POST",
       });
@@ -83,124 +106,262 @@ export function LibraryScreen() {
         studyPackId: res.studyPackId,
         title: resource.title,
       });
-    } catch (err: any) {
-      alert(err.message || "تعذر فتح حزمة الدراسة لهذا المصدر");
-    }
-  };
-
-  const displayed = onlyFavorites ? resources.filter((r) => r.favorite) : resources;
+    });
+  const attach = (resource: Resource) =>
+    run(resource.id, async () => {
+      if (onAttach) {
+        await onAttach({
+          ...resource,
+          subjectName: resource.subjectName || null,
+        });
+        return;
+      }
+      const result = await apiFetch("/api/library/sources", {
+        method: "POST",
+        body: JSON.stringify({
+          documentId: resource.id,
+          subjectId: resource.subjectId,
+        }),
+      });
+      navigate("chat-detail", {
+        conversationId: result.conversationId,
+        subjectId: resource.subjectId,
+        subjectName: resource.subjectName,
+      });
+    });
+  const displayed = onlyFavorites
+    ? resources.filter((r) => r.favorite)
+    : resources;
 
   return (
-    <div className="space-y-4 pb-nav">
-      {/* Search Bar */}
-      <form onSubmit={handleSearchSubmit} className="relative">
+    <div className={`space-y-4 ${onAttach ? "" : "pb-nav"}`}>
+      <div className="rounded-3xl bg-primary p-5 text-white space-y-2">
+        <BookMarked className="size-6" />
+        <h2 className="font-black text-lg">مكتبة منهجك في مكان واحد</h2>
+        <p className="text-sm text-white/80">
+          {catalog?.academicYear?.name || "مصادر الجامعة"} ·{" "}
+          {catalog?.total ?? 0} مصدر متاح
+        </p>
+      </div>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          setPage(1);
+          setQuery(search.trim());
+          setRetry((v) => v + 1);
+        }}
+        className="flex gap-2"
+      >
         <input
-          type="text"
+          aria-label="البحث في المكتبة"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="ابحث في مراجع وكتب التمريض..."
-          className="w-full h-11 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 pl-10 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-hidden"
+          maxLength={100}
+          placeholder="ابحث عن كتاب أو محاضرة..."
+          className="field flex-1 min-w-0"
         />
-        <button
-          type="submit"
-          className="absolute left-3 top-3 text-slate-400 hover:text-slate-600"
-        >
-          <Search className="size-4" />
+        <button type="submit" aria-label="بحث" className="btn-primary px-4">
+          <Search className="size-5" />
         </button>
       </form>
-
-      {/* Category Pills & Favorite toggle */}
-      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-        <button
-          onClick={() => setOnlyFavorites(!onlyFavorites)}
-          className={`flex items-center gap-1 h-8 px-3 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
-            onlyFavorites
-              ? "bg-amber-500 text-white shadow-xs"
-              : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300"
-          }`}
+      <div className="grid grid-cols-2 gap-2">
+        <select
+          aria-label="المادة"
+          value={subjectId}
+          onChange={(e) => {
+            setSubjectId(e.target.value);
+            setPage(1);
+          }}
+          className="field min-w-0"
         >
-          <Star className="size-3 fill-current" />
-          <span>المفضلة</span>
+          <option value="">كل المواد</option>
+          {catalog?.subjects.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="الفصل الدراسي"
+          value={semester}
+          onChange={(e) => {
+            setSemester(e.target.value);
+            setPage(1);
+          }}
+          className="field"
+        >
+          <option value="">كل الفصول</option>
+          <option value="1">الفصل الأول</option>
+          <option value="2">الفصل الثاني</option>
+        </select>
+      </div>
+      <div className="flex gap-2 overflow-x-auto no-scrollbar">
+        <button
+          aria-pressed={onlyFavorites}
+          onClick={() => setOnlyFavorites(!onlyFavorites)}
+          className={`chip ${onlyFavorites ? "bg-amber-500 text-white" : ""}`}
+        >
+          <Star className="size-4" />
+          المفضلة
         </button>
-
         {CATEGORIES.map((cat) => (
           <button
             key={cat.value}
+            aria-pressed={selectedCategory === cat.value}
             onClick={() => {
               setSelectedCategory(cat.value);
-              setOnlyFavorites(false);
+              setPage(1);
             }}
-            className={`h-8 px-3.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
-              selectedCategory === cat.value && !onlyFavorites
-                ? "bg-primary text-white shadow-xs"
-                : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300"
-            }`}
+            className={`chip ${selectedCategory === cat.value ? "bg-primary text-white" : ""}`}
           >
             {cat.label}
           </button>
         ))}
       </div>
-
-      {/* Resources List */}
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-20 space-y-2">
-          <RefreshCw className="size-6 text-primary animate-spin" />
-          <span className="text-xs text-slate-400">جارٍ تحميل المكتبة...</span>
+      {!onAttach && !query && page === 1 && Boolean(catalog?.recent.length) && (
+        <section className="space-y-2">
+          <h3 className="font-bold text-sm">مصادر درستها مؤخرًا</h3>
+          <div className="flex gap-2 overflow-x-auto no-scrollbar">
+            {catalog?.recent.map((resource) => (
+              <button
+                key={resource.id}
+                className="chip max-w-[240px]"
+                disabled={Boolean(busy) || !resource.subjectId}
+                onClick={() => openStudyPack(resource)}
+              >
+                <BookMarked className="size-4 shrink-0" />
+                <span className="truncate">{resource.title}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+      {error ? (
+        <div role="alert" className="surface space-y-3 text-red-600">
+          <p>{error}</p>
+          <button
+            className="btn-primary"
+            onClick={() => setRetry((v) => v + 1)}
+          >
+            إعادة المحاولة
+          </button>
         </div>
-      ) : displayed.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 p-10 text-center text-xs text-slate-400">
-          لم يتم العثور على مصادر في المكتبة.
+      ) : loading ? (
+        <div role="status" className="py-12 text-center">
+          <RefreshCw className="mx-auto size-6 animate-spin text-primary" />
+          <p className="mt-3 text-sm">جارٍ تحميل المكتبة...</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {displayed.map((res) => (
-            <div
-              key={res.id}
-              onClick={() => openStudyPack(res)}
-              className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs active:scale-98 transition-all cursor-pointer space-y-2.5"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-teal-50 dark:bg-slate-800 text-primary">
-                    <BookMarked className="size-5" />
-                  </div>
+        <>
+          <div className="space-y-3">
+            {displayed.map((res) => (
+              <article key={res.id} className="surface space-y-3">
+                <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <h4 className="text-xs font-black text-slate-900 dark:text-white truncate">
+                    <h3 className="font-bold leading-7 break-words">
                       {res.title}
-                    </h4>
-                    <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                      {res.subjectName || "مرجع تمريضي عام"}
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      {res.subjectName} · {categoryLabel(res.category)} ·{" "}
+                      {res.pageCount} صفحة
                     </p>
                   </div>
+                  <button
+                    disabled={Boolean(busy)}
+                    onClick={() => toggleFavorite(res.id)}
+                    aria-label={
+                      res.favorite ? "إزالة من المفضلة" : "إضافة للمفضلة"
+                    }
+                    className={`min-h-11 min-w-11 ${res.favorite ? "text-amber-500" : "text-slate-400"}`}
+                  >
+                    <Star
+                      className={`mx-auto size-5 ${res.favorite ? "fill-current" : ""}`}
+                    />
+                  </button>
                 </div>
-
-                <button
-                  onClick={(e) => toggleFavorite(res.id, e)}
-                  className={`flex size-8 shrink-0 items-center justify-center rounded-full ${
-                    res.favorite ? "text-amber-500" : "text-slate-300 hover:text-slate-500"
-                  }`}
-                  aria-label="المفضلة"
-                >
-                  <Star className="size-4.5 fill-current" />
-                </button>
-              </div>
-
-              {res.description && (
-                <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
-                  {res.description}
-                </p>
-              )}
-
-              <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800 text-xs font-bold text-primary">
-                <span className="flex items-center gap-1">
-                  <Sparkles className="size-3.5" />
-                  فتح حزمة الدراسة (Study Pack)
-                </span>
-                <ChevronLeft className="size-4" />
-              </div>
-            </div>
-          ))}
-        </div>
+                {res.description && (
+                  <p className="text-sm text-slate-500 leading-6">
+                    {res.description}
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    className="chip"
+                    disabled={Boolean(busy)}
+                    onClick={() =>
+                      run(res.id, () =>
+                        openAuthenticatedFile(
+                          `/api/library/${res.id}/file?mode=preview`,
+                          res.title,
+                        ),
+                      )
+                    }
+                  >
+                    <Eye className="size-4" />
+                    معاينة
+                  </button>
+                  <button
+                    className="chip"
+                    disabled={Boolean(busy)}
+                    onClick={() =>
+                      run(res.id, () =>
+                        openAuthenticatedFile(
+                          `/api/library/${res.id}/file?mode=download`,
+                          res.title,
+                          true,
+                        ),
+                      )
+                    }
+                  >
+                    <Download className="size-4" />
+                    تنزيل
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    className="btn-secondary"
+                    disabled={Boolean(busy) || !res.subjectId}
+                    onClick={() => openStudyPack(res)}
+                  >
+                    <Sparkles className="size-4" />
+                    حزمة الدراسة
+                  </button>
+                  <button
+                    className="btn-primary"
+                    disabled={Boolean(busy)}
+                    onClick={() => attach(res)}
+                  >
+                    <MessageSquare className="size-4" />
+                    {onAttach ? "إرفاق للمحادثة" : "ادرس مع المعلم"}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+          {!displayed.length && (
+            <p className="surface text-center text-sm text-slate-500">
+              لا توجد مصادر مطابقة. جرّب تغيير المرشحات أو الانتقال للصفحة
+              التالية.
+            </p>
+          )}
+          <div className="flex items-center justify-between gap-2">
+            <button
+              className="btn-secondary"
+              disabled={page === 1}
+              onClick={() => setPage((v) => v - 1)}
+            >
+              السابق
+            </button>
+            <span className="text-xs">الصفحة {page}</span>
+            <button
+              className="btn-secondary"
+              disabled={!catalog || page * catalog.pageSize >= catalog.total}
+              onClick={() => setPage((v) => v + 1)}
+            >
+              التالي
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

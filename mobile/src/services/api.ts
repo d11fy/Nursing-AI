@@ -1,5 +1,10 @@
+import { consumeChatResponse } from "../../../lib/chat/stream";
 import { Preferences } from "@capacitor/preferences";
-import { getSecureItem, setSecureItem, removeSecureItem } from "./secureStorage";
+import {
+  getSecureItem,
+  setSecureItem,
+  removeSecureItem,
+} from "./secureStorage";
 
 export const DEFAULT_SERVER_URL = "https://nursing.alisohail.tech";
 
@@ -14,9 +19,15 @@ export async function getServerUrl(): Promise<string> {
 }
 
 export function resolveOfficialUrl(value: string): string {
-  const base = import.meta.env.DEV && typeof window !== "undefined" ? window.location.origin : DEFAULT_SERVER_URL;
+  const base =
+    import.meta.env.DEV && typeof window !== "undefined"
+      ? window.location.origin
+      : DEFAULT_SERVER_URL;
   const resolved = new URL(value, base);
-  if (!import.meta.env.DEV && resolved.origin !== new URL(DEFAULT_SERVER_URL).origin) {
+  if (
+    !import.meta.env.DEV &&
+    resolved.origin !== new URL(DEFAULT_SERVER_URL).origin
+  ) {
     throw new Error("External URL is not allowed");
   }
   return resolved.toString();
@@ -34,7 +45,10 @@ async function buildApiUrl(endpoint: string): Promise<string> {
   return `${serverUrl}${requireApiPath(endpoint)}`;
 }
 
-export async function getTokens(): Promise<{ sessionToken: string | null; deviceToken: string | null }> {
+export async function getTokens(): Promise<{
+  sessionToken: string | null;
+  deviceToken: string | null;
+}> {
   if (cachedSessionToken !== null && cachedDeviceToken !== null) {
     return { sessionToken: cachedSessionToken, deviceToken: cachedDeviceToken };
   }
@@ -52,7 +66,10 @@ export async function getTokens(): Promise<{ sessionToken: string | null; device
   return { sessionToken: cachedSessionToken, deviceToken: cachedDeviceToken };
 }
 
-export async function saveTokens(sessionToken: string, deviceToken: string): Promise<void> {
+export async function saveTokens(
+  sessionToken: string,
+  deviceToken: string,
+): Promise<void> {
   cachedSessionToken = sessionToken;
   cachedDeviceToken = deviceToken;
   try {
@@ -94,7 +111,7 @@ export class ApiError extends Error {
 
 export async function apiFetch<T = any>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
 ): Promise<T> {
   const { sessionToken, deviceToken } = await getTokens();
   const url = await buildApiUrl(endpoint);
@@ -128,14 +145,19 @@ export async function apiFetch<T = any>(
 
   if (!res.ok) {
     if (res.status === 401) await expireRejectedSession(Boolean(sessionToken));
-    const errorMsg = data?.error || (typeof data === "string" ? data : `خطأ (${res.status})`);
+    const errorMsg =
+      data?.error || (typeof data === "string" ? data : `خطأ (${res.status})`);
     throw new ApiError(errorMsg, res.status, data);
   }
 
   return data as T;
 }
 
-export async function apiUpload<T = any>(endpoint: string, formData: FormData): Promise<T> {
+export async function apiUpload<T = any>(
+  endpoint: string,
+  formData: FormData,
+  signal?: AbortSignal,
+): Promise<T> {
   const { sessionToken, deviceToken } = await getTokens();
   const url = await buildApiUrl(endpoint);
 
@@ -147,12 +169,18 @@ export async function apiUpload<T = any>(endpoint: string, formData: FormData): 
     method: "POST",
     headers,
     body: formData,
+    signal,
+    credentials: "omit",
   });
 
   const data = await res.json().catch(() => null);
   if (!res.ok) {
     if (res.status === 401) await expireRejectedSession(Boolean(sessionToken));
-    throw new ApiError(data?.error || `خطأ في الرفع (${res.status})`, res.status, data);
+    throw new ApiError(
+      data?.error || `خطأ في الرفع (${res.status})`,
+      res.status,
+      data,
+    );
   }
   return data as T;
 }
@@ -164,9 +192,10 @@ export async function apiStream(
     onConversationId?: (id: string) => void;
     onChunk: (chunk: string) => void;
     onComplete?: (id: string | null) => void;
+    onMessageIds?: (assistantId: string, userId: string) => void;
     onError?: (err: Error) => void;
   },
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<void> {
   const { sessionToken, deviceToken } = await getTokens();
   const url = await buildApiUrl(endpoint);
@@ -188,50 +217,17 @@ export async function apiStream(
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      if (res.status === 401) await expireRejectedSession(Boolean(sessionToken));
+      if (res.status === 401)
+        await expireRejectedSession(Boolean(sessionToken));
       throw new Error(data.error || "تعذر إكمال المحادثة، جرب ثانية.");
     }
 
-    const conversationId = res.headers.get("X-Conversation-Id");
-    if (conversationId && callbacks.onConversationId) {
-      callbacks.onConversationId(conversationId);
-    }
-
-    const reader = res.body?.getReader();
-    if (!reader) throw new Error("تعذر قراءة الاستجابة");
-
-    const decoder = new TextDecoder();
-    const isSse = res.headers.get("Content-Type")?.includes("text/event-stream");
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const text = decoder.decode(value, { stream: true });
-      if (!isSse) {
-        callbacks.onChunk(text);
-      } else {
-        buffer += text;
-        let boundary: number;
-        while ((boundary = buffer.indexOf("\n\n")) >= 0) {
-          const event = buffer.slice(0, boundary);
-          buffer = buffer.slice(boundary + 2);
-          const kind = event.match(/^event: (.+)$/m)?.[1];
-          const dataMatch = event.match(/^data: (.+)$/m)?.[1];
-          if (!dataMatch) continue;
-          try {
-            const payload = JSON.parse(dataMatch);
-            if (kind === "delta" && payload.text) {
-              callbacks.onChunk(payload.text);
-            }
-          } catch {}
-        }
-      }
-    }
-
-    if (callbacks.onComplete) {
-      callbacks.onComplete(conversationId);
-    }
+    await consumeChatResponse(res, {
+      onConversationId: (id) => callbacks.onConversationId?.(id),
+      onChunk: callbacks.onChunk,
+      onMessageIds: callbacks.onMessageIds,
+      onComplete: (id) => callbacks.onComplete?.(id),
+    });
   } catch (err: any) {
     if (err.name !== "AbortError" && callbacks.onError) {
       callbacks.onError(err);

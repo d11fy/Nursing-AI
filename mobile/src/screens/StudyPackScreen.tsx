@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   FileText,
   ListOrdered,
@@ -7,12 +7,11 @@ import {
   HelpCircle,
   RefreshCw,
   Play,
-  CheckCircle2,
   AlertCircle,
-  BookOpen,
 } from "lucide-react";
 import { useNavigation } from "../context/NavigationContext";
 import { apiFetch } from "../services/api";
+import { StudySummary } from "../components/studypack/StudySummary";
 import { FlashcardsViewer } from "../components/studypack/FlashcardsViewer";
 
 export function StudyPackScreen({
@@ -24,12 +23,18 @@ export function StudyPackScreen({
   type?: "lecture" | "library";
   title?: string;
 }) {
-  const { navigate } = useNavigation();
+  const { navigate, showToast } = useNavigation();
 
-  const [activeTab, setActiveTab] = useState<"summary" | "keypoints" | "flashcards" | "quiz">("summary");
+  const [activeTab, setActiveTab] = useState<
+    "summary" | "keypoints" | "flashcards" | "quiz" | "source"
+  >("summary");
   const [data, setData] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [lectureStatus, setLectureStatus] = useState("");
+  const [quizType, setQuizType] = useState("mixed");
+  const [quizMode, setQuizMode] = useState<"STUDY" | "EXAM">("STUDY");
+  const [existingQuiz, setExistingQuiz] = useState<any>(null);
   const [generating, setGenerating] = useState(false);
 
   // Flashcards state
@@ -37,9 +42,11 @@ export function StudyPackScreen({
 
   // Quiz Setup state
   const [quizCount, setQuizCount] = useState("10");
-  const [quizDifficulty, setQuizDifficulty] = useState<"easy" | "medium" | "hard">("medium");
+  const [quizDifficulty, setQuizDifficulty] = useState<
+    "easy" | "medium" | "hard"
+  >("medium");
 
-  const loadWorkspace = async () => {
+  const loadWorkspace = useCallback(async () => {
     setLoading(true);
     setErrorMessage("");
     try {
@@ -51,32 +58,75 @@ export function StudyPackScreen({
       // If flashcards already exist, load them
       if (res.workspaceData?.studyPack?.id) {
         try {
-          const cardsRes = await apiFetch(`/api/study-packs/${res.workspaceData.studyPack.id}/flashcards`);
+          const quizRes = await apiFetch(
+            `/api/study-packs/${res.workspaceData.studyPack.id}/quiz`,
+          );
+          setExistingQuiz(quizRes.quiz);
+          const cardsRes = await apiFetch(
+            `/api/study-packs/${res.workspaceData.studyPack.id}/flashcards`,
+          );
           if (cardsRes.cards) setFlashcards(cardsRes.cards);
         } catch {}
       }
     } catch (error) {
       setData(null);
-      setErrorMessage(error instanceof Error ? error.message : "تعذر تحميل حزمة الدراسة");
+      setErrorMessage(
+        error instanceof Error ? error.message : "تعذر تحميل حزمة الدراسة",
+      );
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, type]);
 
   useEffect(() => {
     loadWorkspace();
-  }, [id, type]);
+  }, [loadWorkspace]);
+
+  useEffect(() => {
+    if (type !== "lecture" || !id) return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const lecture = await apiFetch(`/api/lectures/${id}`);
+        if (disposed) return;
+        setLectureStatus(lecture.status);
+        if (lecture.status === "ready") {
+          await loadWorkspace();
+          return;
+        }
+        if (lecture.status === "failed") {
+          setErrorMessage(lecture.error_message || "تعذرت معالجة الملف");
+          return;
+        }
+        timer = setTimeout(poll, 3000);
+      } catch (error) {
+        if (!disposed)
+          setErrorMessage(
+            error instanceof Error ? error.message : "تعذر تحميل حالة الملف",
+          );
+      }
+    };
+    void poll();
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+    };
+  }, [id, type, loadWorkspace]);
 
   const studyPackId = data?.studyPack?.id;
 
   // Generate Summary / Key Points
-  const handleGenerateContent = async (contentType: "summary" | "key_points") => {
+  const handleGenerateContent = async (
+    contentType: "summary" | "key_points",
+    regenerate = false,
+  ) => {
     if (!studyPackId) return;
     setGenerating(true);
     try {
       const res = await apiFetch(`/api/study-packs/${studyPackId}/content`, {
         method: "POST",
-        body: JSON.stringify({ type: contentType, regenerate: false }),
+        body: JSON.stringify({ type: contentType, regenerate }),
       });
       if (contentType === "summary") {
         setData((prev: any) => ({
@@ -99,13 +149,13 @@ export function StudyPackScreen({
   };
 
   // Generate Flashcards
-  const handleGenerateFlashcards = async () => {
+  const handleGenerateFlashcards = async (regenerate = false) => {
     if (!studyPackId) return;
     setGenerating(true);
     try {
       const res = await apiFetch(`/api/study-packs/${studyPackId}/flashcards`, {
         method: "POST",
-        body: JSON.stringify({ regenerate: false }),
+        body: JSON.stringify({ regenerate }),
       });
       if (res.cards) {
         setFlashcards(res.cards);
@@ -125,11 +175,9 @@ export function StudyPackScreen({
       const res = await apiFetch(`/api/study-packs/${studyPackId}/quiz`, {
         method: "POST",
         body: JSON.stringify({
-          config: {
-            questionCount: parseInt(quizCount, 10),
-            difficulty: quizDifficulty,
-            questionType: "mixed",
-          },
+          questionCount: parseInt(quizCount, 10),
+          difficulty: quizDifficulty,
+          questionType: quizType,
         }),
       });
 
@@ -142,7 +190,7 @@ export function StudyPackScreen({
         quizId: res.quiz.id,
         studyPackId,
         questions: res.quiz.questions,
-        mode: "STUDY",
+        mode: quizMode,
         title: res.quiz.title || "اختبار حزمة الدراسة",
       });
     } catch (err: any) {
@@ -156,11 +204,29 @@ export function StudyPackScreen({
     return (
       <div className="flex flex-col items-center justify-center py-24 space-y-3">
         <RefreshCw className="size-6 text-primary animate-spin" />
-        <span className="text-xs text-slate-400">جارٍ تجهيز حزمة الدراسة...</span>
+        <span className="text-xs text-slate-400">
+          جارٍ تجهيز حزمة الدراسة...
+        </span>
       </div>
     );
   }
 
+  if (
+    !data &&
+    lectureStatus &&
+    !["ready", "failed", "expired"].includes(lectureStatus)
+  ) {
+    return (
+      <div role="status" className="surface space-y-4 mt-6 text-center">
+        <RefreshCw className="size-8 animate-spin text-primary mx-auto" />
+        <h3 className="font-bold">جارٍ تجهيز الملف للدراسة</h3>
+        <p className="text-sm text-slate-500">
+          يمكنك متابعة دراستك والعودة لاحقًا. سنعرض الملخص والبطاقات عندما يجهز
+          الملف.
+        </p>
+      </div>
+    );
+  }
   if (!data) {
     return (
       <div className="rounded-3xl border border-red-200 bg-red-50 p-6 text-center space-y-3 my-6">
@@ -191,6 +257,36 @@ export function StudyPackScreen({
         <h2 className="text-base font-black leading-snug">{lectureTitle}</h2>
       </div>
 
+      <button
+        className="btn-primary w-full"
+        onClick={async () => {
+          try {
+            if (data.sourceKind === "library") {
+              const res = await apiFetch("/api/library/sources", {
+                method: "POST",
+                body: JSON.stringify({
+                  documentId: data.lecture.id,
+                  subjectId: data.subject.id,
+                }),
+              });
+              navigate("chat-detail", {
+                conversationId: res.conversationId,
+                subjectId: data.subject.id,
+                subjectName: data.subject.nameAr,
+              });
+            } else
+              navigate("chat-detail", {
+                lectureId: data.lecture.id,
+                subjectId: data.subject.id,
+                subjectName: data.subject.nameAr,
+              });
+          } catch (err) {
+            showToast(err instanceof Error ? err.message : "تعذر فتح المعلم");
+          }
+        }}
+      >
+        اسأل المعلم عن هذا الملف
+      </button>
       {/* Tabs Row */}
       <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5 border-b border-slate-200 dark:border-slate-800">
         <button
@@ -242,36 +338,47 @@ export function StudyPackScreen({
         </button>
       </div>
 
+      <button
+        className="chip"
+        onClick={() => setActiveTab("source")}
+        aria-pressed={activeTab === "source"}
+      >
+        النص الأصلي وصفحات الملف
+      </button>
+      {activeTab === "source" && (
+        <div className="space-y-3 selectable-text">
+          {data.pages?.map((page: any, index: number) => (
+            <article key={index} className="surface space-y-2">
+              <h3 className="text-sm font-bold text-primary">
+                الصفحة {page.pageNumber || index + 1}
+                {page.ocr ? " · نص مستخرج من صورة" : ""}
+              </h3>
+              <p
+                dir="auto"
+                className="text-sm leading-7 whitespace-pre-wrap break-words"
+              >
+                {page.text}
+              </p>
+            </article>
+          ))}
+          {!data.pages?.length && (
+            <p className="surface text-sm">لا يوجد نص مستخرج متاح.</p>
+          )}
+        </div>
+      )}
       {/* TAB 1: Summary */}
       {activeTab === "summary" && (
         <div className="space-y-4">
           {data.summaryStatus === "ready" && data.initialSummary ? (
-            <div className="space-y-4 selectable-text">
-              <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2 shadow-xs">
-                <h3 className="text-xs font-black text-primary">نظرة عامة على المحاضرة</h3>
-                <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-300">
-                  {data.initialSummary.overview}
-                </p>
-              </div>
-
-              {data.initialSummary.sections?.map((sec: any, idx: number) => (
-                <div
-                  key={idx}
-                  className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2 shadow-xs"
-                >
-                  <h4 className="text-xs font-black text-slate-900 dark:text-white">
-                    {sec.heading}
-                  </h4>
-                  <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
-                    {sec.summary}
-                  </p>
-                  {sec.clinicalTakeaway && (
-                    <div className="rounded-2xl bg-teal-50 dark:bg-slate-800 p-2.5 text-[11px] font-bold text-primary dark:text-teal-300">
-                      💉 <strong>تطبيق تمريضي:</strong> {sec.clinicalTakeaway}
-                    </div>
-                  )}
-                </div>
-              ))}
+            <div className="space-y-3">
+              <StudySummary content={data.initialSummary} />
+              <button
+                disabled={generating}
+                className="btn-secondary w-full"
+                onClick={() => handleGenerateContent("summary", true)}
+              >
+                إعادة توليد الملخص
+              </button>
             </div>
           ) : (
             <div className="rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 p-8 text-center space-y-4">
@@ -283,7 +390,8 @@ export function StudyPackScreen({
                   الملخص الذكي غير مولّد بعد
                 </h4>
                 <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
-                  يمكن للذكاء الاصطناعي استخراج ملخص شامل منظم بالأقسام والتطبيقات السريرية.
+                  يمكن للذكاء الاصطناعي استخراج ملخص شامل منظم بالأقسام
+                  والتطبيقات السريرية.
                 </p>
               </div>
               <button
@@ -292,7 +400,9 @@ export function StudyPackScreen({
                 className="inline-flex items-center gap-2 px-5 h-11 rounded-2xl bg-primary text-white text-xs font-bold active:scale-97 disabled:opacity-60 shadow-xs"
               >
                 <Sparkles className="size-3.5" />
-                <span>{generating ? "جارٍ التوليد..." : "توليد الملخص الآن"}</span>
+                <span>
+                  {generating ? "جارٍ التوليد..." : "توليد الملخص الآن"}
+                </span>
               </button>
             </div>
           )}
@@ -316,7 +426,17 @@ export function StudyPackScreen({
                     <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-relaxed">
                       {point.text || point.point}
                     </p>
-                    {point.examAlert && (
+                    {point.arabic_clarification && (
+                      <p className="text-sm text-slate-500">
+                        {point.arabic_clarification}
+                      </p>
+                    )}
+                    {point.source_reference && (
+                      <p className="text-xs text-slate-400">
+                        {point.source_reference}
+                      </p>
+                    )}
+                    {(point.examAlert || point.category === "exam_focus") && (
                       <span className="inline-block rounded-md bg-amber-50 text-amber-700 px-2 py-0.5 text-[10px] font-bold">
                         ⚠️ موضع امتحان متكرر
                       </span>
@@ -335,7 +455,8 @@ export function StudyPackScreen({
                   أهم النقاط السريرية غير مولّدة
                 </h4>
                 <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
-                  استخرج أهم النقاط ذات الأولوية العالية للامتحانات والممارسة التمريضية.
+                  استخرج أهم النقاط ذات الأولوية العالية للامتحانات والممارسة
+                  التمريضية.
                 </p>
               </div>
               <button
@@ -344,7 +465,9 @@ export function StudyPackScreen({
                 className="inline-flex items-center gap-2 px-5 h-11 rounded-2xl bg-primary text-white text-xs font-bold active:scale-97 disabled:opacity-60 shadow-xs"
               >
                 <Sparkles className="size-3.5" />
-                <span>{generating ? "جارٍ التوليد..." : "توليد أهم النقاط"}</span>
+                <span>
+                  {generating ? "جارٍ التوليد..." : "توليد أهم النقاط"}
+                </span>
               </button>
             </div>
           )}
@@ -355,7 +478,20 @@ export function StudyPackScreen({
       {activeTab === "flashcards" && (
         <div className="space-y-4">
           {flashcards.length > 0 ? (
-            <FlashcardsViewer studyPackId={studyPackId} cards={flashcards} />
+            <div className="space-y-3">
+              <FlashcardsViewer
+                key={flashcards.map((card) => card.id).join(",")}
+                studyPackId={studyPackId}
+                cards={flashcards}
+              />
+              <button
+                disabled={generating}
+                className="btn-secondary w-full"
+                onClick={() => handleGenerateFlashcards(true)}
+              >
+                إعادة توليد البطاقات
+              </button>
+            </div>
           ) : (
             <div className="rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 p-8 text-center space-y-4">
               <div className="flex size-12 items-center justify-center rounded-2xl bg-teal-50 text-primary mx-auto">
@@ -370,12 +506,14 @@ export function StudyPackScreen({
                 </p>
               </div>
               <button
-                onClick={handleGenerateFlashcards}
+                onClick={() => handleGenerateFlashcards()}
                 disabled={generating}
                 className="inline-flex items-center gap-2 px-5 h-11 rounded-2xl bg-primary text-white text-xs font-bold active:scale-97 disabled:opacity-60 shadow-xs"
               >
                 <Sparkles className="size-3.5" />
-                <span>{generating ? "جارٍ الإنشاء..." : "توليد البطاقات التعليمية"}</span>
+                <span>
+                  {generating ? "جارٍ الإنشاء..." : "توليد البطاقات التعليمية"}
+                </span>
               </button>
             </div>
           )}
@@ -395,9 +533,54 @@ export function StudyPackScreen({
             </p>
           </div>
 
+          {existingQuiz?.questions?.length > 0 && (
+            <button
+              className="btn-secondary w-full"
+              onClick={() =>
+                navigate("quiz-runner", {
+                  quizId: existingQuiz.id,
+                  studyPackId,
+                  questions: existingQuiz.questions,
+                  mode: quizMode,
+                  title: existingQuiz.title,
+                })
+              }
+            >
+              فتح الاختبار المحفوظ ({existingQuiz.questions.length} سؤالًا)
+            </button>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-xs">
+              نوع الأسئلة
+              <select
+                className="field w-full mt-1"
+                value={quizType}
+                onChange={(e) => setQuizType(e.target.value)}
+              >
+                <option value="mixed">مختلط</option>
+                <option value="mcq">اختيار متعدد</option>
+                <option value="true_false">صح / خطأ</option>
+              </select>
+            </label>
+            <label className="text-xs">
+              طريقة التدريب
+              <select
+                className="field w-full mt-1"
+                value={quizMode}
+                onChange={(e) =>
+                  setQuizMode(e.target.value as "STUDY" | "EXAM")
+                }
+              >
+                <option value="STUDY">دراسة مع الشرح</option>
+                <option value="EXAM">امتحان</option>
+              </select>
+            </label>
+          </div>
           <div className="grid grid-cols-2 gap-3 pt-2">
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-700">عدد الأسئلة</label>
+              <label className="text-[11px] font-bold text-slate-700">
+                عدد الأسئلة
+              </label>
               <select
                 value={quizCount}
                 onChange={(e) => setQuizCount(e.target.value)}
@@ -406,11 +589,14 @@ export function StudyPackScreen({
                 <option value="5">5 أسئلة</option>
                 <option value="10">10 أسئلة</option>
                 <option value="15">15 سؤالًا</option>
+                <option value="20">20 سؤالًا</option>
               </select>
             </div>
 
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-700">المستوى</label>
+              <label className="text-[11px] font-bold text-slate-700">
+                المستوى
+              </label>
               <select
                 value={quizDifficulty}
                 onChange={(e: any) => setQuizDifficulty(e.target.value)}
@@ -429,7 +615,9 @@ export function StudyPackScreen({
             className="w-full h-12 rounded-2xl bg-primary text-white font-bold text-xs shadow-md active:scale-97 disabled:opacity-60 flex items-center justify-center gap-2 mt-2"
           >
             <Play className="size-4" />
-            <span>{generating ? "جارٍ إعداد الأسئلة..." : "بدء الاختبار الآن"}</span>
+            <span>
+              {generating ? "جارٍ إعداد الأسئلة..." : "بدء الاختبار الآن"}
+            </span>
           </button>
         </div>
       )}

@@ -1,4 +1,5 @@
-import React, { useEffect } from "react";
+import { registerBackHandler } from "../../services/capacitor";
+import React, { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 
 interface BottomSheetProps {
@@ -8,7 +9,23 @@ interface BottomSheetProps {
   children: React.ReactNode;
 }
 
-export function BottomSheet({ isOpen, onClose, title, children }: BottomSheetProps) {
+export function BottomSheet({
+  isOpen,
+  onClose,
+  title,
+  children,
+}: BottomSheetProps) {
+  const closeRef = useRef(onClose);
+  useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
+  useEffect(() => {
+    if (!isOpen) return;
+    return registerBackHandler(() => {
+      closeRef.current();
+      return true;
+    });
+  }, [isOpen]);
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden";
@@ -31,7 +48,12 @@ export function BottomSheet({ isOpen, onClose, title, children }: BottomSheetPro
       />
 
       {/* Sheet Content */}
-      <div className="relative z-10 max-h-[85vh] w-full rounded-t-3xl bg-white dark:bg-slate-900 pb-safe shadow-2xl flex flex-col animate-in slide-in-from-bottom duration-250">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title || "خيارات"}
+        className="relative z-10 max-h-[85vh] w-full rounded-t-3xl bg-white dark:bg-slate-900 pb-safe shadow-2xl flex flex-col animate-in slide-in-from-bottom duration-250"
+      >
         {/* Handle */}
         <div className="flex justify-center pt-3 pb-1" onClick={onClose}>
           <div className="h-1.5 w-12 rounded-full bg-slate-300 dark:bg-slate-700" />
@@ -44,6 +66,7 @@ export function BottomSheet({ isOpen, onClose, title, children }: BottomSheetPro
           </h3>
           <button
             onClick={onClose}
+            aria-label="إغلاق"
             className="flex size-8 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-800"
           >
             <X className="size-4" />

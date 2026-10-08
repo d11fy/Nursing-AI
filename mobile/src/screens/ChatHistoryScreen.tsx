@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { History, Search, Trash2, Edit2, MessageSquare, ChevronLeft, RefreshCw, X } from "lucide-react";
+import { Search, Trash2, Edit2, MessageSquare, ChevronLeft, RefreshCw } from "lucide-react";
 import { useNavigation } from "../context/NavigationContext";
 import { apiFetch } from "../services/api";
 import { BottomSheet } from "../components/common/BottomSheet";

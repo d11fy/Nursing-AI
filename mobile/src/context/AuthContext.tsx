@@ -1,5 +1,12 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { ApiError, apiFetch, clearTokens, getTokens, saveTokens } from "../services/api";
+import { listenForGoogleLogin } from "../services/googleAuth";
+import {
+  ApiError,
+  apiFetch,
+  clearTokens,
+  getTokens,
+  saveTokens,
+} from "../services/api";
 
 export interface Profile {
   id?: string;
@@ -75,6 +82,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  useEffect(
+    () =>
+      listenForGoogleLogin(refreshAuth, (message) => {
+        window.dispatchEvent(
+          new CustomEvent("nursing:auth-error", { detail: message }),
+        );
+      }),
+    [],
+  );
+
   useEffect(() => {
     // Session hydration is intentionally started once when the provider mounts.
     checkSession();
@@ -86,7 +103,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     };
     window.addEventListener("nursing:auth-expired", handleExpiredSession);
-    return () => window.removeEventListener("nursing:auth-expired", handleExpiredSession);
+    return () =>
+      window.removeEventListener("nursing:auth-expired", handleExpiredSession);
   }, []);
 
   async function login(email: string, password: string) {

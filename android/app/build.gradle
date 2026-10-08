@@ -36,6 +36,7 @@ android {
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
         applicationId "com.nursingai.app"
+        manifestPlaceholders = [authScheme: "nursingai"]
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode appVersion.code as int
@@ -62,6 +63,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix ".preview"
+            manifestPlaceholders = [authScheme: "nursingai-preview"]
+            resValue "string", "app_name", "Nursing AI Preview"
+        }
         release {
             if (releaseSigningConfigured) {
                 signingConfig signingConfigs.release

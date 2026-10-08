@@ -1,11 +1,18 @@
 import React, { useState } from "react";
-import { Sparkles, Mail, Lock, User, GraduationCap, ArrowRight, AlertCircle } from "lucide-react";
+import {
+  Mail,
+  Lock,
+  User,
+  GraduationCap,
+  ArrowRight,
+  AlertCircle,
+} from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useNavigation } from "../context/NavigationContext";
 
 export function RegisterScreen() {
   const { register } = useAuth();
-  const { navigate, goBack } = useNavigation();
+  const { goBack } = useNavigation();
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");

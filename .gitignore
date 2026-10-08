@@ -67,3 +67,7 @@ android/app/release-key.jks
 !public/downloads/*.apk
 
 
+
+# Browser verification artifacts
+/test-results/
+/playwright-report/

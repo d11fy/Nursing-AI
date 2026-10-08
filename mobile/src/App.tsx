@@ -1,8 +1,12 @@
-import React, { useEffect } from "react";
+import React, { useEffect, lazy, Suspense } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { NavigationProvider, useNavigation } from "./context/NavigationContext";
 import { NetworkProvider, useNetwork } from "./context/NetworkContext";
-import { initNativePlugins, setupHardwareBackButton, setToastCallback } from "./services/capacitor";
+import {
+  initNativePlugins,
+  setupHardwareBackButton,
+  setToastCallback,
+} from "./services/capacitor";
 import { useAppUpdateCheck } from "./hooks/useAppUpdateCheck";
 import { UpdateModal } from "./components/UpdateModal";
 
@@ -18,7 +22,11 @@ import { RegisterScreen } from "./screens/RegisterScreen";
 import { HomeScreen } from "./screens/HomeScreen";
 import { SubjectsScreen } from "./screens/SubjectsScreen";
 import { SubjectDetailScreen } from "./screens/SubjectDetailScreen";
-import { ChatScreen } from "./screens/ChatScreen";
+const ChatScreen = lazy(() =>
+  import("./screens/ChatScreen").then((module) => ({
+    default: module.ChatScreen,
+  })),
+);
 import { ChatHistoryScreen } from "./screens/ChatHistoryScreen";
 import { LibraryScreen } from "./screens/LibraryScreen";
 import { StudyPackScreen } from "./screens/StudyPackScreen";
@@ -27,21 +35,27 @@ import { QuizResultsScreen } from "./screens/QuizResultsScreen";
 import { MistakesScreen } from "./screens/MistakesScreen";
 import { ProgressScreen } from "./screens/ProgressScreen";
 import { ProfileScreen } from "./screens/ProfileScreen";
+import { SubscriptionScreen } from "./screens/SubscriptionScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { Sparkles, RefreshCw } from "lucide-react";
 
 function MainContent() {
   const { profile, loading } = useAuth();
-  const { currentScreen, toastMessage, showToast } = useNavigation();
-  const { isOnline } = useNetwork();
+  const { currentScreen, toastMessage, showToast, switchTab } = useNavigation();
+  const { isOnline, checkConnection } = useNetwork();
   const { hasUpdate, updateInfo, dismissUpdate } = useAppUpdateCheck();
 
   useEffect(() => {
     setToastCallback(showToast);
   }, [showToast]);
 
+  useEffect(() => {
+    if (profile && ["login", "register"].includes(currentScreen.name))
+      switchTab("home");
+  }, [profile, currentScreen.name, switchTab]);
+
   // If completely offline
-  if (!isOnline) {
+  if (!isOnline && !profile) {
     return <OfflineScreen />;
   }
 
@@ -64,7 +78,11 @@ function MainContent() {
   if (!profile) {
     return (
       <>
-        {currentScreen.name === "register" ? <RegisterScreen /> : <LoginScreen />}
+        {currentScreen.name === "register" ? (
+          <RegisterScreen />
+        ) : (
+          <LoginScreen />
+        )}
         <Toast message={toastMessage} />
         {hasUpdate && updateInfo && (
           <UpdateModal
@@ -108,6 +126,8 @@ function MainContent() {
         return "تقدم التعلم";
       case "profile":
         return "حسابي";
+      case "subscription":
+        return "اشتراكي والباقات";
       case "settings":
         return "الإعدادات";
       default:
@@ -119,58 +139,83 @@ function MainContent() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col text-slate-900 dark:text-slate-100">
-      {/* Header */}
-      {!isFullscreenRunner && (
-        <MobileHeader title={getHeaderTitle()} />
+      {!isOnline && (
+        <div
+          role="status"
+          className="fixed top-0 inset-x-0 z-50 bg-amber-100 text-amber-900 px-4 py-2 text-sm flex items-center justify-between"
+        >
+          <span>الاتصال مقطوع؛ نشاطك الحالي محفوظ على الشاشة</span>
+          <button className="min-h-11 px-2 font-bold" onClick={checkConnection}>
+            إعادة المحاولة
+          </button>
+        </div>
       )}
+      {/* Header */}
+      {!isFullscreenRunner && <MobileHeader title={getHeaderTitle()} />}
 
       {/* Main Screen Container */}
       <main className="flex-1 px-4 pt-3 max-w-lg mx-auto w-full">
-        {currentScreen.name === "home" && <HomeScreen />}
-        {currentScreen.name === "subjects" && <SubjectsScreen />}
-        {currentScreen.name === "subject-detail" && (
-          <SubjectDetailScreen subjectId={currentScreen.params?.subjectId} />
-        )}
-        {currentScreen.name === "chat" && <ChatScreen />}
-        {currentScreen.name === "chat-detail" && (
-          <ChatScreen
-            conversationId={currentScreen.params?.conversationId}
-            subjectId={currentScreen.params?.subjectId}
-            subjectName={currentScreen.params?.subjectName}
-          />
-        )}
-        {currentScreen.name === "chat-history" && <ChatHistoryScreen />}
-        {currentScreen.name === "library" && <LibraryScreen />}
-        {currentScreen.name === "study-pack" && (
-          <StudyPackScreen
-            id={currentScreen.params?.studyPackId || currentScreen.params?.id}
-            type={currentScreen.params?.type}
-            title={currentScreen.params?.title}
-          />
-        )}
-        {currentScreen.name === "quiz-runner" && (
-          <QuizRunner
-            attemptId={currentScreen.params?.attemptId}
-            quizId={currentScreen.params?.quizId}
-            studyPackId={currentScreen.params?.studyPackId}
-            questions={currentScreen.params?.questions}
-            mode={currentScreen.params?.mode}
-            title={currentScreen.params?.title}
-          />
-        )}
-        {currentScreen.name === "quiz-results" && (
-          <QuizResultsScreen
-            scorePercent={currentScreen.params?.scorePercent}
-            correctCount={currentScreen.params?.correctCount}
-            totalQuestions={currentScreen.params?.totalQuestions}
-            timeSpent={currentScreen.params?.timeSpent}
-            results={currentScreen.params?.results}
-          />
-        )}
-        {currentScreen.name === "mistakes" && <MistakesScreen />}
-        {currentScreen.name === "progress" && <ProgressScreen />}
-        {currentScreen.name === "profile" && <ProfileScreen />}
-        {currentScreen.name === "settings" && <SettingsScreen />}
+        <Suspense
+          fallback={
+            <div role="status" className="py-12 text-center text-primary">
+              جارٍ فتح المحادثة...
+            </div>
+          }
+        >
+          {currentScreen.name === "home" && <HomeScreen />}
+          {currentScreen.name === "subjects" && <SubjectsScreen />}
+          {currentScreen.name === "subject-detail" && (
+            <SubjectDetailScreen subjectId={currentScreen.params?.subjectId} />
+          )}
+          {currentScreen.name === "chat" && <ChatScreen />}
+          {currentScreen.name === "chat-detail" && (
+            <ChatScreen
+              key={
+                currentScreen.params?.conversationId ||
+                currentScreen.params?.lectureId ||
+                currentScreen.params?.subjectId ||
+                "new"
+              }
+              lectureId={currentScreen.params?.lectureId}
+              conversationId={currentScreen.params?.conversationId}
+              subjectId={currentScreen.params?.subjectId}
+              subjectName={currentScreen.params?.subjectName}
+            />
+          )}
+          {currentScreen.name === "chat-history" && <ChatHistoryScreen />}
+          {currentScreen.name === "library" && <LibraryScreen />}
+          {currentScreen.name === "study-pack" && (
+            <StudyPackScreen
+              id={currentScreen.params?.studyPackId || currentScreen.params?.id}
+              type={currentScreen.params?.type}
+              title={currentScreen.params?.title}
+            />
+          )}
+          {currentScreen.name === "quiz-runner" && (
+            <QuizRunner
+              attemptId={currentScreen.params?.attemptId}
+              quizId={currentScreen.params?.quizId}
+              studyPackId={currentScreen.params?.studyPackId}
+              questions={currentScreen.params?.questions}
+              mode={currentScreen.params?.mode}
+              title={currentScreen.params?.title}
+            />
+          )}
+          {currentScreen.name === "quiz-results" && (
+            <QuizResultsScreen
+              scorePercent={currentScreen.params?.scorePercent}
+              correctCount={currentScreen.params?.correctCount}
+              totalQuestions={currentScreen.params?.totalQuestions}
+              timeSpent={currentScreen.params?.timeSpent}
+              results={currentScreen.params?.results}
+            />
+          )}
+          {currentScreen.name === "mistakes" && <MistakesScreen />}
+          {currentScreen.name === "progress" && <ProgressScreen />}
+          {currentScreen.name === "profile" && <ProfileScreen />}
+          {currentScreen.name === "settings" && <SettingsScreen />}
+          {currentScreen.name === "subscription" && <SubscriptionScreen />}
+        </Suspense>
       </main>
 
       {/* Bottom Nav */}
