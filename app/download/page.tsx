@@ -1,37 +1,58 @@
-import { 
-  Download, 
-  Smartphone, 
-  ShieldCheck, 
-  HardDrive, 
-  Calendar, 
-  Lock, 
-  Zap, 
+import {
+  Download,
+  Smartphone,
+  ShieldCheck,
+  HardDrive,
+  Calendar,
+  Lock,
+  Zap,
   FileCheck2,
-  AlertTriangle
+  AlertTriangle,
 } from "lucide-react";
 import { LandingHeader } from "@/components/landing/header";
 import { LandingFooter } from "@/components/landing/footer";
 import { currentProfile } from "@/lib/auth/session";
-import { getAppVersionInfo } from "@/lib/version/app-version";
+import { stat } from "node:fs/promises";
+import path from "node:path";
+import appVersion from "@/mobile/app-version.json";
 
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "تحميل تطبيق Nursing AI للأندرويد | الإصدار الرسمي",
-  description: "حمّل تطبيق Nursing AI لهواتف الأندرويد برابط مباشر وسريع. نسخة موقعة ومحمية بالتخزين المشفر.",
+  title: "تحميل تطبيق Nursing AI للأندرويد | النسخة الجديدة",
+  description:
+    "حمّل تطبيق Nursing AI لهواتف الأندرويد برابط مباشر وسريع. النسخة التجريبية الجديدة مع المكتبة والاشتراك والمساعد التعليمي.",
   alternates: { canonical: "/download" },
 };
 
 export default async function DownloadPage() {
   const profile = await currentProfile();
-  const dashboardHref = profile ? (profile.role === "admin" ? "/admin" : "/dashboard") : null;
-  const versionInfo = await getAppVersionInfo();
+  const dashboardHref = profile
+    ? profile.role === "admin"
+      ? "/admin"
+      : "/dashboard"
+    : null;
+  const filename = `nursing-ai-preview-v${appVersion.name}.apk`;
+  const apk = await stat(
+    path.join(process.cwd(), "public", "downloads", filename),
+  );
+  const versionInfo = {
+    latest_version: appVersion.name,
+    apk_url: `/downloads/${filename}`,
+    file_size: `${(apk.size / 1024 / 1024).toFixed(2)} MB`,
+    published_at: apk.mtime.toISOString(),
+    release_notes:
+      "المكتبة والاشتراك ودخول Google، وإصلاح تجهيز الملفات والمحادثة والاختبارات والبطاقات والتقدم الدراسي.",
+  };
 
-  const formattedDate = new Date(versionInfo.published_at).toLocaleDateString("ar-EG", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  const formattedDate = new Date(versionInfo.published_at).toLocaleDateString(
+    "ar-EG",
+    {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    },
+  );
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -44,7 +65,7 @@ export default async function DownloadPage() {
             <div className="text-center">
               <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-1.5 text-xs font-bold text-primary">
                 <Smartphone className="size-4" />
-                تطبيق أندرويد رسمي ومباشر
+                نسخة أندرويد الجديدة — تجريبية
               </div>
 
               <h1 className="mt-6 text-balance text-3xl font-black tracking-tight text-foreground sm:text-5xl lg:text-6xl">
@@ -52,7 +73,8 @@ export default async function DownloadPage() {
               </h1>
 
               <p className="mx-auto mt-5 max-w-2xl text-base text-muted-foreground sm:text-lg">
-                واجهة موبايل محلية مدمجة داخل التطبيق، مع المساعد التعليمي وStudy Pack والبطاقات والاختبارات والتخزين الآمن للجلسة.
+                واجهة موبايل محلية مدمجة داخل التطبيق، مع المساعد التعليمي
+                وStudy Pack والبطاقات والاختبارات والتخزين الآمن للجلسة.
               </p>
             </div>
 
@@ -66,9 +88,11 @@ export default async function DownloadPage() {
 
                   <div className="flex-1 text-center sm:text-start">
                     <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-                      <h2 className="text-xl font-bold text-foreground">Nursing AI Mobile</h2>
+                      <h2 className="text-xl font-bold text-foreground">
+                        Nursing AI Preview
+                      </h2>
                       <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                        Signed Release
+                        نسخة تجريبية
                       </span>
                     </div>
 
@@ -98,17 +122,17 @@ export default async function DownloadPage() {
                   <a
                     href={versionInfo.apk_url}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-6 py-4 text-base font-bold text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:bg-primary/95 hover:shadow-xl active:scale-[0.99]"
-                    download={`nursing-ai-v${versionInfo.latest_version}.apk`}
+                    download={filename}
                   >
                     <Download className="size-5" />
-                    تحميل تطبيق Nursing AI للأندرويد (APK)
+                    تحميل النسخة الجديدة {versionInfo.latest_version} (APK)
                   </a>
 
                   <div className="flex items-center justify-between px-2 text-[11px] text-muted-foreground">
                     <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
-                      <FileCheck2 className="size-3.5" /> موقّع بشهادة أمان رقمية
+                      <FileCheck2 className="size-3.5" /> نسخة تجريبية موقّعة
                     </span>
-                    <a 
+                    <a
                       href={versionInfo.apk_url}
                       className="text-primary hover:underline"
                     >
@@ -126,8 +150,12 @@ export default async function DownloadPage() {
                   <Lock className="size-5" />
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-foreground">تشفير عتادي للجلسات</h4>
-                  <p className="text-[11px] text-muted-foreground">محمي بنظام Android KeyStore</p>
+                  <h4 className="text-xs font-bold text-foreground">
+                    تشفير عتادي للجلسات
+                  </h4>
+                  <p className="text-[11px] text-muted-foreground">
+                    محمي بنظام Android KeyStore
+                  </p>
                 </div>
               </div>
 
@@ -136,8 +164,12 @@ export default async function DownloadPage() {
                   <Zap className="size-5" />
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-foreground">أداء فائق واستجابة لحظية</h4>
-                  <p className="text-[11px] text-muted-foreground">واجهة مدمجة تعمل محلياً على الهاتف</p>
+                  <h4 className="text-xs font-bold text-foreground">
+                    أداء فائق واستجابة لحظية
+                  </h4>
+                  <p className="text-[11px] text-muted-foreground">
+                    واجهة مدمجة تعمل محلياً على الهاتف
+                  </p>
                 </div>
               </div>
 
@@ -146,8 +178,12 @@ export default async function DownloadPage() {
                   <ShieldCheck className="size-5" />
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-foreground">تنبيهات تحديث داخل التطبيق</h4>
-                  <p className="text-[11px] text-muted-foreground">يفحص الإصدار المنشور عند فتح التطبيق</p>
+                  <h4 className="text-xs font-bold text-foreground">
+                    تنبيهات تحديث داخل التطبيق
+                  </h4>
+                  <p className="text-[11px] text-muted-foreground">
+                    يفحص الإصدار المنشور عند فتح التطبيق
+                  </p>
                 </div>
               </div>
             </div>
@@ -162,7 +198,8 @@ export default async function DownloadPage() {
                 خطوات تثبيت بسيطة (خلال دقيقة واحدة)
               </h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                التطبيق غير متاح على Google Play ويتم تحميله وتثبيته مباشرة بأمان تام
+                التطبيق غير متاح على Google Play ويتم تحميله وتثبيته مباشرة
+                بأمان تام
               </p>
             </div>
 
@@ -172,10 +209,13 @@ export default async function DownloadPage() {
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary text-xs font-black text-primary-foreground">
                     1
                   </span>
-                  <h3 className="text-sm font-bold text-foreground">تنزيل ملف الـ APK</h3>
+                  <h3 className="text-sm font-bold text-foreground">
+                    تنزيل ملف الـ APK
+                  </h3>
                 </div>
                 <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                  اضغط على زر &quot;تحميل تطبيق Nursing AI للأندرويد&quot; أعلاه لحفظ ملف التطبيق على هاتفك.
+                  اضغط على زر &quot;تحميل تطبيق Nursing AI للأندرويد&quot; أعلاه
+                  لحفظ ملف التطبيق على هاتفك.
                 </p>
               </div>
 
@@ -184,10 +224,14 @@ export default async function DownloadPage() {
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary text-xs font-black text-primary-foreground">
                     2
                   </span>
-                  <h3 className="text-sm font-bold text-foreground">فتح الملف بعد التنزيل</h3>
+                  <h3 className="text-sm font-bold text-foreground">
+                    فتح الملف بعد التنزيل
+                  </h3>
                 </div>
                 <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                  عند اكتمال التنزيل، انقر على الإشعار، أو افتح تطبيق &quot;الملفات&quot; (Files) ثم مجلد &quot;التنزيلات&quot; (Downloads).
+                  عند اكتمال التنزيل، انقر على الإشعار، أو افتح تطبيق
+                  &quot;الملفات&quot; (Files) ثم مجلد &quot;التنزيلات&quot;
+                  (Downloads).
                 </p>
               </div>
 
@@ -196,10 +240,14 @@ export default async function DownloadPage() {
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary text-xs font-black text-primary-foreground">
                     3
                   </span>
-                  <h3 className="text-sm font-bold text-foreground">السماح بالتثبيت</h3>
+                  <h3 className="text-sm font-bold text-foreground">
+                    السماح بالتثبيت
+                  </h3>
                 </div>
                 <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                  إذا ظهر تنبيه أمان، اضغط على &quot;الإعدادات&quot; ثم فعّل &quot;السماح بالتثبيت من هذا المصدر&quot; (Install Unknown Apps) لمتصفحك.
+                  إذا ظهر تنبيه أمان، اضغط على &quot;الإعدادات&quot; ثم فعّل
+                  &quot;السماح بالتثبيت من هذا المصدر&quot; (Install Unknown
+                  Apps) لمتصفحك.
                 </p>
               </div>
 
@@ -208,10 +256,13 @@ export default async function DownloadPage() {
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary text-xs font-black text-primary-foreground">
                     4
                   </span>
-                  <h3 className="text-sm font-bold text-foreground">التثبيت والبدء فوراً</h3>
+                  <h3 className="text-sm font-bold text-foreground">
+                    التثبيت والبدء فوراً
+                  </h3>
                 </div>
                 <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                  اضغط على &quot;تثبيت&quot; (Install)، ثم افتح التطبيق وسجل الدخول بحسابك الجامعي لتجد كافة محاضراتك ومحادثاتك.
+                  اضغط على &quot;تثبيت&quot; (Install)، ثم افتح &quot;Nursing AI
+                  Preview&quot; وسجل الدخول بحسابك.
                 </p>
               </div>
             </div>
@@ -220,7 +271,10 @@ export default async function DownloadPage() {
             <div className="mt-8 flex items-start gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 text-xs text-amber-800 dark:text-amber-300">
               <AlertTriangle className="size-5 shrink-0 text-amber-600 dark:text-amber-400" />
               <p className="leading-relaxed">
-                <strong>ملاحظة للمستخدمين الحاليين:</strong> عند توفر تحديث مستقبلي، يمكنك تثبيته مباشرة فوق نسختك الحالية دون حذف التطبيق ودون فقدان تسجيل الدخول أو المحادثات.
+                <strong>ملاحظة للمستخدمين الحاليين:</strong> هذه النسخة تثبت
+                كتطبيق مستقل باسم Nursing AI Preview بجانب تطبيقك الحالي. افتح
+                التطبيق الجديد بعد التثبيت وسجل الدخول بحسابك. لا تستبدل النسخة
+                الحالية، ومحادثات حسابك تبقى محفوظة على الخادم.
               </p>
             </div>
           </div>
