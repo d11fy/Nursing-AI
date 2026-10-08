@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { Moon, Sun, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { apiFetch, DEFAULT_SERVER_URL } from "../services/api";
 import { openExternalUrl } from "../services/capacitor";
 import { APP_VERSION_NAME } from "../config/version";
+import { ThemeOptions } from "../components/common/ThemePicker";
 const defaults = {
   explanation_language: "ar",
   keep_medical_terms_english: true,
@@ -15,9 +16,6 @@ export function SettingsScreen() {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [dark, setDark] = useState(() =>
-    document.documentElement.classList.contains("dark"),
-  );
   useEffect(() => {
     const controller = new AbortController();
     apiFetch("/api/profile/preferences", { signal: controller.signal })
@@ -47,12 +45,6 @@ export function SettingsScreen() {
   };
   const change = (key: string, value: string | boolean) =>
     setPreferences((prev) => ({ ...prev, [key]: value }));
-  const toggleTheme = () => {
-    const next = !dark;
-    setDark(next);
-    document.documentElement.classList.toggle("dark", next);
-    localStorage.setItem("nursing_theme", next ? "dark" : "light");
-  };
   return (
     <div className="space-y-4 pb-nav">
       <section className="surface space-y-4">
@@ -115,10 +107,10 @@ export function SettingsScreen() {
           </p>
         )}
       </section>
-      <button onClick={toggleTheme} className="btn-secondary w-full">
-        {dark ? <Sun className="size-5" /> : <Moon className="size-5" />}
-        {dark ? "المظهر الفاتح" : "المظهر الداكن"}
-      </button>
+      <section className="surface space-y-4">
+        <h2 className="font-black">مظهر التطبيق</h2>
+        <ThemeOptions />
+      </section>
       <section className="surface space-y-3">
         <h3 className="font-bold">روابط ومساعدة</h3>
         {[

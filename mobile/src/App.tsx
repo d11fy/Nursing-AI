@@ -1,4 +1,6 @@
 import React, { useEffect, lazy, Suspense } from "react";
+import { ThemeProvider } from "./context/ThemeContext";
+import { ThemePicker } from "./components/common/ThemePicker";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { NavigationProvider, useNavigation } from "./context/NavigationContext";
 import { NetworkProvider, useNetwork } from "./context/NetworkContext";
@@ -78,6 +80,9 @@ function MainContent() {
   if (!profile) {
     return (
       <>
+        <div className="absolute top-0 inset-x-0 pt-safe px-4 flex justify-end z-30">
+          <ThemePicker />
+        </div>
         {currentScreen.name === "register" ? (
           <RegisterScreen />
         ) : (
@@ -249,13 +254,15 @@ export function App() {
   }, []);
 
   return (
-    <NetworkProvider>
-      <AuthProvider>
-        <NavigationProvider>
-          <MainContent />
-        </NavigationProvider>
-      </AuthProvider>
-    </NetworkProvider>
+    <ThemeProvider>
+      <NetworkProvider>
+        <AuthProvider>
+          <NavigationProvider>
+            <MainContent />
+          </NavigationProvider>
+        </AuthProvider>
+      </NetworkProvider>
+    </ThemeProvider>
   );
 }
 

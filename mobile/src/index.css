@@ -4,6 +4,8 @@
 
 :root {
   --primary: #0f5d75;
+  --primary-rgb: 15 93 117;
+  --theme-link: #0f5d75;
   --primary-foreground: #ffffff;
   --background: #f8fafc;
   --foreground: #0f172a;
@@ -20,8 +22,8 @@ body {
   padding: 0;
   width: 100%;
   height: 100%;
-  background-color: #f8fafc;
-  color: #0f172a;
+  background-color: var(--background);
+  color: var(--foreground);
   font-family:
     system-ui,
     -apple-system,
@@ -188,4 +190,56 @@ select {
 .markdown a {
   color: #0f5d75;
   text-decoration: underline;
+}
+
+/* Neutral dark surfaces with independent, readable accent text. */
+:root[data-accent="blue"] {
+  --primary: #2563eb;
+  --primary-rgb: 37 99 235;
+  --theme-link: #2563eb;
+}
+:root[data-accent="violet"] {
+  --primary: #7c3aed;
+  --primary-rgb: 124 58 237;
+  --theme-link: #7c3aed;
+}
+:root.dark {
+  --background: #101419;
+  --foreground: #f1f5f9;
+  --theme-link: #7dd3fc;
+}
+:root.dark[data-accent="blue"] {
+  --theme-link: #93c5fd;
+}
+:root.dark[data-accent="violet"] {
+  --theme-link: #c4b5fd;
+}
+@layer base {
+  .dark :where(.bg-white) {
+    background-color: #171d25;
+  }
+  .dark :where(.bg-slate-50, .bg-slate-100) {
+    background-color: #29313c;
+  }
+  .dark :where(.text-slate-900, .text-slate-800, .text-slate-700) {
+    color: #f1f5f9;
+  }
+  .dark :where(.text-slate-500, .text-slate-600) {
+    color: #a6b2c2;
+  }
+  .dark :where(.border-slate-100, .border-slate-200) {
+    border-color: #29313c;
+  }
+}
+.dark .markdown pre {
+  background: #29313c;
+  color: #f1f5f9;
+}
+.dark .markdown th,
+.dark .markdown td {
+  border-color: #3b4654;
+}
+.markdown a,
+.dark .text-primary {
+  color: var(--theme-link);
 }
