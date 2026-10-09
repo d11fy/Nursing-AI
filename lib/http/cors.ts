@@ -29,8 +29,8 @@ export function isAllowedApiOrigin(
 export const API_CORS_HEADERS = {
   "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
   "Access-Control-Allow-Headers":
-    "Content-Type,Authorization,X-Device-Token,X-Subject-Id,X-Conversation-Id,Idempotency-Key",
+    "Content-Type,Authorization,X-Device-Token,X-App-Version-Code,X-Subject-Id,X-Conversation-Id,Idempotency-Key",
   "Access-Control-Expose-Headers":
-    "X-Conversation-Id,X-Subject-Id,Content-Disposition",
+    "X-Conversation-Id,X-Subject-Id,X-Request-Id,Content-Disposition",
   Vary: "Origin",
 } as const;

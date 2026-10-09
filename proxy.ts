@@ -1,3 +1,5 @@
+import { mobileCompatibilityError } from "@/lib/version/compatibility";
+import { pageContentSecurityPolicy } from "@/lib/http/page-csp";
 import { NextResponse, type NextRequest } from "next/server";
 import {
   DEVICE_COOKIE,
@@ -19,6 +21,13 @@ function applyCorsHeaders(response: NextResponse, origin: string) {
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
+  function next(){
+    if(pathname.startsWith("/api/"))return NextResponse.next();
+    const nonce=Buffer.from(crypto.randomUUID()).toString("base64");
+    const csp=pageContentSecurityPolicy(nonce,process.env.NODE_ENV!=="production");
+    const headers=new Headers(request.headers);headers.set("x-nonce",nonce);headers.set("Content-Security-Policy",csp);
+    const response=NextResponse.next({request:{headers}});response.headers.set("Content-Security-Policy",csp);return response;
+  }
 
   // Handle CORS and mobile requests for API routes
   if (pathname.startsWith("/api/")) {
@@ -43,9 +52,12 @@ export async function proxy(request: NextRequest) {
     }
   }
 
+  const incompatible=mobileCompatibilityError(request);
+  if(incompatible){const response=NextResponse.json(incompatible,{status:426});const origin=request.headers.get("origin");
+    return origin&&isAllowedApiOrigin(origin,request.nextUrl.origin,process.env.APP_URL)?applyCorsHeaders(response,origin):response;}
   const protectedPage = pathname === "/dashboard" || pathname.startsWith("/dashboard/") || pathname === "/admin" || pathname.startsWith("/admin/");
   if (!protectedPage) {
-    const response = NextResponse.next();
+    const response = next();
     const origin = request.headers.get("origin");
     if (
       pathname.startsWith("/api/") &&
@@ -60,6 +72,7 @@ export async function proxy(request: NextRequest) {
   const deviceToken = request.cookies.get(DEVICE_COOKIE)?.value;
   const profile = await readSession(sessionToken, deviceToken);
   if (!profile) {
+    if (await readSession(sessionToken,deviceToken,true)) return NextResponse.redirect(new URL("/security",request.url));
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";
@@ -69,9 +82,9 @@ export async function proxy(request: NextRequest) {
   if (pathname.startsWith("/admin") && profile.role !== "admin") return NextResponse.redirect(new URL("/dashboard", request.url));
   const renewed = await refreshSession(sessionToken, deviceToken);
   if (!renewed || !sessionToken) return NextResponse.redirect(new URL("/login", request.url));
-  const response = NextResponse.next();
+  const response = next();
   response.cookies.set(SESSION_COOKIE, sessionToken, sessionCookieOptions());
   response.cookies.set(DEVICE_COOKIE, renewed.deviceToken, deviceCookieOptions());
   return response;
 }
-export const config = { matcher: ["/dashboard/:path*", "/admin/:path*", "/api/:path*"] };
+export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|downloads/|.*\\.(?:png|jpg|webp|woff2|svg)$).*)"] };

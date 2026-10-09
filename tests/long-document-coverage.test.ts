@@ -93,7 +93,7 @@ test("long-document summary is hierarchical, includes an end-only concept and re
 test("short documents are sent directly and coverage is labelled honestly", () => {
   const short = [{ pageNumber: 1, text: "Short lecture." }, { pageNumber: 2, text: "Second page." }];
   const sections = planSections(short);
-  assert.equal(coverageLabel(describeCoverage("direct", sections, sections.length)), "شمل كل أقسام الملف (1، الصفحات 1–2)");
+  assert.equal(coverageLabel(describeCoverage("direct", sections, sections.length)), "عولجت كل أقسام الملف (1، الصفحات 1–2) — راجع المصدر للتفاصيل");
   const partial = describeCoverage("hierarchical", planSections(materials, 16000), 3);
   assert.match(coverageLabel(partial), /^شمل 3 من \d+ أقسام/);
   assert.equal(coverageLabel(undefined), "مبني من ملف المحاضرة");

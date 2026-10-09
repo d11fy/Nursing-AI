@@ -220,9 +220,11 @@ export function resolveConversationReference(input: {
   const contexts = selected.map((attachment) => {
     const data = attachment.vision_structured_json;
     const section = sectionIndex ? data.sections.find((s) => s.index === sectionIndex) : null;
-    const visible = selectedSectionRange
+    // A file is studied through its full chunk index (scoped retrieval), never through a cached excerpt of its first pages.
+    const isFile = attachment.file_type==='file';
+    const visible = isFile ? [] : selectedSectionRange
       ? data.sections.filter((s)=>s.index>=selectedSectionRange.start&&s.index<=selectedSectionRange.end)
-      : sectionIndex ? (section ? [section] : []) : data.sections.slice(0,attachment.file_type==='file'?2:8);
+      : sectionIndex ? (section ? [section] : []) : data.sections.slice(0,8);
     return [
       `Uploaded ${attachment.file_type==='file'?'file':'image'} ${attachment.ordinal}${data.topic ? ` topic: ${data.topic}` : ""}${data.subject_guess ? `; subject: ${data.subject_guess}` : ""}.`,
       section ? `The student refers to section ${section.index}${section.title ? ` (${section.title})` : ""}.` : "",
@@ -254,11 +256,13 @@ export function attachmentEvidence(resolved: ResolvedConversationQuery): Knowled
   const chunks: KnowledgeChunk[] = [];
   for (const attachment of resolved.selectedAttachments) {
     const data = attachment.vision_structured_json;
+    // Uploaded files are answered from retrieval over the whole indexed document; only images carry inline evidence.
+    if (attachment.file_type === 'file') continue;
     const sections = resolved.selectedSectionRange
       ? data.sections.filter((s)=>s.index>=resolved.selectedSectionRange!.start&&s.index<=resolved.selectedSectionRange!.end)
       : resolved.selectedSectionIndex
         ? data.sections.filter((s) => s.index === resolved.selectedSectionIndex)
-        : data.sections.slice(0,attachment.file_type==='file'?3:8);
+        : data.sections.slice(0,8);
     if (sections.length) {
       for (const section of sections) chunks.push({
         id:`attachment:${attachment.id}:section:${section.index}`,

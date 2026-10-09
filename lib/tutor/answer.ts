@@ -35,7 +35,9 @@ For quiz_result, grade ONLY a pending quiz in the supplied context and only if t
 The server's deterministicQuizResult, when non-null, is authoritative. Otherwise use not_answered unless you can match a clear
 free-text answer to the pending question. Ordinary study questions are never assessment results.
 Preference is null unless the student explicitly states a durable learning preference or study goal.
-Topic is the concept studied, not a transcript of the query. Do not record non-study conversation as learning.`;
+Topic is the concept studied, not a transcript of the query. Do not record non-study conversation as learning.
+When current_study_context contains chapter_study or document_study, the server has already chosen the book, chapter and passages: follow its
+"instructions" exactly, keep to S1..Sn, mention the book's own section names, and set source_ids to every passage you taught.`;
 
 export function requiresClinicalEvidence(question:string) {
   return requiresVerifiedClinicalEvidence(question);
@@ -56,16 +58,16 @@ export function confirmedClinicalSupport(answer:TutorAnswer,sources:KnowledgeChu
 }
 
 export async function streamTutorAnswer(input:{question:string;originalQuestion?:string;history:ChatMessageInput[];context:string;sources:KnowledgeChunk[];
-  pendingQuiz:PendingQuiz|null;signal?:AbortSignal;onDelta:(delta:string)=>void}):Promise<{answer:TutorAnswer;usage:GenerateResult;references:string;reasoningEffort:ReturnType<typeof reasoningFor>}> {
+  pendingQuiz:PendingQuiz|null;signal?:AbortSignal;onDelta:(delta:string)=>void;studyContext?:Record<string,unknown>}):Promise<{answer:TutorAnswer;usage:GenerateResult;references:string;reasoningEffort:ReturnType<typeof reasoningFor>}> {
   const ai=getAIProvider(),decoder=new AnswerStreamDecoder(),reasoningEffort=reasoningFor(input.question);
   const sourceData=input.sources.slice(0,10).map((source,index)=>({id:`S${index+1}`,type:source.sourceType,title:source.title,
-    page:source.pageNumber,section:source.sectionIndex,text:source.content}));
+    page:source.pageNumber,page_end:source.pageEnd??null,section:source.sectionIndex,chapter:source.chapterTitle??source.chapter??null,section_title:source.sectionTitle??null,text:source.content}));
   const original=input.originalQuestion??input.question;
   const previousQuestion=[...input.history].reverse().find(message=>message.role==='user')?.content??'';
   const followUp=/\b(?:it|that|this|what about|why|continue)\b|ليش|هذا|هاي|كمل|ماذا عن/i.test(original)&&original.length<180;
   const deterministic=gradeQuizOption(original,input.pendingQuiz),clinical=requiresClinicalEvidence(original)||(followUp&&requiresClinicalEvidence(previousQuestion));
   const messages:ChatMessageInput[]=[buildTutorContext({studentContext:input.context,evidence:sourceData,
-    currentStudyContext:{current_request:original,follow_up:followUp,high_risk_clinical_request:clinical},
+    currentStudyContext:{current_request:original,follow_up:followUp,high_risk_clinical_request:clinical,...input.studyContext},
     pendingQuiz:input.pendingQuiz,deterministicQuizResult:deterministic}),...input.history.slice(-14),{role:'user',content:input.question}];
   const generator=ai.generateStream({taskPrompt:getNursingTutorInstructions({purpose:'student_answer'})+CONTRACT+`\nclinical_support is [] for ordinary concepts. For drug dosage or administration, contraindications, variable ranges, patient-specific decisions, or local protocols, include exact continuous supporting quotes with S IDs. Every numerical clinical value must appear in a quote. Unanswered exam stems cannot establish clinical facts. If support or necessary context is absent, ask specifically for the relevant lecture, drug, patient context, or local protocol.`,messages,reasoningEffort,
     jsonSchema:{name:'nursing_tutor_turn',schema:z.toJSONSchema(tutorAnswerSchema)},maxOutputTokens:9000,signal:input.signal,feature:'chat'});
@@ -88,7 +90,7 @@ export async function streamTutorAnswer(input:{question:string;originalQuestion?
   if(answer.quiz && !/^[A-F]$/.test(answer.quiz.correct_option)) throw new Error('Invalid quiz answer key');
   if(answer.quiz && !answer.quiz.options[answer.quiz.correct_option.charCodeAt(0)-65]) throw new Error('Quiz answer outside options');
   const metadata=(s:KnowledgeChunk)=>[s.evidenceType==='USER_UPLOAD'||s.evidenceType==='PRIVATE_LECTURE'?'Your uploaded source':null,
-    s.title,s.pageNumber?`Page ${s.pageNumber}`:null,s.sectionIndex?`Section ${s.sectionIndex}`:null]
+    s.title,s.chapterTitle??null,s.sectionTitle??null,s.pageNumber?(s.pageEnd&&s.pageEnd!==s.pageNumber?`Pages ${s.pageNumber}–${s.pageEnd}`:`Page ${s.pageNumber}`):null,s.sectionIndex?`Section ${s.sectionIndex}`:null]
     .filter(Boolean).join(' — ').replace(/[\r\n\[\]<>`*_]/g,' ');
   const references=answer.source_ids.length?'\n\n**Sources:**\n\n'+[...new Set(answer.source_ids)].map(id=>`- ${metadata(input.sources[Number(id.slice(1))-1])}`).join('\n'):'';
   return {answer,usage,references,reasoningEffort};

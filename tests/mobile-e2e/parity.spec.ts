@@ -60,7 +60,16 @@ const answerFeedback = {
   rationale: "ابدأ بالتقييم",
   topic: "التقييم",
 };
-async function setup(page: Page, authenticated = true) {
+type Overrides = {
+  /** Extra fields of GET /api/conversations/:id (active book, outline, study position, pending question). */
+  conversation?: Record<string, unknown>;
+  /** Body of each POST /api/chat, given its 1-based attempt number and the request body. */
+  chat?: (attempt: number, body: { requestId: string }) => string;
+  /** Answer to GET /api/chat/generations/:requestId. */
+  generation?: (requestId: string) => { status: number; body: unknown };
+};
+async function setup(page: Page, authenticated = true, overrides: Overrides = {}) {
+  let chatAttempts = 0;
   const requests: {
     path: string;
     method: string;
@@ -128,7 +137,20 @@ async function setup(page: Page, authenticated = true) {
         conversation: { id: conversationId, subject_id: subjectId },
         messages: [],
         activeSources: [resource],
+        ...overrides.conversation,
       });
+    if (p === `/api/conversations/${conversationId}/study`)
+      return json({
+        activeDocument: null,
+        studyContext: null,
+        outline: [],
+        pendingGeneration: null,
+        ...overrides.conversation,
+      });
+    if (p.startsWith("/api/chat/generations/")) {
+      const answer = overrides.generation?.(p.split("/").pop()!);
+      return answer ? json(answer.body, answer.status) : json({ status: "not_found" }, 404);
+    }
     if (p === "/api/subjects")
       return json({
         subjects: [
@@ -305,6 +327,12 @@ async function setup(page: Page, authenticated = true) {
             },
         method === "POST" ? 202 : 200,
       );
+    if (p === "/api/chat" && overrides.chat)
+      return route.fulfill({
+        contentType: "text/event-stream",
+        headers: { "X-Conversation-Id": conversationId },
+        body: overrides.chat(++chatAttempts, JSON.parse(request.postData() || "{}")),
+      });
     if (p === "/api/chat")
       return route.fulfill({
         contentType: "text/event-stream",
@@ -476,7 +504,7 @@ test("study pack renders all summary fields and records flashcards and quizzes u
     JSON.parse(
       requests.find((r) => r.path.endsWith("/flashcards/progress"))!.body,
     ),
-  ).toEqual({ flashcardId: "card", status: "known" });
+  ).toMatchObject({ flashcardId: "card", status: "known", packId, eventId: expect.stringMatching(/^[0-9a-f-]{36}$/) });
   await page.getByRole("button", { name: "اختبار سريع", exact: true }).click();
   await page.getByRole("button", { name: "بدء الاختبار الآن" }).click();
   const generation = JSON.parse(
@@ -698,4 +726,109 @@ test("offline cold start shows the saved shell with a clear notice, or the offli
   await page.evaluate(() => localStorage.removeItem("CapacitorStorage.nursing_profile_snapshot"));
   await page.reload();
   await expect(page.getByText("لا يوجد اتصال بالإنترنت")).toBeVisible();
+});
+
+const sse = (...events: Array<[string, unknown]>) =>
+  events.map(([name, data]) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`).join("");
+async function openLibraryChat(page: Page) {
+  await page.getByRole("button", { name: "المكتبة", exact: true }).click();
+  await page.getByRole("button", { name: "ادرس مع المعلم" }).click();
+  await expect(page.getByLabel("رسالتك للمعلم")).toBeVisible();
+}
+test("a stream cut before the saved-answer marker is recovered from the server, not shown as an error", async ({
+  page,
+}) => {
+  const { requests, errors } = await setup(page, true, {
+    chat: (_attempt, body) =>
+      sse(
+        ["started", { requestId: body.requestId, conversationId, userMessageId: "question" }],
+        ["delta", { text: "### بداية" }],
+      ),
+    generation: () => ({
+      status: 200,
+      body: {
+        status: "completed",
+        conversationId,
+        userMessageId: "question",
+        assistantMessage: { id: "saved-answer", content: "### الإجابة المحفوظة\n\nالشرح الكامل كما حُفظ على الخادم" },
+        error: null,
+        retryable: false,
+      },
+    }),
+  });
+  await openLibraryChat(page);
+  await page.getByLabel("رسالتك للمعلم").fill("اشرح المصدر");
+  await page.getByRole("button", { name: "إرسال", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "الإجابة المحفوظة" })).toBeVisible();
+  await expect(page.getByText("الشرح الكامل كما حُفظ على الخادم")).toBeVisible();
+  await expect(page.getByText("انقطع الاتصال قبل حفظ الإجابة")).toHaveCount(0);
+  const posts = requests.filter((r) => r.path === "/api/chat");
+  expect(posts).toHaveLength(1);
+  const requestId = JSON.parse(posts[0].body).requestId;
+  expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
+  expect(posts[0].headers["idempotency-key"]).toBe(requestId);
+  expect(requests.some((r) => r.path === `/api/chat/generations/${requestId}`)).toBe(true);
+  expect(errors).toEqual([]);
+});
+test("a failed answer is retried with the same request id so it is never generated twice", async ({
+  page,
+}) => {
+  const { requests, errors } = await setup(page, true, {
+    chat: (attempt, body) =>
+      attempt === 1
+        ? sse(["started", { requestId: body.requestId }], ["error", { code: "AI_TIMEOUT", error: "استغرقت الإجابة وقتًا أطول من المعتاد، أعد المحاولة", retryable: true }])
+        : sse(["delta", { text: "### إجابة بعد الإعادة" }], ["persisted", { messageId: "message-2", userMessageId: "question-2" }]),
+  });
+  await openLibraryChat(page);
+  await page.getByLabel("رسالتك للمعلم").fill("اشرح المصدر");
+  await page.getByRole("button", { name: "إرسال", exact: true }).click();
+  await expect(page.getByText("استغرقت الإجابة وقتًا أطول من المعتاد، أعد المحاولة")).toBeVisible();
+  await page.getByRole("button", { name: "إعادة المحاولة" }).click();
+  await expect(page.getByRole("heading", { name: "إجابة بعد الإعادة" })).toBeVisible();
+  const posts = requests.filter((r) => r.path === "/api/chat");
+  expect(posts).toHaveLength(2);
+  expect(JSON.parse(posts[1].body).requestId).toBe(JSON.parse(posts[0].body).requestId);
+  expect(errors).toEqual([]);
+});
+test("the chapter list shows the book's chapters and picking one asks for exactly that chapter", async ({
+  page,
+}) => {
+  const { requests, errors } = await setup(page, true, {
+    conversation: {
+      activeDocument: { id: "doc", title: "Anatomy & Physiology", kind: "library", chapterCount: 3, confidence: "high" },
+      studyContext: { chapterIndex: 1, chapterNumber: 1, chapterTitle: "Intro", part: 1, totalParts: 2 },
+      outline: [
+        { index: 1, number: 1, title: "Intro", label: "Chapter 1 — Intro", sections: 2 },
+        { index: 2, number: 2, title: "Cells", label: "Chapter 2 — Cells", sections: 3 },
+        { index: 3, number: 3, title: "Tissues", label: "Chapter 3 — Tissues", sections: 1 },
+      ],
+      pendingGeneration: null,
+    },
+    chat: () => sse(["delta", { text: "### شرح الفصل" }], ["persisted", { messageId: "m", userMessageId: "q" }]),
+  });
+  await openLibraryChat(page);
+  await expect(page.getByText("Anatomy & Physiology")).toBeVisible();
+  await expect(page.getByText("الفصل 1 · الجزء 1/2")).toBeVisible();
+  await page.getByRole("button", { name: "الفصول", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Chapter 3 — Tissues" })).toBeVisible();
+  await page.getByRole("button", { name: "Chapter 2 — Cells" }).click();
+  await expect(page.getByRole("heading", { name: "شرح الفصل" })).toBeVisible();
+  const body = JSON.parse(requests.find((r) => r.path === "/api/chat")!.body);
+  expect(body.chapterIndex).toBe(2);
+  expect(body.content).toBe("اشرحلي الفصل 2");
+  expect(errors).toEqual([]);
+});
+test("reopening a conversation whose last answer failed offers a free retry", async ({ page }) => {
+  const pending = { requestId: "90000000-0000-4000-8000-000000000001", status: "failed", retryable: true, userMessageId: "question" };
+  const { requests } = await setup(page, true, {
+    conversation: { messages: [{ id: "question", role: "user", content: "اشرح التنفس" }], pendingGeneration: pending },
+    chat: (_attempt, body) => sse(["started", { requestId: body.requestId }], ["delta", { text: "### شرح التنفس" }], ["persisted", { messageId: "m", userMessageId: "question" }]),
+  });
+  await openLibraryChat(page);
+  await expect(page.getByText("لم تكتمل إجابة آخر سؤال")).toBeVisible();
+  await page.getByRole("button", { name: "إعادة المحاولة" }).click();
+  await expect(page.getByRole("heading", { name: "شرح التنفس" })).toBeVisible();
+  const post = JSON.parse(requests.find((r) => r.path === "/api/chat")!.body);
+  expect(post.requestId).toBe(pending.requestId);
+  expect(post.content).toBe("اشرح التنفس");
 });

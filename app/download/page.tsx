@@ -62,6 +62,7 @@ export default async function DownloadPage() {
       <LandingHeader dashboardHref={dashboardHref} />
 
       <main className="flex-1">
+        <aside className="mx-auto max-w-5xl p-5 text-sm leading-7">لمستخدمي Preview 1.1.1: التطبيق الرسمي يُثبّت كتطبيق مستقل. حسابك وموادك وتقدمك تبقى على الخادم. سجّل الخروج من Preview ثم ادخل إلى الرسمي، أو استخدم خيار «نقل الجهاز» داخل شاشة الدخول إذا تعذر الوصول للجهاز السابق. <a className="text-primary underline" href="/support">المساعدة</a></aside>
         {/* Hero Section */}
         <section className="relative overflow-hidden border-b border-border bg-gradient-to-b from-primary/[0.04] via-background to-background py-16 sm:py-24">
           <div className="mx-auto max-w-5xl px-4 sm:px-6">

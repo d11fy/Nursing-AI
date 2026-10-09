@@ -8,6 +8,7 @@ import type { ChatMessageData } from "@/components/chat/message-bubble";
 import { canStudentAccessSubject, getStudentSubjects, getSubjectById } from "@/lib/subjects";
 import { forbidden } from "next/navigation";
 import { getConversationSources } from "@/lib/library";
+import { loadConversationStudyView } from "@/lib/tutor/conversation-state";
 
 export default async function ConversationPage({ params }: PageProps<"/dashboard/chat/[id]">) {
   const { id } = await params;
@@ -44,10 +45,11 @@ export default async function ConversationPage({ params }: PageProps<"/dashboard
       }))
   );
 
-  const [{ maxImageSizeMb }, { subjects }, activeSources] = await Promise.all([
+  const [{ maxImageSizeMb }, { subjects }, activeSources, study] = await Promise.all([
     getSettings(db),
     getStudentSubjects(profile.user_id),
     getConversationSources(profile.user_id, conversation.id),
+    loadConversationStudyView(profile.user_id, conversation.id),
   ]);
 
   return (
@@ -61,6 +63,7 @@ export default async function ConversationPage({ params }: PageProps<"/dashboard
       availableSubjects={subjects.map((subject) => ({ id: subject.id, name: subject.name_ar }))}
       showAITrace={profile.role === "admin"}
       initialActiveSources={activeSources}
+      initialStudy={study}
     />
   );
 }

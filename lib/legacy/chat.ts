@@ -4,7 +4,7 @@ import { routeAIRequest, getProviderByName, classifyRequest } from "@/lib/ai";
 import { retrieveCurriculum } from "@/lib/ai/curriculum-search";
 import { answerFromCurriculum } from "@/lib/ai/grounded-answer";
 import { checkRateLimit, logUsage, getMonthlyAiSpend, getSettings } from "@/lib/usage";
-import { accessErrorMessage, consumeUsage } from "@/lib/subscriptions/service";
+import { accessErrorMessage, consumeUsage, commitUsage } from "@/lib/subscriptions/service";
 import { getChatImageDataUri } from "@/lib/storage";
 import { sendMessageSchema } from "@/lib/validations/chat";
 import type { ChatMessageInput } from "@/lib/ai/provider";
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     );
   }
 
-  try { await consumeUsage(user.id, "ai_questions_daily"); }
+  try { await commitUsage(await consumeUsage(user.id, "ai_questions_daily")); }
   catch (error) { return NextResponse.json(accessErrorMessage(error, "أسئلة الذكاء الاصطناعي"), { status: 403 }); }
 
   // Resolve or create the conversation.

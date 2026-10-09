@@ -102,7 +102,12 @@ try {
   const isRelease = process.argv.includes("--release");
   // Re-run only verification and publishing for an APK Gradle already built.
   const finalizeOnly = isRelease && process.argv.includes("--finalize-only");
-  if (!finalizeOnly) {
+  // --stage: build and verify, but publish nothing. The APK waits in release-staging/ (outside public/, so it is not
+  //          downloadable and /api/download/apk keeps serving the verified published file) until manual QA passes.
+  // --publish-staged: after QA, re-verify that exact staged file and copy it to public/downloads (named + latest).
+  const stageOnly = isRelease && process.argv.includes("--stage");
+  const publishStaged = isRelease && process.argv.includes("--publish-staged");
+  if (!finalizeOnly && !publishStaged) {
   console.log("\n[1/4] Building local Mobile Frontend into mobile/dist...");
   execSync("npm run build", {
     cwd: path.join(root, "mobile"),
@@ -148,14 +153,25 @@ try {
       "apk",
       "release",
     );
-    const files = fs.readdirSync(releaseDir).filter((f) => f.endsWith(".apk"));
-    const releaseApk = files[0];
-    if (!releaseApk) {
-      throw new Error("Gradle completed without producing a release APK");
-    }
-
-    const srcPath = path.join(releaseDir, releaseApk);
     const expectedVersion = JSON.parse(fs.readFileSync(path.join(root, "mobile", "app-version.json"), "utf8"));
+    const stagingDir = path.join(root, "release-staging");
+    const stagedApk = path.join(stagingDir, `nursing-ai-v${expectedVersion.name}.apk`);
+    let srcPath;
+    if (publishStaged) {
+      if (!fs.existsSync(stagedApk) || !fs.existsSync(`${stagedApk}.json`)) throw new Error(`No staged APK for ${expectedVersion.name}: run the release build with --stage first`);
+      srcPath = stagedApk;
+      const record = JSON.parse(fs.readFileSync(`${stagedApk}.json`, "utf8"));
+      const actual = createHash("sha256").update(fs.readFileSync(srcPath)).digest("hex");
+      // The file that is published must be byte-for-byte the file that was tested.
+      if (record.sha256 !== actual) throw new Error(`The staged APK changed after staging (recorded ${record.sha256}, found ${actual})`);
+    } else {
+      const files = fs.readdirSync(releaseDir).filter((f) => f.endsWith(".apk"));
+      const releaseApk = files[0];
+      if (!releaseApk) {
+        throw new Error("Gradle completed without producing a release APK");
+      }
+      srcPath = path.join(releaseDir, releaseApk);
+    }
     const identity = verifyReleaseManifest(srcPath, expectedVersion, env);
     const signature = verifyReleaseSignature(srcPath, env);
     if (/CN=Android Debug/i.test(signature)) throw new Error("Release APK is signed with the Android debug certificate");
@@ -176,6 +192,24 @@ try {
           "The release certificate does not match the existing production APK. Restore the original signing key before publishing an update.",
         );
       }
+    }
+    if (stageOnly) {
+      fs.mkdirSync(stagingDir, { recursive: true });
+      fs.copyFileSync(srcPath, stagedApk);
+      const stagedSha = createHash("sha256").update(fs.readFileSync(stagedApk)).digest("hex");
+      const stagedCertificate = signerCertificate(signature);
+      const commit = (() => { try { return execSync("git rev-parse HEAD", { cwd: root, encoding: "utf8" }).trim(); } catch { return null; } })();
+      fs.writeFileSync(`${stagedApk}.json`, JSON.stringify({ versionName: identity.versionName, versionCode: identity.versionCode, sha256: stagedSha,
+        certificateSha256: stagedCertificate, sizeBytes: fs.statSync(stagedApk).size, commit, builtAt: new Date().toISOString() }, null, 2));
+      console.log(`\n========================================`);
+      console.log(`Signed Production Release APK STAGED (nothing was published):`);
+      console.log(`Package: ${identity.packageName} ${identity.versionName} (${identity.versionCode}), not debuggable`);
+      console.log(`File: ${path.relative(root, stagedApk)} (${(fs.statSync(stagedApk).size / (1024 * 1024)).toFixed(2)} MB)`);
+      console.log(`APK SHA-256: ${stagedSha}`);
+      console.log(`Signing certificate SHA-256: ${stagedCertificate}`);
+      console.log(`After manual QA: node scripts/build-android.mjs --release --publish-staged`);
+      console.log(`========================================\n`);
+      process.exit(0);
     }
     const destDir = path.join(root, "public", "downloads");
     if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });

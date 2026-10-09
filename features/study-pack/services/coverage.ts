@@ -125,5 +125,5 @@ export function coverageLabel(coverage: SourceCoverage | undefined | null): stri
     ? `، الصفحات ${coverage.firstPage}–${coverage.lastPage}` : "";
   if (coverage.processedSections < coverage.totalSections)
     return `شمل ${coverage.processedSections} من ${coverage.totalSections} أقسام${pages}`;
-  return `شمل كل أقسام الملف (${coverage.totalSections}${pages})`;
+  return `عولجت كل أقسام الملف (${coverage.totalSections}${pages}) — راجع المصدر للتفاصيل`;
 }

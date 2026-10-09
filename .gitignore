@@ -22,6 +22,8 @@ android/app/build/
 /coverage
 /.evaluation/
 /backups/
+/logs/
+/release-staging/
 .*-results-local.log
 
 # next.js

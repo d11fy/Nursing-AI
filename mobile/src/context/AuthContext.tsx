@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { clearOfflineStudy } from "../services/offlineStudy";
 import { Preferences } from "@capacitor/preferences";
 import { listenForGoogleLogin } from "../services/googleAuth";
 import { parseProfileSnapshot, type Profile } from "../services/profileSnapshot";
@@ -31,7 +32,7 @@ interface AuthContextType {
   loading: boolean;
   /** True when the profile is the last saved copy and the server has not confirmed the session yet (offline start). */
   sessionUnverified: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, secondFactor?: string) => Promise<void>;
   register: (data: {
     fullName: string;
     email: string;
@@ -53,6 +54,8 @@ async function saveProfileSnapshot(profile: Profile) {
   await Preferences.set({ key: PROFILE_SNAPSHOT_KEY, value: JSON.stringify(profile) }).catch(() => undefined);
 }
 async function clearProfileSnapshot() {
+  const snapshot=parseProfileSnapshot((await Preferences.get({key:PROFILE_SNAPSHOT_KEY})).value);
+  if(snapshot) await clearOfflineStudy(snapshot.user_id);
   await Preferences.remove({ key: PROFILE_SNAPSHOT_KEY }).catch(() => undefined);
 }
 
@@ -129,11 +132,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener("nursing:auth-expired", handleExpiredSession);
   }, []);
 
-  async function login(email: string, password: string) {
+  async function login(email: string, password: string, secondFactor?: string) {
     const { deviceToken } = await getTokens();
     const res = await apiFetch("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password, deviceToken }),
+      body: JSON.stringify({ email, password, deviceToken, secondFactor }),
     });
 
     if (res.success && res.sessionToken) {

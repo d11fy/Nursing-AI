@@ -1,4 +1,5 @@
 import React, { useEffect, lazy, Suspense } from "react";
+import { OfflineLibrary } from "./components/OfflineLibrary";
 import { ThemeProvider } from "./context/ThemeContext";
 import { ThemePicker } from "./components/common/ThemePicker";
 import { AuthProvider, useAuth } from "./context/AuthContext";
@@ -169,6 +170,7 @@ function MainContent() {
 
       {/* Main Screen Container */}
       <main className="flex-1 px-4 pt-3 max-w-lg mx-auto w-full">
+        {!isFullscreenRunner && <OfflineLibrary />}
         <Suspense
           fallback={
             <div role="status" className="py-12 text-center text-primary">

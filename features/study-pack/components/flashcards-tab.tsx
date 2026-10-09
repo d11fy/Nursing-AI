@@ -33,7 +33,7 @@ export function FlashcardsTab({
   const [fetching, setFetching] = useState(initialCards.length === 0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [filterMode, setFilterMode] = useState<"all" | "review_again">("all");
+  const [filterMode, setFilterMode] = useState<"all" | "review_again" | "due">("all");
   const [submittingProgress, setSubmittingProgress] = useState(false);
 
   // If initialCards is empty, load existing cards from API
@@ -78,28 +78,18 @@ export function FlashcardsTab({
     if (!currentCard || submittingProgress) return;
 
     setSubmittingProgress(true);
-    // Optimistic UI update
-    setCards((prev) =>
-      prev.map((c) =>
-        c.id === currentCard.id
-          ? {
-              ...c,
-              progress_status: status,
-              review_count: (c.review_count ?? 0) + 1,
-            }
-          : c
-      )
-    );
-
     try {
-      await fetch(`/api/study-packs/${studyPackId}/flashcards/progress`, {
+      const res = await fetch(`/api/study-packs/${studyPackId}/flashcards/progress`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ flashcardId: currentCard.id, status }),
+        body: JSON.stringify({ flashcardId: currentCard.id, status, eventId: crypto.randomUUID() }),
       });
 
+      const result=await res.json();
+      if(!res.ok) throw new Error(result.error || "تعذر حفظ تقدم البطاقة");
+      setCards(prev=>prev.map(c=>c.id===currentCard.id?{...c,progress_status:result.status,...result}:c));
       // Move to next card after rating
-      if (currentIndex < activeCards.length - 1) {
+      if (filterMode !== "all") { setCurrentIndex(0);setIsFlipped(false); } else if (currentIndex < activeCards.length - 1) {
         setIsFlipped(false);
         setCurrentIndex((i) => i + 1);
       } else {
@@ -116,7 +106,7 @@ export function FlashcardsTab({
   const activeCards =
     filterMode === "review_again"
       ? cards.filter((c) => c.progress_status === "review_again")
-      : cards;
+      : filterMode === "due" ? cards.filter(c=>!c.next_review_at || new Date(c.next_review_at).getTime()<=Date.now()) : cards;
 
   const knownCount = cards.filter((c) => c.progress_status === "known").length;
   const reviewAgainCount = cards.filter((c) => c.progress_status === "review_again").length;
@@ -190,9 +180,11 @@ export function FlashcardsTab({
 
   return (
     <div className="space-y-5 max-w-2xl mx-auto">
+      {currentCard?.next_review_at && <p className="text-sm text-muted-foreground">المراجعة التالية: {new Date(currentCard.next_review_at).toLocaleString("ar")}</p>}
       {/* Header controls & filter tabs */}
       <div className="space-y-3">
         <div className="flex flex-col items-stretch gap-3 rounded-xl border border-border bg-card p-3 shadow-2xs sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <Button variant={filterMode === "due" ? "default" : "outline"} onClick={()=>{setFilterMode("due");setCurrentIndex(0);setIsFlipped(false);}}>المراجعات المستحقة الآن</Button>
           {/* Filter options */}
           <div className="grid grid-cols-1 gap-2 min-[430px]:grid-cols-2">
             <Button

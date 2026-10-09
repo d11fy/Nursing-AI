@@ -37,6 +37,7 @@ export function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
       {googleError && <p role="alert" className="mt-4 rounded-xl border border-destructive/15 bg-destructive/10 px-3.5 py-3 text-sm text-destructive">{googleError}</p>}
 
       <form action={formAction} className={googleEnabled ? "space-y-4" : "mt-6 space-y-4"}>
+        <div className="space-y-1.5"><Label htmlFor="secondFactor">رمز المصادقة أو الاسترداد (للحسابات المفعّلة فقط)</Label><Input id="secondFactor" name="secondFactor" autoComplete="one-time-code" dir="ltr" maxLength={32} /></div>
         <input type="hidden" name="redirectTo" value={redirectTo} />
 
         <div className="space-y-1.5">
@@ -69,7 +70,7 @@ export function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
         <Button type="submit" className="w-full" disabled={isPending}>
           {isPending ? "جارٍ الدخول..." : "تسجيل الدخول"}
         </Button>
-      </form>
+      <a href="/transfer-device" className="block min-h-11 text-primary underline">الحساب مفتوح على جهاز آخر؟ انقل تسجيل الدخول</a><a href="/support" className="block min-h-11 text-primary underline">طلب مساعدة</a></form>
 
       <p className="mt-6 text-center text-sm text-muted-foreground">
         ليس لديك حساب؟{" "}

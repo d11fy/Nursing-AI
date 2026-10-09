@@ -10,7 +10,10 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useNavigation } from "../context/NavigationContext";
-import { apiFetch } from "../services/api";
+import { useAuth } from "../context/AuthContext";
+import { useNetwork } from "../context/NetworkContext";
+import { getOfflinePack, saveOfflinePack } from "../services/offlineStudy";
+import { ApiError, apiFetch } from "../services/api";
 import { StudySummary } from "../components/studypack/StudySummary";
 import { FlashcardsViewer } from "../components/studypack/FlashcardsViewer";
 
@@ -24,6 +27,9 @@ export function StudyPackScreen({
   title?: string;
 }) {
   const { navigate, showToast } = useNavigation();
+  const {profile}=useAuth();
+  const {isOnline}=useNetwork();
+  const [savedAt,setSavedAt]=useState("");
 
   const [activeTab, setActiveTab] = useState<
     "summary" | "keypoints" | "flashcards" | "quiz" | "source"
@@ -53,7 +59,7 @@ export function StudyPackScreen({
       if (!id) throw new Error("معرّف حزمة الدراسة غير متوفر");
       const query = type ? `?type=${type}` : "";
       const res = await apiFetch(`/api/study-packs/${id}${query}`);
-      setData(res.workspaceData);
+      setData(res.workspaceData);setSavedAt("");
 
       // If flashcards already exist, load them
       if (res.workspaceData?.studyPack?.id) {
@@ -69,6 +75,10 @@ export function StudyPackScreen({
         } catch {}
       }
     } catch (error) {
+      if(profile && id && !(error instanceof ApiError && [401,403,404].includes(error.status))) {
+        const saved=await getOfflinePack(profile.user_id,id).catch(()=>null);
+        if(saved){setData(saved.workspace);setFlashcards(saved.cards);setExistingQuiz(null);setSavedAt(saved.savedAt);return;}
+      }
       setData(null);
       setErrorMessage(
         error instanceof Error ? error.message : "تعذر تحميل حزمة الدراسة",
@@ -76,14 +86,14 @@ export function StudyPackScreen({
     } finally {
       setLoading(false);
     }
-  }, [id, type]);
+  }, [id, type, profile?.user_id]);
 
   useEffect(() => {
     loadWorkspace();
   }, [loadWorkspace]);
 
   useEffect(() => {
-    if (type !== "lecture" || !id) return;
+    if (type !== "lecture" || !id || !isOnline) return;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
@@ -112,7 +122,7 @@ export function StudyPackScreen({
       disposed = true;
       clearTimeout(timer);
     };
-  }, [id, type, loadWorkspace]);
+  }, [id, type, loadWorkspace, isOnline]);
 
   const studyPackId = data?.studyPack?.id;
 
@@ -122,6 +132,7 @@ export function StudyPackScreen({
     regenerate = false,
   ) => {
     if (!studyPackId) return;
+    if(!isOnline){showToast("توليد محتوى جديد يحتاج الإنترنت");return;}
     setGenerating(true);
     try {
       const res = await apiFetch(`/api/study-packs/${studyPackId}/content`, {
@@ -151,6 +162,7 @@ export function StudyPackScreen({
   // Generate Flashcards
   const handleGenerateFlashcards = async (regenerate = false) => {
     if (!studyPackId) return;
+    if(!isOnline){showToast("توليد محتوى جديد يحتاج الإنترنت");return;}
     setGenerating(true);
     try {
       const res = await apiFetch(`/api/study-packs/${studyPackId}/flashcards`, {
@@ -170,6 +182,7 @@ export function StudyPackScreen({
   // Generate & Launch Quiz
   const handleStartQuiz = async () => {
     if (!studyPackId) return;
+    if(!isOnline){showToast("توليد محتوى جديد يحتاج الإنترنت");return;}
     setGenerating(true);
     try {
       const res = await apiFetch(`/api/study-packs/${studyPackId}/quiz`, {
@@ -249,6 +262,8 @@ export function StudyPackScreen({
 
   return (
     <div className="space-y-4 pb-nav">
+      {savedAt&&<p role="status" className="surface text-sm">نسخة محفوظة بتاريخ {new Date(savedAt).toLocaleString("ar")} — الاختبارات والتوليد يحتاجان اتصالًا.</p>}
+      {isOnline&&<button className="min-h-12 rounded-xl border px-4 text-primary" onClick={async()=>{if(!profile||!data)return;try{await saveOfflinePack(profile.user_id,data,flashcards);showToast("تم تنزيل الملخص والبطاقات والمصدر للدراسة دون إنترنت");}catch(e){showToast(e instanceof Error?e.message:"تعذر التنزيل");}}}>تنزيل للدراسة دون إنترنت</button>}
       {/* Header Banner */}
       <div className="rounded-3xl bg-linear-to-l from-slate-900 to-teal-900 p-5 text-white shadow-md space-y-1">
         <span className="text-[10px] font-bold text-teal-300">

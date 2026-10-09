@@ -21,7 +21,7 @@ function validToken(value?: string): value is string {
   return Boolean(value && TOKEN_PATTERN.test(value));
 }
 
-export async function findSessionProfile(sessionToken?: string, deviceToken?: string): Promise<Profile | null> {
+export async function findSessionProfile(sessionToken?: string, deviceToken?: string, allowPendingMfa=false): Promise<Profile | null> {
   if (!validToken(sessionToken)) return null;
   const deviceHash = validToken(deviceToken) ? tokenHash(deviceToken) : null;
   const { rows } = await getPool().query<Profile>(
@@ -32,13 +32,14 @@ export async function findSessionProfile(sessionToken?: string, deviceToken?: st
         and s.expires_at>now()
         and s.revoked_at is null
         and p.status='active'
+        and ($3::boolean or not exists(select 1 from admin_second_factors m where m.user_id=p.user_id and m.enabled) or s.mfa_verified_at is not null)
         and (s.device_hash is null or s.device_hash=$2)`,
-    [tokenHash(sessionToken), deviceHash]
+    [tokenHash(sessionToken), deviceHash, allowPendingMfa]
   );
   return rows[0] ?? null;
 }
 
-export async function establishSession(userId: string, presentedDeviceToken?: string) {
+export async function establishSession(userId: string, presentedDeviceToken?: string, transferToken?: string) {
   const deviceToken = validToken(presentedDeviceToken) ? presentedDeviceToken : newToken();
   const deviceHash = tokenHash(deviceToken);
   const sessionToken = newToken();
@@ -51,6 +52,12 @@ export async function establishSession(userId: string, presentedDeviceToken?: st
     );
     if (!locked.rows[0]) throw new Error("Account not found");
     const isAdmin = locked.rows[0].role === "admin";
+    if(transferToken){
+      if(isAdmin)throw new Error("Admin transfer not supported");
+      const consumed=await client.query("delete from device_transfers where token_hash=$1 and user_id=$2 and expires_at>now() returning user_id",[tokenHash(transferToken),userId]);
+      if(!consumed.rows.length)throw new Error("Transfer expired or already used");
+      await client.query("delete from app_sessions where user_id=$1",[userId]);
+    }
 
     await client.query("delete from app_sessions where expires_at<=now() or revoked_at is not null");
     if (isAdmin) {

@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from "react";
 import { Sparkles, Mail, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { startGoogleLogin } from "../services/googleAuth";
-import { apiFetch } from "../services/api";
+import { ApiError, apiFetch, DEFAULT_SERVER_URL, getTokens, saveTokens } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useNavigation } from "../context/NavigationContext";
 
 export function LoginScreen() {
-  const { login } = useAuth();
+  const { login, refreshAuth } = useAuth();
   const { navigate } = useNavigation();
 
   const [email, setEmail] = useState("");
+  const [secondFactor,setSecondFactor]=useState("");
+  const [transferOpen,setTransferOpen]=useState(false),[transferCode,setTransferCode]=useState("");
+  const [needsMfa,setNeedsMfa]=useState(false);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,8 +64,9 @@ export function LoginScreen() {
 
     setLoading(true);
     try {
-      await login(email.trim(), password);
+      await login(email.trim(), password,secondFactor);
     } catch (err: unknown) {
+      if(err instanceof ApiError && err.status===428) setNeedsMfa(true);
       setError(
         err instanceof Error
           ? err.message
@@ -97,8 +101,10 @@ export function LoginScreen() {
           </div>
         )}
 
+        <a href={`${DEFAULT_SERVER_URL}/support`} target="_blank" rel="noreferrer" className="block min-h-11 text-primary underline">مساعدة في تسجيل الدخول</a>
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
+          {needsMfa&&<label className="block">رمز المصادقة أو الاسترداد<input className="w-full h-12 rounded-xl border p-3" value={secondFactor} onChange={e=>setSecondFactor(e.target.value)} autoComplete="one-time-code" maxLength={32} dir="ltr" required /></label>}
           <div className="space-y-1.5">
             <label htmlFor="login-field-1" className="block text-xs font-bold text-slate-700 dark:text-slate-300">
               البريد الإلكتروني
@@ -173,6 +179,12 @@ export function LoginScreen() {
             نسيت كلمة المرور؟
           </button>
         </div>
+        <button className="min-h-12 text-primary underline" onClick={()=>setTransferOpen(!transferOpen)}>نقل حسابي من جهاز آخر</button>
+        {transferOpen&&<section className="surface space-y-3"><p className="text-sm">بعد التأكيد سيخرج الجهاز السابق من الحساب. أدخل البريد وكلمة المرور أعلاه ثم اطلب الرمز.</p>
+          <button className="min-h-12 text-primary" disabled={loading} onClick={async()=>{setLoading(true);try{const result=await apiFetch("/api/auth/device-transfer",{method:"POST",body:JSON.stringify({action:"request",email,password})});setError(result.message);}catch(e){setError(e instanceof Error?e.message:"تعذر إرسال الرمز");}finally{setLoading(false);}}}>إرسال رمز النقل إلى بريدي</button>
+          <label className="block">رمز النقل<input className="w-full min-h-12 rounded-xl border p-3" value={transferCode} onChange={e=>setTransferCode(e.target.value.trim())} dir="ltr" maxLength={64} autoComplete="one-time-code" /></label>
+          <button className="min-h-12 text-primary" disabled={loading||transferCode.length!==64} onClick={async()=>{setLoading(true);try{const {deviceToken}=await getTokens();const result=await apiFetch("/api/auth/device-transfer",{method:"POST",body:JSON.stringify({action:"confirm",token:transferCode,deviceToken:deviceToken||undefined})});await saveTokens(result.sessionToken,result.deviceToken);await refreshAuth();}catch(e){setError(e instanceof Error?e.message:"تعذر نقل الجهاز");}finally{setLoading(false);}}}>تأكيد النقل إلى هذا الهاتف</button>
+        </section>}
         {/* Link to Register */}
         <div className="text-center pt-2">
           <p className="text-xs text-slate-500">

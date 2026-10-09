@@ -10,6 +10,10 @@ export const sendMessageSchema = z.object({
   lectureId: z.string().uuid().optional().nullable(),
   imagePath: z.string().min(1).optional().nullable(),
   attachmentId: z.string().uuid().optional().nullable(),
+  /** Client-generated id of this question. Re-sending it never creates a second answer or a second charge. */
+  requestId: z.string().uuid().optional(),
+  /** A chapter the student picked from the chapter list; honoured even when the book structure is uncertain. */
+  chapterIndex: z.number().int().positive().optional(),
 });
 
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;

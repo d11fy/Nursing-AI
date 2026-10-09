@@ -1,3 +1,4 @@
+import { MfaRequiredError } from "@/lib/auth/mfa";
 import { NextResponse } from "next/server";
 import { loginAccount } from "@/lib/auth/accounts";
 import { currentProfile } from "@/lib/auth/session";
@@ -23,8 +24,9 @@ export async function POST(request: Request) {
 
     let session;
     try {
-      session = await loginAccount(parsed.data.email, parsed.data.password, deviceToken);
+      session = await loginAccount(parsed.data.email, parsed.data.password, deviceToken, typeof body.secondFactor === "string" ? body.secondFactor : undefined);
     } catch (err) {
+      if(err instanceof MfaRequiredError) return NextResponse.json({error:err.message,code:"MFA_REQUIRED"},{status:428});
       if (err instanceof DeviceConflictError) {
         return NextResponse.json(
           { error: "هذا الحساب مستخدم حاليًا على جهاز آخر." },

@@ -25,7 +25,8 @@ test("a file range from the beginning through section three is preserved and bou
   ]}};
   const result=resolveConversationReference({question:"اشرحلي من أول الملف لحد القسم الثالث",attachments:[file],activeAttachmentId:file.id,activeSectionIndex:null});
   assert.deepEqual(result.selectedSectionRange,{start:1,end:3});
-  assert.equal(attachmentEvidence(result).length,3);
+  // Evidence for a file range now comes from its indexed pages (see tests/chapter-chat.test.ts), not from a cached excerpt.
+  assert.equal(attachmentEvidence(result).length,0);
   assert.doesNotMatch(result.resolvedQuestion,/later section/);
   assert.match(result.resolvedQuestion,/Stop at the end of section 3/);
 });

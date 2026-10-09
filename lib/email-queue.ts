@@ -42,10 +42,10 @@ async function smtpTransport(): Promise<SmtpTransport> {
   const row=(await workerDb.query<{host:string|null;port:number;username:string|null;password_ciphertext:string|null;encryption:string;from_name:string;from_email:string|null}>("select * from email_settings where singleton=true")).rows[0];
   if(row?.host&&row.from_email){
     const pass=row.password_ciphertext?decryptSmtpPassword(row.password_ciphertext):undefined;
-    return { transport:nodemailer.createTransport({host:row.host,port:row.port,secure:row.encryption==='tls',requireTLS:row.encryption==='starttls',
+    return { transport:nodemailer.createTransport({connectionTimeout:10000,greetingTimeout:10000,socketTimeout:30000,host:row.host,port:row.port,secure:row.encryption==='tls',requireTLS:row.encryption==='starttls',
       auth:row.username?{user:row.username,pass}:undefined}),from:`${row.from_name} <${row.from_email}>`,secrets:[pass,row.username].filter((v):v is string=>Boolean(v)) };
   }
-  if(process.env.SMTP_HOST&&process.env.SMTP_FROM) return {transport:nodemailer.createTransport({host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT||587),secure:process.env.SMTP_PORT==='465',
+  if(process.env.SMTP_HOST&&process.env.SMTP_FROM) return {transport:nodemailer.createTransport({connectionTimeout:10000,greetingTimeout:10000,socketTimeout:30000,host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT||587),secure:process.env.SMTP_PORT==='465',
     auth:process.env.SMTP_USER?{user:process.env.SMTP_USER,pass:process.env.SMTP_PASSWORD}:undefined}),from:process.env.SMTP_FROM,
     secrets:[process.env.SMTP_PASSWORD,process.env.SMTP_USER].filter((v):v is string=>Boolean(v))};
   throw new Error("إعدادات SMTP غير مكتملة");
@@ -78,6 +78,20 @@ type ClaimedEmail = { id: string; claim_token: string; retry_count: number; reci
  * duplicate if a crash happens after SMTP accepted the message.
  */
 export async function processEmailQueue(limit=10, deps: { transport?: () => Promise<SmtpTransport> } = {}) {
+  const total={processed:0,sent:0,failed:0};
+  // Claim just before delivery; queued items cannot lose their lease while waiting for earlier SMTP calls.
+  for(let i=0;i<Math.min(100,Math.max(0,limit));i++) {
+    const result=await processOneEmail(deps);
+    total.processed+=result.processed;total.sent+=result.sent;total.failed+=result.failed;
+    if(!result.processed) break;
+  }
+  return total;
+}
+async function processOneEmail(deps: { transport?: () => Promise<SmtpTransport> }) {
+  const limit=1;
+  await workerDb.query(`update email_logs set status='failed',claim_token=null,lease_expires_at=null,next_retry_at=null,
+    last_error='Delivery worker stopped on the final attempt; administrator review required',updated_at=now()
+    where status='sending' and retry_count >= $1 and coalesce(lease_expires_at,updated_at+interval '2 minutes')<now()`, [EMAIL_MAX_ATTEMPTS]);
   const jobs=(await workerDb.query<ClaimedEmail>(`update email_logs set status='sending',claim_token=gen_random_uuid(),claimed_at=now(),
       lease_expires_at=now()+($2*interval '1 second'),last_attempt_at=now(),retry_count=retry_count+1,updated_at=now()
     where id in(select id from email_logs

@@ -8,6 +8,8 @@ import { getSettings } from "@/lib/usage";
 import { attachProcessedLecture } from "@/lib/tutor/file-attachment";
 import { readIdempotencyKey, usageErrorResponse } from "@/lib/subscriptions/service";
 import { storeStudentLecture, UploadRejectedError, verifiedLectureFile } from "@/lib/lectures/student-upload";
+import { fileSnapshot } from "@/lib/chat/file-status";
+import { logEvent } from "@/lib/log";
 const CHAT_FILE_MAX_SIZE_MB = 10;
 const CHAT_FILE_MAX_SIZE_BYTES = CHAT_FILE_MAX_SIZE_MB * 1024 * 1024;
 const schema = z.object({
@@ -148,25 +150,35 @@ export async function GET(request: Request) {
   )
     return Response.json({ error: "بيانات غير صالحة" }, { status: 400 });
   const owned = (
-    await identityDb(user.user_id).query(
-      `select l.status,l.error_message from lectures l join conversations c on c.id=$2 and c.user_id=$1 where l.id=$3 and l.user_id=$1`,
+    await identityDb(user.user_id).query<{ status: string; document_status: string | null; document_error: string | null; chapter_count: number | null; structure_confidence: string | null }>(
+      `select l.status,d.status document_status,d.error_message document_error,d.chapter_count,d.structure_confidence
+         from lectures l join conversations c on c.id=$2 and c.user_id=$1 left join knowledge_documents d on d.lecture_id=l.id
+         where l.id=$3 and l.user_id=$1`,
       [user.user_id, cid, lecture],
     )
   ).rows[0];
   if (!owned)
     return Response.json({ error: "الملف غير موجود" }, { status: 404 });
-  if (owned.status === "ready")
+  // uploading -> processing -> ready | failed. A file is usable only when its whole index is ready.
+  const snapshot = fileSnapshot({ lectureStatus: owned.status, documentStatus: owned.document_status, errorMessage: owned.document_error });
+  logEvent("FILE_STATUS_POLLED", { lectureId: lecture, phase: snapshot.phase });
+  if (snapshot.phase === "ready")
     return Response.json({
       status: "ready",
+      phase: "ready",
       attachmentId: await attachProcessedLecture(user.user_id, cid!, lecture!),
+      chapterCount: owned.chapter_count ?? 0,
+      structureConfidence: owned.structure_confidence ?? "none",
     });
   return Response.json(
     {
       status: owned.status,
-      error:
-        owned.status === "failed"
-          ? "تعذر تجهيز الملف؛ أعد المحاولة من صفحة المادة"
-          : null,
+      phase: snapshot.phase,
+      code: snapshot.code,
+      message: snapshot.message,
+      retryable: snapshot.retryable,
+      lectureId: lecture,
+      error: snapshot.phase === "failed" ? snapshot.message : null,
     },
     { headers: { "Cache-Control": "no-store" } },
   );

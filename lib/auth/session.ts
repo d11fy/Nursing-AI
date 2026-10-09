@@ -20,16 +20,16 @@ export function deviceCookieOptions(maxAge = DEVICE_TTL_SECONDS) {
   return { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax" as const, path: "/", maxAge };
 }
 
-export async function readSession(token?: string, deviceToken?: string) {
-  return findSessionProfile(token, deviceToken);
+export async function readSession(token?: string, deviceToken?: string, allowPendingMfa=false) {
+  return findSessionProfile(token, deviceToken, allowPendingMfa);
 }
 
-export async function currentProfile() {
+export async function currentProfile(allowPendingMfa=false) {
   const jar = await cookies();
   const sessionToken = jar.get(SESSION_COOKIE)?.value;
   const deviceToken = jar.get(DEVICE_COOKIE)?.value;
   if (sessionToken) {
-    return readSession(sessionToken, deviceToken);
+    return readSession(sessionToken, deviceToken, allowPendingMfa);
   }
   try {
     const head = await headers();
@@ -37,7 +37,7 @@ export async function currentProfile() {
     const deviceHeader = head.get("x-device-token");
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const bearerToken = authHeader.slice(7).trim();
-      return readSession(bearerToken, deviceHeader ?? undefined);
+      return readSession(bearerToken, deviceHeader ?? undefined, allowPendingMfa);
     }
   } catch {}
   return null;

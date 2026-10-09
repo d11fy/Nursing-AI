@@ -1,0 +1,7 @@
+import { requireAdminProfile } from "@/lib/auth";
+import { identityDb } from "@/lib/tutor/db";
+import { replySupportTicket } from "@/lib/support";
+import { revalidatePath } from "next/cache";
+async function reply(form:FormData){"use server";const admin=await requireAdminProfile();await replySupportTicket(admin.user_id,String(form.get("id")),String(form.get("reply")));revalidatePath("/admin/support");}
+export default async function Page(){const admin=await requireAdminProfile();const tickets=(await identityDb(admin.user_id).query<{id:string;email:string;subject:string;message:string;reply:string|null;status:string}>("select id,email,subject,message,reply,status from support_tickets order by case when status='open' then 0 else 1 end,created_at desc limit 100")).rows;
+ return <main className="space-y-5"><h1 className="text-2xl font-bold">طلبات المساعدة</h1>{tickets.length===0&&<p>لا توجد طلبات.</p>}{tickets.map(ticket=><section key={ticket.id} className="space-y-3 rounded-xl border p-5"><h2 className="font-bold">{ticket.subject}</h2><p dir="ltr">{ticket.email}</p><p className="whitespace-pre-wrap">{ticket.message}</p><form action={reply} className="space-y-3"><input type="hidden" name="id" value={ticket.id}/><label className="block">رد الإدارة<textarea name="reply" defaultValue={ticket.reply??""} required minLength={3} maxLength={4000} className="block w-full rounded-xl border p-3"/></label><button className="min-h-12 rounded-xl bg-primary px-5 text-primary-foreground">حفظ الرد للطالب</button></form></section>)}</main>;}

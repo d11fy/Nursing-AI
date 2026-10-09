@@ -92,7 +92,7 @@ test('strict Responses schemas convert every optional nested field into a requir
 test('large file follow-ups stay bounded and missing cached pages never fall back to the whole book',()=>{
  const attachment={id:'bounded-file',ordinal:1,file_type:'file',vision_extracted_text:'WHOLE_BOOK_SENTINEL'.repeat(10000),vision_structured_json:{topic:'Biology',subject_guess:'Biology',sections:Array.from({length:30},(_,i)=>({index:i+1,title:`Page ${i+1}`,text:`Page ${i+1} `+'large page text '.repeat(1000)})),medical_terms:[]}} as unknown as ConversationAttachment;
  const common={attachments:[attachment],activeAttachmentId:attachment.id,activeSectionIndex:1};
- const ordinary=resolveConversationReference({question:'Explain this file.',...common});assert.ok(ordinary.resolvedQuestion.length<4000);assert.doesNotMatch(ordinary.resolvedQuestion,/Page 30/);assert.equal(attachmentEvidence(ordinary).length,3);
+ const ordinary=resolveConversationReference({question:'Explain this file.',...common});assert.ok(ordinary.resolvedQuestion.length<4000);assert.doesNotMatch(ordinary.resolvedQuestion,/Page 30/);assert.equal(attachmentEvidence(ordinary).length,0,'files are answered from the full chunk index, never from an excerpt of their first pages');
  const missing=resolveConversationReference({question:'Teach me page 45.',...common});assert.equal(missing.selectedSectionIndex,45);assert.equal(attachmentEvidence(missing).length,0);assert.doesNotMatch(missing.resolvedQuestion,/WHOLE_BOOK_SENTINEL|large page text/);
  assert.equal(requiresClinicalEvidence('What is the normal potassium level?'),true);
 });
