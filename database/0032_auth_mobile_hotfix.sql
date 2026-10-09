@@ -12,6 +12,16 @@ create policy transfer_event_worker on device_transfer_events for all using(ai_i
 insert into settings(key,value) values('support_whatsapp_number','"+972567508786"'::jsonb) on conflict(key) do nothing;
 update settings set value=jsonb_set(value,'{minimum_supported_version_code}','5'::jsonb,true),updated_at=now()
 where key='mobile_app_version' and not (value ? 'minimum_supported_version_code');
+update settings set value=value || jsonb_build_object(
+  'latest_version','1.2.1',
+  'latest_version_code',6,
+  'minimum_supported_version_code',5,
+  'sha256','44382188bb690b5df2cb2ce3f53b6f883b1e423404d16b711fbe06215985d1f1',
+  'force_update',false,
+  'release_notes','تحسين توافق إصدار Android ونقل الحساب برمز تحقق والدعم وتجربة الاستخدام.',
+  'published_at','2026-10-09T18:45:00.000Z'
+),updated_at=now()
+where key='mobile_app_version' and coalesce((value->>'latest_version_code')::int,0)<6;
 alter table email_settings add column reply_to text;
 update email_templates set subject='رمز نقل حساب Nursing AI',
  html_body='<p>مرحبًا {{student_name}}</p><p>طلبت نقل حساب Nursing AI إلى جهاز جديد. أدخل رمز التحقق التالي في التطبيق:</p><p dir="ltr" style="font-size:26px;font-weight:bold;letter-spacing:6px">{{transfer_code}}</p><p>ينتهي خلال 10 دقائق. إذا لم تطلب ذلك فتجاهل الرسالة ولا تشارك الرمز مع أحد.</p>',
