@@ -2,6 +2,15 @@
 -- per-conversation study position and server-side chat generations.
 -- Existing documents keep working: structure columns stay empty until a rebuild
 -- (lazy on first chapter request, or `npm run knowledge:restructure`).
+--
+-- Safety: everything below is additive (new nullable/defaulted columns, one new table,
+-- two indexes). No existing column is rewritten, retyped or dropped, and the migration
+-- runs inside the runner's single transaction, so a failure leaves nothing behind.
+-- lock_timeout makes it fail fast instead of queueing behind a long-running query and
+-- blocking the application; just run `npm run db:migrate` again when the database is quiet.
+-- The two index builds briefly block writes to knowledge_chunks / messages (seconds).
+-- Manual rollback: database/rollback/0031_rollback.sql (stop the new application build first).
+set local lock_timeout = '15s';
 
 alter table knowledge_documents
   add column if not exists outline_json jsonb,

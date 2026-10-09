@@ -21,7 +21,10 @@ export async function rebuildDocumentStructure(documentId: string, options: { fo
     const doc = (await workerDb.query<IndexedDocument & { structure_version: number }>('select * from knowledge_documents where id=$1', [documentId])).rows[0];
     if (!doc) return { status: 'skipped', reason: 'not_found' } as const;
     if (doc.status !== 'ready') return { status: 'skipped', reason: 'not_ready' } as const;
-    if (!options.force && doc.structure_version >= STRUCTURE_VERSION) return { status: 'unchanged', chapterCount: 0 } as const;
+    if (!options.force && doc.structure_version >= STRUCTURE_VERSION) {
+      const stored = (await workerDb.query<{ chapter_count: number }>('select chapter_count from knowledge_documents where id=$1', [documentId])).rows[0];
+      return { status: 'unchanged', chapterCount: stored?.chapter_count ?? 0 } as const;
+    }
     const pages = doc.extracted_pages_json;
     if (!pages?.length) return { status: 'skipped', reason: 'no_extracted_pages' } as const;
     const start = Date.now();
