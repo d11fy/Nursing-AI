@@ -278,7 +278,7 @@ export function HomeScreen() {
                   <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500">
                     <History className="size-4" />
                   </div>
-                  <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                  <span dir="auto" className="text-xs font-bold text-slate-900 dark:text-white truncate">
                     {c.title}
                   </span>
                 </div>

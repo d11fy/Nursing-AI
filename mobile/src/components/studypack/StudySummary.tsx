@@ -1,11 +1,13 @@
 import React from "react";
 import type { SummaryContent } from "../../../../features/study-pack/types";
+import { coverageLabel } from "../../../../features/study-pack/services/coverage";
 export function StudySummary({ content }: { content: SummaryContent }) {
   return (
     <div className="space-y-3 selectable-text">
       <section className="surface space-y-2">
         <h3 className="font-black text-primary">نظرة عامة</h3>
         <p className="text-sm leading-7">{content.overview}</p>
+        <p className="text-xs text-slate-500">{coverageLabel(content.coverage)}</p>
       </section>
       <section className="surface space-y-3">
         <h3 className="font-black">المفاهيم الأساسية</h3>

@@ -143,7 +143,7 @@ export function ProductSections({ data, dashboardHref }: { data: PublicSiteData;
           <div className="mx-auto max-w-3xl text-center">
             <p className="eyebrow">ابدأ قبل الاشتراك</p>
             <h2 className="mt-3 text-3xl font-black sm:text-4xl">تجربة مجانية ثم باقة تناسب دراستك</h2>
-            <p className="mt-4 leading-8 text-muted-foreground">القيم أدناه تأتي مباشرة من إعدادات المنصة الحالية، وتتغير تلقائيًا عندما تعدّلها الإدارة.</p>
+            <p className="mt-4 leading-8 text-muted-foreground">جرّب المنصة مجانًا بهذه الحدود، ثم اختر الباقة التي تناسب فصلك الدراسي.</p>
           </div>
           <div className="mx-auto mt-10 grid max-w-5xl gap-3 rounded-2xl border border-primary/20 bg-accent p-5 sm:grid-cols-5">
             {[
@@ -182,7 +182,7 @@ export function ProductSections({ data, dashboardHref }: { data: PublicSiteData;
 
       <section className="border-y border-border bg-[#083344] py-20 text-white sm:py-24">
         <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 sm:px-6 lg:grid-cols-[1fr_.85fr]">
-          <div><div className="inline-flex size-14 items-center justify-center rounded-2xl bg-white/10"><Smartphone className="size-7" /></div><p className="mt-5 text-xs font-black uppercase tracking-widest text-cyan-200">Android Release</p><h2 className="mt-3 text-3xl font-black sm:text-4xl">حمّل Nursing AI للأندرويد</h2><p className="mt-4 max-w-xl leading-8 text-slate-300">واجهة محلية داخل APK وليست موقعًا داخل WebView، وتتصل بنفس حسابك واشتراكك وبيانات تعلمك عبر Backend الآمن.</p><Button className="mt-7 bg-white text-[#083344] hover:bg-slate-100" nativeButton={false} render={<Link href="/download">فتح صفحة التحميل<ArrowLeft className="size-4" /></Link>} /></div>
+          <div><div className="inline-flex size-14 items-center justify-center rounded-2xl bg-white/10"><Smartphone className="size-7" /></div><p className="mt-5 text-xs font-black uppercase tracking-widest text-cyan-200">Android Release</p><h2 className="mt-3 text-3xl font-black sm:text-4xl">حمّل Nursing AI للأندرويد</h2><p className="mt-4 max-w-xl leading-8 text-slate-300">تطبيق مصمم للهاتف يعمل بنفس حسابك واشتراكك، فتكمل على الهاتف ما بدأته على الموقع.</p><Button className="mt-7 bg-white text-[#083344] hover:bg-slate-100" nativeButton={false} render={<Link href="/download">فتح صفحة التحميل<ArrowLeft className="size-4" /></Link>} /></div>
           <div className="rounded-3xl border border-white/15 bg-white/10 p-6 backdrop-blur-sm"><div className="flex items-center justify-between gap-4"><div><p className="text-xs text-slate-300">الإصدار الحالي</p><p className="mt-1 text-2xl font-black">v{data.appVersion.latest_version}</p></div><Smartphone className="size-10 text-cyan-200" /></div><div className="my-5 h-px bg-white/15" /><dl className="grid grid-cols-2 gap-4 text-sm"><div><dt className="text-slate-400">الحجم</dt><dd className="mt-1 font-bold">{data.appVersion.file_size ?? "—"}</dd></div><div><dt className="text-slate-400">آخر تحديث</dt><dd className="mt-1 font-bold">{published}</dd></div></dl></div>
         </div>
       </section>
@@ -209,7 +209,7 @@ export function ProductSections({ data, dashboardHref }: { data: PublicSiteData;
         </div></div>
       </section>
 
-      <section id="contact" className="py-16"><div className="mx-auto max-w-4xl px-4 text-center sm:px-6"><MessageCircleQuestion className="mx-auto size-8 text-primary" /><h2 className="mt-3 text-2xl font-black">تحتاج مساعدة؟</h2>{data.contact.email || data.contact.whatsapp ? <div className="mt-5 flex flex-wrap justify-center gap-3">{data.contact.email && <Button variant="outline" nativeButton={false} render={<a href={`mailto:${data.contact.email}`}><Mail className="size-4" />{data.contact.email}</a>} />}{data.contact.whatsapp && <Button variant="outline" nativeButton={false} render={<a href={`https://wa.me/${data.contact.whatsapp.replace(/\D/g, "")}`} target="_blank" rel="noreferrer"><MessageSquareText className="size-4" />WhatsApp</a>} />}</div> : <p className="mx-auto mt-4 max-w-xl text-sm leading-7 text-muted-foreground">تظهر قنوات البريد وWhatsApp هنا فور نشرها من إعدادات الإدارة. يمكن للمستخدم المسجل متابعة طلبات الاشتراك من حسابه.</p>}</div></section>
+      <section id="contact" className="py-16"><div className="mx-auto max-w-4xl px-4 text-center sm:px-6"><MessageCircleQuestion className="mx-auto size-8 text-primary" /><h2 className="mt-3 text-2xl font-black">تحتاج مساعدة؟</h2>{data.contact.email || data.contact.whatsapp ? <div className="mt-5 flex flex-wrap justify-center gap-3">{data.contact.email && <Button variant="outline" nativeButton={false} render={<a href={`mailto:${data.contact.email}`}><Mail className="size-4" />{data.contact.email}</a>} />}{data.contact.whatsapp && <Button variant="outline" nativeButton={false} render={<a href={`https://wa.me/${data.contact.whatsapp.replace(/\D/g, "")}`} target="_blank" rel="noreferrer"><MessageSquareText className="size-4" />WhatsApp</a>} />}</div> : <p className="mx-auto mt-4 max-w-xl text-sm leading-7 text-muted-foreground">للمساعدة في حسابك أو اشتراكك سجّل الدخول وافتح صفحة الاشتراك؛ تجد هناك حالة طلبك وسبب الرفض إن وُجد.</p>}</div></section>
     </>
   );
 }

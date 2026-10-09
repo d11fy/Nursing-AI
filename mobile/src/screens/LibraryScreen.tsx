@@ -230,7 +230,7 @@ export function LibraryScreen({
                 onClick={() => openStudyPack(resource)}
               >
                 <BookMarked className="size-4 shrink-0" />
-                <span className="truncate">{resource.title}</span>
+                <span dir="auto" className="truncate">{resource.title}</span>
               </button>
             ))}
           </div>
@@ -258,7 +258,7 @@ export function LibraryScreen({
               <article key={res.id} className="surface space-y-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <h3 className="font-bold leading-7 break-words">
+                    <h3 dir="auto" className="font-bold leading-7 break-words">
                       {res.title}
                     </h3>
                     <p className="text-xs text-slate-500">

@@ -956,6 +956,7 @@ export function UploadDocumentDialog({
                                 variant="ghost"
                                 size="icon-xs"
                                 onClick={() => removeItem(item.id)}
+                                aria-label={`إزالة ${item.file.name} من قائمة الرفع`}
                                 className="text-muted-foreground hover:text-destructive size-7"
                               >
                                 <Trash2 className="size-4" />

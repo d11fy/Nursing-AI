@@ -52,6 +52,32 @@ export function MobileReleaseSettingsForm({ version }: { version: AppVersionInfo
           <p className="text-xs leading-6 text-muted-foreground">فعّله فقط عندما لا يمكن للإصدار السابق الاستمرار بأمان.</p>
         </div>
       </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="sha256">SHA-256 لملف الإصدار المستقر</Label>
+        <Input id="sha256" name="sha256" dir="ltr" defaultValue={version.sha256 ?? ""} pattern="[a-fA-F0-9]{64}" placeholder="64 حرفًا ست عشريًا يطبعه سكربت البناء" />
+        <p className="text-xs text-muted-foreground">يرفض الموقع تقديم الملف إذا لم تطابق بصمته هذه القيمة، حتى لا يُنشر ملف غير الإصدار المعلن.</p>
+      </div>
+      <fieldset className="space-y-3 rounded-xl border border-border p-4">
+        <legend className="px-1 text-sm font-semibold">قناة المعاينة (اختيارية)</legend>
+        <div className="flex items-center gap-2">
+          <input id="previewEnabled" name="previewEnabled" type="checkbox" defaultChecked={Boolean(version.preview?.enabled)} className="size-4 accent-primary" />
+          <Label htmlFor="previewEnabled">إظهار النسخة التجريبية كخيار ثانوي في صفحة التحميل</Label>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="previewVersion">إصدار المعاينة</Label>
+            <Input id="previewVersion" name="previewVersion" dir="ltr" defaultValue={version.preview?.version ?? ""} placeholder="1.1.1" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="previewApkUrl">ملف المعاينة</Label>
+            <Input id="previewApkUrl" name="previewApkUrl" dir="ltr" defaultValue={version.preview?.apk_url ?? ""} placeholder="/downloads/nursing-ai-preview-v1.1.1.apk" />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="previewNotes">ملاحظات المعاينة</Label>
+          <Textarea id="previewNotes" name="previewNotes" rows={2} defaultValue={version.preview?.notes ?? ""} />
+        </div>
+      </fieldset>
       <p className="text-xs text-muted-foreground">الحجم المكتشف من ملف الإصدار الحالي: {version.file_size ?? "غير متوفر"}</p>
       <Feedback state={state} />
       <Button type="submit" disabled={pending}>{pending ? "جارٍ النشر..." : "نشر إعداد الإصدار"}</Button>

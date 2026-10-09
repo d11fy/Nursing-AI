@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/db/server";
 import { checkRateLimit } from "@/lib/usage";
-import { canUseFeature, accessErrorMessage } from "@/lib/subscriptions/service";
+import { requireFeature, usageErrorResponse, usageMeter } from "@/lib/subscriptions/service";
 import {
   getStudyPackFlashcards,
 } from "@/features/study-pack/db/flashcards-db";
@@ -54,16 +54,21 @@ export async function POST(
       { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } }
     );
   }
+  const usage = usageMeter(user.id, "study_pack_limit", regenerate ? null : `study-pack:${studyPackId}`, "proceed");
   try {
-    const access=await canUseFeature(user.id,"flashcards_enabled");
-    if(!access.allowed) return NextResponse.json(accessErrorMessage(new Error(access.reason==="subscription_expired"?"انتهى اشتراكك":"هذه الميزة غير متاحة ضمن باقتك"),"البطاقات"),{status:403});
+    await requireFeature(user.id, "flashcards_enabled");
     const result = await getOrGenerateFlashcards({
       studyPackId,
       userId: user.id,
       regenerate,
+      meter: usage.meter,
     });
+    await usage.commit();
     return NextResponse.json(result);
   } catch (err) {
+    await usage.release();
+    const denied = usageErrorResponse(err, "البطاقات");
+    if (denied) return denied;
     const message = err instanceof Error ? err.message : "تعذر إنشاء البطاقات";
     return NextResponse.json({ error: message }, { status: 500 });
   }

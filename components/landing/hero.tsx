@@ -30,7 +30,7 @@ export function Hero({ dashboardHref }: { dashboardHref: string | null }) {
             <Button size="lg" variant="outline" className="w-full bg-card px-7 sm:w-auto" nativeButton={false} render={<a href="#platform">استكشف المنصة</a>} />
           </div>
           <div className="mt-7 flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs font-medium text-muted-foreground lg:justify-start">
-            <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="size-4 text-success" /> تجربة من إعدادات النظام</span>
+            <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="size-4 text-success" /> تجربة مجانية قبل الاشتراك</span>
             <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="size-4 text-success" /> بيانات وملفات خاصة</span>
             <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="size-4 text-success" /> Web وAndroid</span>
           </div>

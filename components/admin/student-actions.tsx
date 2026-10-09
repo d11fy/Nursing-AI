@@ -8,17 +8,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { resetStudentDeviceAction, setStudentStatusAction, resetDailyLimitAction } from "@/app/admin/actions";
-import { cancelSubscriptionAction, resetTrialAction, resetUsageAction } from "@/app/admin/subscriptions/actions";
+import { resetStudentDeviceAction, setStudentStatusAction } from "@/app/admin/actions";
+import { cancelSubscriptionAction, resetTrialAction } from "@/app/admin/subscriptions/actions";
+import { UsageAdjustDialog } from "@/components/admin/usage-adjust-dialog";
 import type { UserStatus } from "@/types/database";
 
-export function StudentActions({ userId, status }: { userId: string; status: UserStatus }) {
+export function StudentActions({ userId, status, studentName }: { userId: string; status: UserStatus; studentName: string }) {
   return (
+    <div className="flex items-center gap-1">
+    <UsageAdjustDialog userId={userId} studentName={studentName} />
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button variant="ghost" size="icon" className="size-8">
-            <MoreVertical className="size-4" />
+          <Button variant="ghost" size="icon" className="size-11" aria-label={`إجراءات ${studentName}`}>
+            <MoreVertical className="size-4" aria-hidden />
           </Button>
         }
       />
@@ -36,16 +39,6 @@ export function StudentActions({ userId, status }: { userId: string; status: Use
         />
         <DropdownMenuItem
           render={
-            <form action={resetDailyLimitAction}>
-              <input type="hidden" name="userId" value={userId} />
-              <button type="submit" className="w-full text-right">
-                إعادة تعيين الحد اليومي
-              </button>
-            </form>
-          }
-        />
-        <DropdownMenuItem
-          render={
             <form action={resetStudentDeviceAction}>
               <input type="hidden" name="userId" value={userId} />
               <button type="submit" className="w-full text-right">
@@ -55,10 +48,10 @@ export function StudentActions({ userId, status }: { userId: string; status: Use
           }
         />
         <DropdownMenuItem render={<form action={resetTrialAction}><input type="hidden" name="userId" value={userId} /><button type="submit" className="w-full text-right">إعادة تعيين التجربة</button></form>} />
-        <DropdownMenuItem render={<form action={resetUsageAction}><input type="hidden" name="userId" value={userId} /><button type="submit" className="w-full text-right">إعادة كل استخدام الاشتراك</button></form>} />
         <DropdownMenuItem render={<form action={cancelSubscriptionAction}><input type="hidden" name="userId" value={userId} /><input type="hidden" name="mode" value="cancelled" /><button type="submit" className="w-full text-right">إلغاء الاشتراك</button></form>} />
         <DropdownMenuItem render={<form action={cancelSubscriptionAction}><input type="hidden" name="userId" value={userId} /><input type="hidden" name="mode" value="revoked" /><button type="submit" className="w-full text-right text-destructive">سحب الاشتراك فورًا</button></form>} />
       </DropdownMenuContent>
     </DropdownMenu>
+    </div>
   );
 }

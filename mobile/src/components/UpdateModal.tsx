@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useRef } from "react";
+import { useDialogFocus } from "../hooks/useDialogFocus";
 import { Download, AlertCircle, ArrowUpCircle, X } from "lucide-react";
 import { Browser } from "@capacitor/browser";
 import { Capacitor } from "@capacitor/core";
@@ -21,6 +22,9 @@ export function UpdateModal({
   apkUrl,
   onDismiss,
 }: UpdateModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // A forced update cannot be dismissed, including with Escape.
+  useDialogFocus(dialogRef, true, forceUpdate ? undefined : onDismiss);
   const handleUpdate = async () => {
     try {
       const fullUrl = resolveOfficialUrl(apkUrl);
@@ -37,7 +41,12 @@ export function UpdateModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 backdrop-blur-sm animate-fade-in">
-      <div 
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="update-title"
+        tabIndex={-1}
         className="relative w-full max-w-sm rounded-3xl border border-primary/20 bg-card p-6 shadow-2xl text-foreground text-center animate-scale-up"
         onClick={(e) => e.stopPropagation()}
       >
@@ -55,7 +64,7 @@ export function UpdateModal({
           <ArrowUpCircle className="size-8" />
         </div>
 
-        <h3 className="text-lg font-black text-foreground">
+        <h3 id="update-title" className="text-lg font-black text-foreground">
           يتوفر تحديث جديد لـ Nursing AI
         </h3>
 

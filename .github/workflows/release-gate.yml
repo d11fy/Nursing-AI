@@ -1,0 +1,25 @@
+name: Release gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+      - run: npm ci
+      - run: npm --prefix mobile ci
+      - run: npx playwright install --with-deps chromium
+      # The suite runs against an in-memory database; no secrets are needed.
+      - run: npm run release:gate

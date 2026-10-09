@@ -46,6 +46,47 @@ export interface PracticeQuestionView {
   }>;
 }
 
+/** Question as delivered to a student: never carries the answer key or rationale. */
+export type StudentPracticeQuestion = Omit<PracticeQuestionView, "correctAnswer" | "explanation">;
+
+export function toStudentPracticeQuestion(question: PracticeQuestionView): StudentPracticeQuestion {
+  return {
+    id: question.id,
+    questionText: question.questionText,
+    questionType: question.questionType,
+    options: question.options,
+    topic: question.topic,
+    difficulty: question.difficulty,
+    pageNumber: question.pageNumber,
+    sourceLabel: question.sourceLabel,
+    isPastExam: question.isPastExam,
+    examYear: question.examYear,
+    // Evidence quotes can contain the answer, so only titles and pages are sent.
+    sources: question.sources.map((source) => ({ documentId: source.documentId, documentTitle: source.documentTitle,
+      pageNumber: source.pageNumber, supportType: source.supportType })),
+  };
+}
+
+/** Revealed after an answer is recorded (STUDY) or after the attempt is completed (EXAM). */
+export interface PracticeAnswerReview {
+  questionId: string;
+  selectedAnswer: unknown;
+  isCorrect: boolean | null;
+  correctAnswer: unknown;
+  explanation: string | null;
+  sources: PracticeQuestionView["sources"];
+}
+
+export interface PracticeAttemptView {
+  attemptId: string;
+  mode: "STUDY" | "EXAM";
+  practiceType: string;
+  completed: boolean;
+  questions: StudentPracticeQuestion[];
+  /** STUDY: answered questions only. EXAM: empty until completed, then every question. */
+  review: PracticeAnswerReview[];
+}
+
 const generatedQuestionSchema = z.object({
   questions: z.array(
     z.object({
@@ -75,12 +116,7 @@ const generatedQuestionSchema = z.object({
  */
 export async function createPracticeExam(
   options: GeneratePracticeExamOptions
-): Promise<{
-  attemptId: string;
-  mode: "STUDY" | "EXAM";
-  practiceType: string;
-  questions: PracticeQuestionView[];
-}> {
+): Promise<PracticeAttemptView> {
   const pool = getPool();
   const count = Math.min(30, Math.max(3, options.questionCount || 10));
 
@@ -369,7 +405,77 @@ STRICT INVARIANTS:
     attemptId,
     mode: options.mode,
     practiceType: options.practiceType,
-    questions: selectedQuestions,
+    completed: false,
+    questions: selectedQuestions.map(toStudentPracticeQuestion),
+    review: [],
+  };
+}
+
+async function loadQuestionSources(questionIds: string[]) {
+  const map = new Map<string, PracticeQuestionView["sources"]>();
+  if (!questionIds.length) return map;
+  const { rows } = await getPool().query<{ question_id: string; document_id: string; title: string; page_number: number | null;
+    quote: string | null; support_type: string }>(
+    `select qs.question_id,qs.document_id,d.title,qs.page_number,qs.quote,qs.support_type
+     from question_sources qs join documents d on d.id=qs.document_id where qs.question_id=any($1::uuid[])`, [questionIds]);
+  for (const row of rows) {
+    const list = map.get(row.question_id) ?? [];
+    list.push({ documentId: row.document_id, documentTitle: row.title, pageNumber: row.page_number, quote: row.quote, supportType: row.support_type });
+    map.set(row.question_id, list);
+  }
+  return map;
+}
+
+async function loadAttemptReview(attemptId: string, userId: string, onlyAnswered: boolean): Promise<PracticeAnswerReview[]> {
+  const { rows } = await identityDb(userId).query<{ question_id: string; selected_answer: unknown; is_correct: boolean | null;
+    correct_answer_json: unknown; explanation: string | null }>(
+    `select aq.question_id,aa.selected_answer,aa.is_correct,q.correct_answer_json,q.explanation
+     from student_exam_attempts a
+     join student_exam_attempt_questions aq on aq.attempt_id=a.id
+     join exam_questions q on q.id=aq.question_id
+     left join student_exam_attempt_answers aa on aa.attempt_id=a.id and aa.question_id=aq.question_id
+     where a.id=$1 and a.user_id=$2 and ($3::boolean = false or aa.question_id is not null)`,
+    [attemptId, userId, onlyAnswered]
+  );
+  const sources = await loadQuestionSources(rows.map((row) => row.question_id));
+  return rows.map((row) => ({
+    questionId: row.question_id,
+    selectedAnswer: row.selected_answer ?? null,
+    isCorrect: row.is_correct,
+    correctAnswer: row.correct_answer_json,
+    explanation: row.explanation,
+    sources: sources.get(row.question_id) ?? [],
+  }));
+}
+
+/**
+ * Loads an attempt for its owner (resume, or a retried generate request).
+ * Answer keys are included only where the attempt's mode allows it.
+ */
+export async function getPracticeAttempt(attemptId: string, userId: string): Promise<PracticeAttemptView | null> {
+  const attempt = (await identityDb(userId).query<{ id: string; mode: "STUDY" | "EXAM"; practice_type: string; completed_at: string | null }>(
+    "select id,mode,practice_type,completed_at from student_exam_attempts where id=$1 and user_id=$2", [attemptId, userId])).rows[0];
+  if (!attempt) return null;
+  const { rows } = await identityDb(userId).query<{ id: string; question_text: string; question_type: QuestionType; options_json: unknown;
+    topic: string; difficulty: string; page_number: number | null; exam_year: number | null; is_past_exam: boolean }>(
+    `select q.id,q.question_text,q.question_type,q.options_json,q.topic,q.difficulty,q.page_number,e.exam_year,(q.exam_id is not null) is_past_exam
+     from student_exam_attempt_questions aq join exam_questions q on q.id=aq.question_id left join exams e on e.id=q.exam_id
+     where aq.attempt_id=$1 order by q.id`, [attempt.id]);
+  const sources = await loadQuestionSources(rows.map((row) => row.id));
+  const completed = Boolean(attempt.completed_at);
+  return {
+    attemptId: attempt.id,
+    mode: attempt.mode,
+    practiceType: attempt.practice_type,
+    completed,
+    questions: rows.map((row) => toStudentPracticeQuestion({
+      id: row.id, questionText: row.question_text, questionType: row.question_type,
+      options: Array.isArray(row.options_json) ? row.options_json.map((o) => (typeof o === "string" ? o : JSON.stringify(o))) : [],
+      topic: row.topic, difficulty: row.difficulty, pageNumber: row.page_number, isPastExam: row.is_past_exam, examYear: row.exam_year,
+      sources: sources.get(row.id) ?? [],
+    })),
+    review: completed ? await loadAttemptReview(attempt.id, userId, false)
+      : attempt.mode === "STUDY" ? await loadAttemptReview(attempt.id, userId, true) : [],
   };
 }
 
@@ -381,15 +487,15 @@ export async function submitQuestionAnswer(input: {
   userId: string;
   questionId: string;
   selectedAnswer: unknown;
-}): Promise<void> {
+}): Promise<{ recorded: true; review: PracticeAnswerReview | null }> {
   const pool = getPool();
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     await client.query("select set_config('app.user_id',$1,true),set_config('app.ai_worker','off',true)",[input.userId]);
-    const { rows } = await client.query<{subject_id:string;topic:string;correct_answer_json:unknown;question_text:string;
+    const { rows } = await client.query<{mode:"STUDY"|"EXAM";subject_id:string;topic:string;correct_answer_json:unknown;question_text:string;
       question_type:string;options_json:unknown;explanation:string|null;source_document_id:string|null;page_number:number|null}>(
-      `SELECT a.subject_id,q.topic,q.correct_answer_json,q.question_text,q.question_type,q.options_json,q.explanation,
+      `SELECT a.mode,a.subject_id,q.topic,q.correct_answer_json,q.question_text,q.question_type,q.options_json,q.explanation,
         q.source_document_id,q.page_number
        FROM public.student_exam_attempts a
        JOIN public.student_exam_attempt_questions aq ON aq.attempt_id=a.id
@@ -401,11 +507,19 @@ export async function submitQuestionAnswer(input: {
     );
     const question = rows[0];
     if (!question || question.correct_answer_json == null) throw new Error("السؤال غير تابع لهذه المحاولة أو لا يملك إجابة معتمدة");
-    const existing = await client.query<{id:string}>(
-      "SELECT id FROM public.student_exam_attempt_answers WHERE attempt_id=$1 AND question_id=$2 LIMIT 1",
+    // Exam mode reveals nothing until the attempt is completed.
+    const feedback = (isCorrect: boolean, selected: unknown): PracticeAnswerReview | null => question.mode === "STUDY"
+      ? { questionId: input.questionId, selectedAnswer: selected, isCorrect, correctAnswer: question.correct_answer_json,
+          explanation: question.explanation, sources: [] }
+      : null;
+    const existing = await client.query<{selected_answer:unknown;is_correct:boolean}>(
+      "SELECT selected_answer,is_correct FROM public.student_exam_attempt_answers WHERE attempt_id=$1 AND question_id=$2 LIMIT 1",
       [input.attemptId,input.questionId]
     );
-    if (existing.rows.length) { await client.query("COMMIT"); return; }
+    if (existing.rows.length) {
+      await client.query("COMMIT");
+      return { recorded: true, review: feedback(existing.rows[0].is_correct, existing.rows[0].selected_answer) };
+    }
     const isCorrect = gradePracticeAnswer(input.selectedAnswer, question.correct_answer_json);
     const topicIdentity = normalizeTopicIdentity(question.topic);
     await client.query(
@@ -437,6 +551,7 @@ export async function submitQuestionAnswer(input: {
       topic: question.topic, client });
     await client.query(`insert into learning_events(user_id,subject_id,topic,event_type,result,metadata) values($1,$2,$3,$4,$5,$6::jsonb)`,[input.userId,question.subject_id,question.topic,isCorrect?'quiz_correct':'quiz_incorrect',isCorrect,JSON.stringify({attemptId:input.attemptId,questionId:input.questionId})]);
     await client.query("COMMIT");
+    return { recorded: true, review: feedback(isCorrect, input.selectedAnswer ?? null) };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -455,6 +570,7 @@ export async function completePracticeExam(attemptId: string, userId: string): P
   unansweredQuestions: number;
   scorePercentage: number;
   weakTopicsRecommendation: string[];
+  review: PracticeAnswerReview[];
 }> {
   const pool = getPool();
   const attempt = await pool.query<{id:string;total_questions:number;subject_id:string}>(
@@ -524,6 +640,7 @@ export async function completePracticeExam(attemptId: string, userId: string): P
     unansweredQuestions: Math.max(0, attempt.rows[0].total_questions - row.total),
     scorePercentage: score,
     weakTopicsRecommendation: weakRows.map((r) => r.topic),
+    review: await loadAttemptReview(attemptId, userId, false),
   };
 }
 

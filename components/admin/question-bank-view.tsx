@@ -2,18 +2,12 @@
 
 import { useState } from "react";
 import {
-  Search,
-  Filter,
   CheckCircle2,
   XCircle,
-  AlertTriangle,
   Clock,
   Edit3,
-  ExternalLink,
   ChevronDown,
   ChevronUp,
-  FileText,
-  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +16,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 export interface QuestionSourceItem {
   id: string;

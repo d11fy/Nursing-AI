@@ -1,15 +1,9 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../services/api";
 import { APP_VERSION_CODE, APP_VERSION_NAME } from "../config/version";
+import { parseVersionResponse, type VersionResponse } from "../services/release";
 
-export interface VersionResponse {
-  latest_version: string;
-  latest_version_code: number;
-  apk_url: string;
-  release_notes: string;
-  force_update: boolean;
-  published_at: string;
-}
+export type { VersionResponse };
 
 export function useAppUpdateCheck() {
   const [updateInfo, setUpdateInfo] = useState<VersionResponse | null>(null);
@@ -20,8 +14,9 @@ export function useAppUpdateCheck() {
 
     async function checkForUpdates() {
       try {
-        const data: VersionResponse = await apiFetch("/api/app/version");
-        if (!mounted || !data) return;
+        const data = parseVersionResponse(await apiFetch("/api/app/version"));
+        // Malformed data, or a release the server cannot verify, never prompts.
+        if (!mounted || !data || data.available === false) return;
 
         const isNewerCode = typeof data.latest_version_code === "number" && data.latest_version_code > APP_VERSION_CODE;
         const isNewerName = data.latest_version && data.latest_version !== APP_VERSION_NAME;

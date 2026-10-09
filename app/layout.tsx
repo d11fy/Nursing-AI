@@ -25,7 +25,7 @@ export const metadata: Metadata = {
     title: "Nursing AI | رفيقك الذكي لدراسة التمريض",
     description: SITE_DESCRIPTION,
   },
-  twitter: { card: "summary", title: SITE_NAME, description: SITE_DESCRIPTION },
+  twitter: { card: "summary_large_image", title: SITE_NAME, description: SITE_DESCRIPTION },
   robots: { index: true, follow: true },
   icons: { icon: "/icon.svg" },
 };

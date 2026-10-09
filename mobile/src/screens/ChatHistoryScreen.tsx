@@ -115,7 +115,7 @@ export function ChatHistoryScreen() {
                   <MessageSquare className="size-4" />
                 </div>
                 <div className="min-w-0">
-                  <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                  <h4 dir="auto" className="text-xs font-bold text-slate-900 dark:text-white truncate">
                     {c.title}
                   </h4>
                   <p className="text-[10px] text-slate-400 mt-0.5">

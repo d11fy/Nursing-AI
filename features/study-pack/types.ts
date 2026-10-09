@@ -1,3 +1,5 @@
+import type { SourceCoverage } from "./services/coverage";
+
 export type StudyPackStatus = "processing" | "ready" | "failed";
 export type GenerationStatus = "not_generated" | "generating" | "ready" | "failed" | "outdated";
 export type StudyContentType = "summary" | "key_points";
@@ -36,6 +38,8 @@ export interface SummaryContent {
   }>;
   what_to_remember: string[];
   source_references?: string[];
+  /** Which sections/pages fed the summary (absent on content generated before coverage tracking). */
+  coverage?: SourceCoverage;
 }
 
 export interface KeyPointsContent {
@@ -45,6 +49,7 @@ export interface KeyPointsContent {
     arabic_clarification?: string | null;
     source_reference?: string | null;
   }>;
+  coverage?: SourceCoverage;
 }
 
 export interface FlashcardItem {
@@ -76,6 +81,21 @@ export interface QuizQuestionItem {
   difficulty: string;
   topic: string;
   sort_order: number;
+}
+
+/** Question as sent to a student before they answer: no answer key or rationale. */
+export type StudentQuizQuestion = Omit<QuizQuestionItem, "correct_answer" | "rationale">;
+
+export interface StudentQuizItem extends Omit<QuizItem, "questions"> {
+  questions: StudentQuizQuestion[];
+}
+
+/** Returned after the student's answer is recorded. */
+export interface QuizAnswerFeedback {
+  isCorrect: boolean;
+  correctAnswer: string;
+  rationale: string;
+  topic: string;
 }
 
 export interface QuizItem {

@@ -3,10 +3,7 @@ import { createClient } from "@/lib/db/server";
 import { flashcardProgressRequestSchema } from "@/features/study-pack/schemas";
 import { updateFlashcardProgress } from "@/features/study-pack/db/flashcards-db";
 
-export async function POST(
-  request: Request,
-  { params: _params }: { params: Promise<{ id: string }> }
-) {
+export async function POST(request: Request) {
   const db = await createClient();
   const {
     data: { user },

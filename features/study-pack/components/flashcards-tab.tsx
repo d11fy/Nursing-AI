@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Layers,
   Sparkles,
@@ -122,10 +122,14 @@ export function FlashcardsTab({
   const reviewAgainCount = cards.filter((c) => c.progress_status === "review_again").length;
   const progressPercent = cards.length > 0 ? Math.round((knownCount / cards.length) * 100) : 0;
 
-  // Keyboard shortcut listener
+  // Keyboard shortcuts. The ref always holds the latest state, so the single
+  // listener never acts on a stale card; keys pressed on a focused control
+  // (button, link, field, menu) keep their normal meaning.
+  const shortcutRef = useRef<(e: KeyboardEvent) => void>(() => undefined);
   useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (["INPUT", "TEXTAREA"].includes((e.target as HTMLElement)?.tagName)) return;
+    shortcutRef.current = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("input,textarea,select,button,a,[role='button'],[role='menuitem'],[role='dialog'],[contenteditable='true']")) return;
       if (e.key === " " || e.key === "Enter") {
         e.preventDefault();
         setIsFlipped((f) => !f);
@@ -136,10 +140,13 @@ export function FlashcardsTab({
         e.preventDefault();
         handleProgress("review_again");
       }
-    }
+    };
+  });
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => shortcutRef.current(e);
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isFlipped, currentIndex, activeCards]);
+  }, []);
 
   // Loading State
   if (loading || fetching) {

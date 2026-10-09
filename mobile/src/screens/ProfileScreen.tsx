@@ -169,10 +169,10 @@ export function ProfileScreen() {
       >
         <form onSubmit={handleSaveProfile} className="space-y-4">
           <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700">
+            <label htmlFor="profile-field-1" className="text-xs font-bold text-slate-700">
               الاسم الكامل
             </label>
-            <input
+            <input id="profile-field-1"
               type="text"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
@@ -182,8 +182,8 @@ export function ProfileScreen() {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700">الجامعة</label>
-            <input
+            <label htmlFor="profile-field-2" className="text-xs font-bold text-slate-700">الجامعة</label>
+            <input id="profile-field-2"
               type="text"
               value={university}
               onChange={(e) => setUniversity(e.target.value)}

@@ -36,25 +36,82 @@ export async function enqueueTemplateEmail(recipient:string,templateKey:string,v
     values($1,$2,$3,$4,$5) returning id`,[recipient,templateKey,render(template.subject,variables),render(template.html_body,variables,true),render(template.text_body,variables)])).rows[0]?.id??null;
 }
 
-async function smtpTransport() {
+type SmtpTransport = { transport: Pick<ReturnType<typeof nodemailer.createTransport>, "sendMail">; from: string; secrets: string[] };
+
+async function smtpTransport(): Promise<SmtpTransport> {
   const row=(await workerDb.query<{host:string|null;port:number;username:string|null;password_ciphertext:string|null;encryption:string;from_name:string;from_email:string|null}>("select * from email_settings where singleton=true")).rows[0];
-  if(row?.host&&row.from_email) return { transport:nodemailer.createTransport({host:row.host,port:row.port,secure:row.encryption==='tls',requireTLS:row.encryption==='starttls',
-    auth:row.username?{user:row.username,pass:row.password_ciphertext?decryptSmtpPassword(row.password_ciphertext):undefined}:undefined}),from:`${row.from_name} <${row.from_email}>` };
+  if(row?.host&&row.from_email){
+    const pass=row.password_ciphertext?decryptSmtpPassword(row.password_ciphertext):undefined;
+    return { transport:nodemailer.createTransport({host:row.host,port:row.port,secure:row.encryption==='tls',requireTLS:row.encryption==='starttls',
+      auth:row.username?{user:row.username,pass}:undefined}),from:`${row.from_name} <${row.from_email}>`,secrets:[pass,row.username].filter((v):v is string=>Boolean(v)) };
+  }
   if(process.env.SMTP_HOST&&process.env.SMTP_FROM) return {transport:nodemailer.createTransport({host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT||587),secure:process.env.SMTP_PORT==='465',
-    auth:process.env.SMTP_USER?{user:process.env.SMTP_USER,pass:process.env.SMTP_PASSWORD}:undefined}),from:process.env.SMTP_FROM};
+    auth:process.env.SMTP_USER?{user:process.env.SMTP_USER,pass:process.env.SMTP_PASSWORD}:undefined}),from:process.env.SMTP_FROM,
+    secrets:[process.env.SMTP_PASSWORD,process.env.SMTP_USER].filter((v):v is string=>Boolean(v))};
   throw new Error("إعدادات SMTP غير مكتملة");
 }
 
-export async function processEmailQueue(limit=10) {
-  const jobs=(await workerDb.query<{id:string;recipient:string;subject_snapshot:string;html_snapshot:string;text_snapshot:string}>(`update email_logs set status='sending',updated_at=now()
-    where id in(select id from email_logs where status in('pending','failed') and retry_count<5 and scheduled_at<=now() order by created_at limit $1 for update skip locked)
-    returning id,recipient,subject_snapshot,html_snapshot,text_snapshot`,[limit])).rows;
-  if(!jobs.length)return {processed:0,sent:0};
-  const {transport,from}=await smtpTransport(); let sent=0;
-  for(const job of jobs){try{await transport.sendMail({from,to:job.recipient,subject:job.subject_snapshot,html:job.html_snapshot,text:job.text_snapshot});
-    await workerDb.query("update email_logs set status='sent',sent_at=now(),last_error=null where id=$1",[job.id]);sent++;
-  }catch(error){await workerDb.query("update email_logs set status='failed',retry_count=retry_count+1,last_error=$2 where id=$1",[job.id,error instanceof Error?error.message.slice(0,500):'Unknown SMTP error']);}}
-  return {processed:jobs.length,sent};
+/** A claimed message whose worker dies becomes claimable again after this lease. */
+export const EMAIL_LEASE_SECONDS = 120;
+/** Delivery attempts (including attempts lost to a crash) before a message stays failed. */
+export const EMAIL_MAX_ATTEMPTS = 6;
+
+/** 1, 2, 4, 8... minutes between attempts, capped at six hours. */
+export function emailRetryDelaySeconds(attempt: number) {
+  return Math.min(6 * 3600, 60 * 2 ** Math.max(0, attempt - 1));
+}
+
+/** Error text safe to store and show to admins: no credentials, bounded length. */
+export function safeEmailError(error: unknown, secrets: string[] = []) {
+  let message = error instanceof Error ? error.message : "Unknown SMTP error";
+  for (const secret of secrets) if (secret.length >= 3) message = message.split(secret).join("[redacted]");
+  return message.replace(/(pass(word)?|auth|token)\s*[:=]\s*\S+/gi, "$1=[redacted]").slice(0, 500);
+}
+
+type ClaimedEmail = { id: string; claim_token: string; retry_count: number; recipient: string; subject_snapshot: string; html_snapshot: string; text_snapshot: string };
+
+/**
+ * Lease-based delivery. Claiming increments the attempt counter and stamps a
+ * fresh claim_token; only the holder of that token can record the outcome, so a
+ * worker whose lease expired cannot overwrite the result of the worker that
+ * reclaimed the message. A stable Message-ID lets mail servers drop a
+ * duplicate if a crash happens after SMTP accepted the message.
+ */
+export async function processEmailQueue(limit=10, deps: { transport?: () => Promise<SmtpTransport> } = {}) {
+  const jobs=(await workerDb.query<ClaimedEmail>(`update email_logs set status='sending',claim_token=gen_random_uuid(),claimed_at=now(),
+      lease_expires_at=now()+($2*interval '1 second'),last_attempt_at=now(),retry_count=retry_count+1,updated_at=now()
+    where id in(select id from email_logs
+      where retry_count<$3 and scheduled_at<=now() and (
+        (status in('pending','failed') and coalesce(next_retry_at,scheduled_at)<=now())
+        or (status='sending' and coalesce(lease_expires_at,updated_at+($2*interval '1 second'))<now()))
+      order by created_at limit $1 for update skip locked)
+    returning id,claim_token,retry_count,recipient,subject_snapshot,html_snapshot,text_snapshot`,[limit,EMAIL_LEASE_SECONDS,EMAIL_MAX_ATTEMPTS])).rows;
+  if(!jobs.length)return {processed:0,sent:0,failed:0};
+  const fail=(job:ClaimedEmail,message:string)=>workerDb.query(`update email_logs set status='failed',last_error=$3,lease_expires_at=null,
+      next_retry_at=case when retry_count<$4 then now()+($5*interval '1 second') else null end,updated_at=now()
+    where id=$1 and claim_token=$2`,[job.id,job.claim_token,message,EMAIL_MAX_ATTEMPTS,emailRetryDelaySeconds(job.retry_count)]);
+  let smtp: SmtpTransport;
+  try { smtp=await (deps.transport ?? smtpTransport)(); }
+  catch(error){
+    // Configuration errors release every claim for a later retry instead of leaving them in "sending".
+    for(const job of jobs)await fail(job,safeEmailError(error));
+    return {processed:jobs.length,sent:0,failed:jobs.length};
+  }
+  let sent=0,failed=0;
+  for(const job of jobs){try{await smtp.transport.sendMail({from:smtp.from,to:job.recipient,subject:job.subject_snapshot,html:job.html_snapshot,text:job.text_snapshot,
+      messageId:`<${job.id}@nursing-ai.mail>`});
+    await workerDb.query("update email_logs set status='sent',sent_at=now(),last_error=null,lease_expires_at=null,next_retry_at=null,updated_at=now() where id=$1 and claim_token=$2",[job.id,job.claim_token]);sent++;
+  }catch(error){failed++;await fail(job,safeEmailError(error,smtp.secrets));}}
+  return {processed:jobs.length,sent,failed};
+}
+
+/** Admin "retry now": a fresh round of attempts for a failed or stuck message. */
+export async function requeueEmail(adminId:string,id:string){
+  await withIdentity(adminId,async db=>{
+    await db.query(`update email_logs set status='pending',retry_count=0,next_retry_at=null,lease_expires_at=null,claim_token=null,
+      scheduled_at=now(),last_error=null,updated_at=now() where id=$1 and status<>'sent'`,[id]);
+    await db.query("insert into admin_audit_logs(event_type,admin_id,metadata) values('EMAIL_REQUEUED',$1,$2::jsonb)",[adminId,JSON.stringify({emailId:id})]);
+  });
 }
 
 export async function updateSmtpSettings(adminId:string,input:{host:string;port:number;username?:string;password?:string;encryption:string;fromName:string;fromEmail:string}) {

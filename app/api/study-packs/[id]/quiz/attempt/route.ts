@@ -10,10 +10,7 @@ import {
   completeQuizAttempt,
 } from "@/features/study-pack/db/quiz-db";
 
-export async function POST(
-  request: Request,
-  { params: _params }: { params: Promise<{ id: string }> }
-) {
+export async function POST(request: Request) {
   const db = await createClient();
   const {
     data: { user },

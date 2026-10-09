@@ -42,7 +42,7 @@ import { SettingsScreen } from "./screens/SettingsScreen";
 import { Sparkles, RefreshCw } from "lucide-react";
 
 function MainContent() {
-  const { profile, loading } = useAuth();
+  const { profile, loading, sessionUnverified, refreshAuth } = useAuth();
   const { currentScreen, toastMessage, showToast, switchTab } = useNavigation();
   const { isOnline, checkConnection } = useNetwork();
   const { hasUpdate, updateInfo, dismissUpdate } = useAppUpdateCheck();
@@ -56,9 +56,14 @@ function MainContent() {
       switchTab("home");
   }, [profile, currentScreen.name, switchTab]);
 
+  // An offline start shows the saved shell; verify the session once the network is back.
+  useEffect(() => {
+    if (isOnline && sessionUnverified) void refreshAuth();
+  }, [isOnline, sessionUnverified, refreshAuth]);
+
   // If completely offline
   if (!isOnline && !profile) {
-    return <OfflineScreen />;
+    return <OfflineScreen onRetry={refreshAuth} />;
   }
 
   // Initial Auth Loading
@@ -149,7 +154,11 @@ function MainContent() {
           role="status"
           className="fixed top-0 inset-x-0 z-50 bg-amber-100 text-amber-900 px-4 py-2 text-sm flex items-center justify-between"
         >
-          <span>الاتصال مقطوع؛ نشاطك الحالي محفوظ على الشاشة</span>
+          <span>
+            {sessionUnverified
+              ? "أنت غير متصل. تظهر آخر بيانات محفوظة وقد لا تكون محدثة، والميزات التي تحتاج الإنترنت متوقفة حتى يعود الاتصال."
+              : "الاتصال مقطوع؛ نشاطك الحالي محفوظ على الشاشة"}
+          </span>
           <button className="min-h-11 px-2 font-bold" onClick={checkConnection}>
             إعادة المحاولة
           </button>

@@ -10,9 +10,11 @@ import { useNavigation } from "../context/NavigationContext";
 import { apiFetch } from "../services/api";
 import {
   questionText,
-  questionAnswer,
   questionOptions,
   isCorrectAnswer,
+  answerFeedback,
+  completionReview,
+  type AnswerFeedback,
 } from "../services/quiz";
 import { QuizExitConfirmModal } from "../components/common/QuizExitConfirmModal";
 export function QuizRunner({
@@ -41,6 +43,9 @@ export function QuizRunner({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, unknown>>({});
   const [saved, setSaved] = useState<Record<number, boolean>>({});
+  // The server sends the answer key only after an answer is recorded (study
+  // mode) or after the attempt is completed; questions never carry it.
+  const [feedback, setFeedback] = useState<Record<number, AnswerFeedback>>({});
   const [seconds, setSeconds] = useState(0);
   const [pending, setPending] = useState(false);
   const busyRef = useRef(false);
@@ -74,7 +79,7 @@ export function QuizRunner({
     const endpoint = isStudyPack
       ? `/api/study-packs/${studyPackId}/quiz/attempt?action=answer`
       : "/api/practice/submit-answer";
-    await apiFetch(endpoint, {
+    return apiFetch(endpoint, {
       method: "POST",
       body: JSON.stringify(
         isStudyPack
@@ -98,7 +103,11 @@ export function QuizRunner({
     setPending(true);
     setError("");
     try {
-      await saveAnswer(currentIndex, answers[currentIndex]);
+      const response = await saveAnswer(currentIndex, answers[currentIndex]);
+      const result = answerFeedback(response);
+      if (mode === "STUDY" && !result)
+        throw new Error("تعذر عرض الشرح؛ حاول مجددًا");
+      if (result) setFeedback((prev) => ({ ...prev, [currentIndex]: result }));
       setSaved((prev) => ({ ...prev, [currentIndex]: true }));
     } catch (e) {
       setError(
@@ -133,7 +142,11 @@ export function QuizRunner({
           }),
         },
       );
-      const results = questions.map((q, index) => ({
+      const review = completionReview(summary);
+      const results = questions.map((q, index) => {
+        const item = review.get(q.id) ?? feedback[index];
+        const correct = item?.correctAnswer;
+        return {
         questionText: questionText(q),
         userChoice:
           answers[index] == null
@@ -141,13 +154,16 @@ export function QuizRunner({
             : Array.isArray(answers[index])
               ? (answers[index] as string[]).join("، ")
               : String(answers[index]),
-        correctChoice: Array.isArray(questionAnswer(q))
-          ? (questionAnswer(q) as string[]).join("، ")
-          : String(questionAnswer(q) ?? ""),
-        isCorrect: isCorrectAnswer(q, answers[index], isStudyPack),
-        explanation: q.rationale || q.explanation,
+        correctChoice: Array.isArray(correct)
+          ? (correct as string[]).join("، ")
+          : String(correct ?? ""),
+        isCorrect:
+          item?.isCorrect ??
+          (item ? isCorrectAnswer({ correctAnswer: correct }, answers[index], isStudyPack) : false),
+        explanation: item?.explanation ?? undefined,
         sourceCitation: q.source_reference || q.sourceLabel || q.sourceCitation,
-      }));
+        };
+      });
       setIsQuizActive(false);
       replace("quiz-results", {
         scorePercent: summary.score ?? summary.scorePercentage,
@@ -178,7 +194,8 @@ export function QuizRunner({
       </div>
     );
   const answer = answers[currentIndex];
-  const revealed = mode === "STUDY" && saved[currentIndex];
+  const currentFeedback = feedback[currentIndex];
+  const revealed = mode === "STUDY" && Boolean(currentFeedback);
   const multi = q.questionType === "SATA" || q.question_type === "SATA";
   const options = questionOptions(q);
   const select = (value: string) => {
@@ -237,9 +254,13 @@ export function QuizRunner({
             const correct =
               revealed &&
               (multi
-                ? Array.isArray(questionAnswer(q)) &&
-                  (questionAnswer(q) as string[]).includes(option.value)
-                : isCorrectAnswer(q, option.value, isStudyPack));
+                ? Array.isArray(currentFeedback.correctAnswer) &&
+                  (currentFeedback.correctAnswer as string[]).includes(option.value)
+                : isCorrectAnswer(
+                    { correctAnswer: currentFeedback.correctAnswer },
+                    option.value,
+                    isStudyPack,
+                  ));
             return (
               <button
                 key={option.id}
@@ -248,7 +269,7 @@ export function QuizRunner({
                 onClick={() => select(option.value)}
                 className={`w-full min-h-14 rounded-2xl border p-3 text-start text-sm leading-6 flex items-center justify-between gap-2 ${revealed && correct ? "border-emerald-500 bg-emerald-50 text-emerald-800" : revealed && selected ? "border-red-500 bg-red-50 text-red-800" : selected ? "border-primary bg-teal-50 text-primary" : "border-slate-200 dark:border-slate-700"}`}
               >
-                <span>{option.text}</span>
+                <span dir="auto" className="bidi-text">{option.text}</span>
                 {revealed && correct ? (
                   <CheckCircle2 className="size-5 shrink-0" />
                 ) : revealed && selected ? (
@@ -290,12 +311,17 @@ export function QuizRunner({
         {revealed && (
           <div className="rounded-2xl bg-teal-50 dark:bg-slate-800 p-4 space-y-2">
             <b className="text-primary">
-              {isCorrectAnswer(q, answer, isStudyPack)
+              {(currentFeedback.isCorrect ??
+              isCorrectAnswer(
+                { correctAnswer: currentFeedback.correctAnswer },
+                answer,
+                isStudyPack,
+              ))
                 ? "إجابة صحيحة"
                 : "راجع الإجابة"}
             </b>
             <p className="text-sm leading-7 selectable-text">
-              {q.rationale || q.explanation}
+              {currentFeedback.explanation}
             </p>
             <p className="text-xs text-slate-500">
               {q.source_reference || q.sourceLabel || q.sourceCitation}

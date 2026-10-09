@@ -60,7 +60,7 @@ export default async function AdminStudentsPage() {
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <StudentActions userId={s.user_id} status={s.status} />
+                  <StudentActions userId={s.user_id} status={s.status} studentName={s.full_name} />
                 </TableCell>
               </TableRow>
             ))}

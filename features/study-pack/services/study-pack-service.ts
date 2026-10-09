@@ -183,12 +183,14 @@ export async function getOrGenerateContent(params: {
   contentType: StudyContentType;
   userId: string;
   regenerate?: boolean;
+  /** Called once, after cache checks and before any AI call; throws to stop generation. */
+  meter?: () => Promise<void>;
 }): Promise<{
   content: SummaryContent | KeyPointsContent;
   fromCache: boolean;
   status: "ready";
 }> {
-  const { studyPackId, contentType, userId, regenerate = false } = params;
+  const { studyPackId, contentType, userId, regenerate = false, meter } = params;
 
   const studyPack = await getStudyPackById(studyPackId, userId);
   if (!studyPack) throw new Error("حزمة الدراسة غير موجودة");
@@ -206,6 +208,7 @@ export async function getOrGenerateContent(params: {
     if (shared?.generation_status === "generating" && Date.now() - new Date(shared.updated_at).getTime() < 60_000) {
       throw new Error("جارٍ إنشاء هذا القسم حاليًا، الرجاء الانتظار لحظات");
     }
+    await meter?.();
     const claimed = await claimSharedStudyContent(studyPack.document_id, studyPack.source_hash, contentType);
     if (!claimed) {
       const ready = await getSharedStudyContent(studyPack.document_id, studyPack.source_hash, contentType, userId);
@@ -255,6 +258,7 @@ export async function getOrGenerateContent(params: {
     }
   }
 
+  await meter?.();
   // Set status to generating
   await setStudyPackContentStatus(studyPackId, contentType, "generating", studyPack.source_hash, userId);
 
@@ -293,11 +297,12 @@ export async function getOrGenerateFlashcards(params: {
   studyPackId: string;
   userId: string;
   regenerate?: boolean;
+  meter?: () => Promise<void>;
 }): Promise<{
   cards: FlashcardItem[];
   fromCache: boolean;
 }> {
-  const { studyPackId, userId, regenerate = false } = params;
+  const { studyPackId, userId, regenerate = false, meter } = params;
 
   const studyPack = await getStudyPackById(studyPackId, userId);
   if (!studyPack) throw new Error("حزمة الدراسة غير موجودة");
@@ -311,6 +316,7 @@ export async function getOrGenerateFlashcards(params: {
 
   const pages = await getExtractedPagesForStudyPack(studyPack, userId);
   if (!pages.length) throw new Error("لا يوجد محتوى نصي مستخرج لإنشاء البطاقات");
+  await meter?.();
 
   const cards = await generateFlashcards({
     lectureId: studyPack.lecture_id ?? studyPack.document_id ?? studyPack.id,
@@ -332,11 +338,12 @@ export async function getOrGenerateQuiz(params: {
     questionType: "mcq" | "true_false" | "mixed";
   };
   regenerate?: boolean;
+  meter?: () => Promise<void>;
 }): Promise<{
   quiz: QuizItem;
   fromCache: boolean;
 }> {
-  const { studyPackId, userId, config, regenerate = false } = params;
+  const { studyPackId, userId, config, regenerate = false, meter } = params;
 
   const studyPack = await getStudyPackById(studyPackId, userId);
   if (!studyPack) throw new Error("حزمة الدراسة غير موجودة");
@@ -350,6 +357,7 @@ export async function getOrGenerateQuiz(params: {
 
   const pages = await getExtractedPagesForStudyPack(studyPack, userId);
   if (!pages.length) throw new Error("لا يوجد محتوى نصي مستخرج لإنشاء الاختبار");
+  await meter?.();
 
   const generated = await generateQuiz(
     {

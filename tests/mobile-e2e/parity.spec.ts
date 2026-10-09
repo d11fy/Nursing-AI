@@ -46,11 +46,17 @@ const summary = {
   what_to_remember: ["تذكر مراقبة العلامات الحيوية"],
   source_references: ["صفحة 1"],
 };
+// Server contract: questions never carry the answer key; it arrives from the
+// answer endpoint after the answer is recorded.
 const question = {
   id: "80000000-0000-4000-8000-000000000001",
   question: "ما التدخل الأول؟",
   options: ["تقييم المريض", "تجاهل المريض"],
-  correct_answer: "تقييم المريض",
+  topic: "التقييم",
+};
+const answerFeedback = {
+  isCorrect: true,
+  correctAnswer: "تقييم المريض",
   rationale: "ابدأ بالتقييم",
   topic: "التقييم",
 };
@@ -275,8 +281,19 @@ async function setup(page: Page, authenticated = true) {
         url.searchParams.get("action") === "start"
           ? { id: attemptId }
           : url.searchParams.get("action") === "answer"
-            ? { isCorrect: true }
-            : { score: 100, correctCount: 1, totalQuestions: 1 },
+            ? answerFeedback
+            : {
+                score: 100,
+                correctCount: 1,
+                totalQuestions: 1,
+                review: [
+                  {
+                    questionId: question.id,
+                    studentAnswer: "تقييم المريض",
+                    ...answerFeedback,
+                  },
+                ],
+              },
       );
     if (p === "/api/chat/files")
       return json(
@@ -473,6 +490,7 @@ test("study pack renders all summary fields and records flashcards and quizzes u
   await page.getByRole("button", { name: "تقييم المريض", exact: true }).click();
   await page.getByRole("button", { name: "تأكيد الإجابة وعرض الشرح" }).click();
   await expect(page.getByText("إجابة صحيحة", { exact: true })).toBeVisible();
+  await expect(page.getByText("ابدأ بالتقييم", { exact: true })).toBeVisible();
   expect(
     JSON.parse(requests.find((r) => r.path.endsWith("?action=answer"))!.body),
   ).toEqual({
@@ -603,4 +621,81 @@ test("appearance is available before login and stays synchronized in settings", 
   await page.getByRole("button", { name: "تخصيص المظهر", exact: true }).click();
   await page.getByRole("button", { name: "فاتح", exact: true }).click();
   await expect(page.locator("html")).not.toHaveClass(/dark/);
+});
+
+// ------------------------------------------------------------ release hardening
+
+test("bottom sheet takes focus, traps Tab, closes on Escape and returns focus to its trigger", async ({
+  page,
+}) => {
+  await setup(page, false);
+  const trigger = page.getByRole("button", { name: "تخصيص المظهر", exact: true });
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  const focusInside = () =>
+    page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')));
+  await expect.poll(focusInside).toBe(true);
+  for (let i = 0; i < 14; i++) {
+    await page.keyboard.press(i % 3 === 2 ? "Shift+Tab" : "Tab");
+    expect(await focusInside(), `focus escaped the dialog after ${i + 1} presses`).toBe(true);
+  }
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+});
+
+test("login fields are labelled and the password toggle has a name and state", async ({
+  page,
+}) => {
+  await setup(page, false);
+  await expect(page.getByLabel("البريد الإلكتروني")).toBeVisible();
+  const password = page.getByLabel("كلمة المرور", { exact: true });
+  await expect(password).toHaveAttribute("type", "password");
+  const toggle = page.getByRole("button", { name: "إظهار كلمة المرور" });
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  const box = await toggle.boundingBox();
+  expect(box!.width).toBeGreaterThanOrEqual(44);
+  expect(box!.height).toBeGreaterThanOrEqual(44);
+  await toggle.click();
+  await expect(password).toHaveAttribute("type", "text");
+  await expect(page.getByRole("button", { name: "إخفاء كلمة المرور" })).toHaveAttribute("aria-pressed", "true");
+});
+
+// 180px reproduces a 360px phone at 200% zoom.
+for (const width of [360, 390, 430, 180])
+  test(`no horizontal overflow or clipped actions at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    const { errors } = await setup(page, false);
+    const overflow = () =>
+      page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(await overflow()).toBeLessThanOrEqual(1);
+    await expect(page.getByRole("button", { name: /تسجيل الدخول|دخول/ }).first()).toBeInViewport();
+    await setup(page);
+    await page.getByRole("button", { name: "المكتبة", exact: true }).click();
+    await page.getByRole("button", { name: "حزمة الدراسة", exact: true }).click();
+    await expect(page.getByText("مفهوم الأكسجين", { exact: true })).toBeVisible();
+    expect(await overflow()).toBeLessThanOrEqual(1);
+    expect(errors).toEqual([]);
+  });
+
+test("offline cold start shows the saved shell with a clear notice, or the offline screen without one", async ({
+  page,
+}) => {
+  await setup(page);
+  // A normal online start saves the profile snapshot.
+  await expect(page.getByRole("button", { name: "المكتبة", exact: true })).toBeVisible();
+  await page.unroute("**/api/**");
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "onLine", { configurable: true, get: () => false });
+  });
+  await page.reload();
+  await expect(page.getByRole("status").filter({ hasText: "أنت غير متصل" })).toBeVisible();
+  await expect(page.getByText("قد لا تكون محدثة")).toBeVisible();
+
+  await page.evaluate(() => localStorage.removeItem("CapacitorStorage.nursing_profile_snapshot"));
+  await page.reload();
+  await expect(page.getByText("لا يوجد اتصال بالإنترنت")).toBeVisible();
 });

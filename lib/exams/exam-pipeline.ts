@@ -1,29 +1,16 @@
 import "server-only";
-import {workerDb} from "@/lib/tutor/db";
-import {structureChunks} from "@/lib/tutor/chunking";
+import { workerDb } from "@/lib/tutor/db";
+import { structureChunks } from "@/lib/tutor/chunking";
 import { getPool } from "@/lib/db/pool";
 import { parseExamPage } from "./exam-parser";
 import { verifyExamQuestion } from "./question-verifier";
 import { assignQuestionToCluster } from "./cluster-service";
 import { syncExamTopicStats } from "./analytics-service";
 
-export interface ExamProcessingProgress {
-  examId: string;
-  status: "UPLOADED" | "EXTRACTING" | "PROCESSING" | "VERIFYING" | "READY" | "FAILED";
-  totalQuestions: number;
-  verifiedQuestions: number;
-  needsReviewQuestions: number;
-  conflictQuestions: number;
-  currentStepMessage: string;
-}
-
 /**
  * Full autonomous background processing pipeline for an Exam or Question Bank document.
  */
-export async function processExamDocument(
-  examId: string,
-  onProgress?: (progress: ExamProcessingProgress) => void
-): Promise<void> {
+export async function processExamDocument(examId: string): Promise<void> {
   const pool = getPool();
 
   // 1. Fetch exam and associated document record

@@ -17,14 +17,14 @@ export async function getSubscriptionPageData(userId:string){
 
 export async function getAdminSubscriptionData(adminId:string){
   const db=identityDb(adminId);
-  const [plans,methods,payments,templates,logs,settings,stats,subscriptionSettings]=await Promise.all([
+  const [plans,methods,payments,templates,logs,settings,stats,subscriptionSettings,emailCounts]=await Promise.all([
     db.query<{id:string;slug:string;name:string;price:number;currency:string;duration_days:number;description:string;sort_order:number;active:boolean;recommended:boolean;entitlements:Record<string,unknown>}>(`select p.*,coalesce(jsonb_object_agg(e.feature_key,e.value) filter(where e.feature_key is not null),'{}') entitlements
       from subscription_plans p left join plan_entitlements e on e.plan_id=p.id group by p.id order by p.sort_order,p.name`),
     db.query<{id:string;name:string;type:string;account_holder:string|null;account_number:string|null;iban:string|null;wallet_number:string|null;instructions:string;active:boolean;sort_order:number}>("select * from payment_methods order by sort_order,name"),
     db.query<{id:string;payment_reference:string;user_id:string;student_name:string;email:string;plan_name_snapshot:string;amount:number;currency:string;method_name:string|null;status:string;rejection_reason:string|null;created_at:string}>(`select r.id,r.payment_reference,r.user_id,p.full_name student_name,p.email,r.plan_name_snapshot,r.amount,r.currency,m.name method_name,r.status,r.rejection_reason,r.created_at
       from payment_requests r join profiles p on p.user_id=r.user_id left join payment_methods m on m.id=r.payment_method_id order by (r.status='pending') desc,r.created_at desc limit 200`),
     db.query<{template_key:string;name:string;subject:string;html_body:string;text_body:string;active:boolean}>("select * from email_templates order by name"),
-    db.query<{id:string;recipient:string;template_key:string|null;status:string;retry_count:number;last_error:string|null;created_at:string;sent_at:string|null}>("select id,recipient,template_key,status,retry_count,last_error,created_at,sent_at from email_logs order by created_at desc limit 100"),
+    db.query<{id:string;recipient:string;template_key:string|null;status:string;retry_count:number;last_error:string|null;created_at:string;sent_at:string|null;next_retry_at:string|null;lease_expires_at:string|null}>("select id,recipient,template_key,status,retry_count,last_error,created_at,sent_at,next_retry_at,lease_expires_at from email_logs order by (status in('failed','sending')) desc,created_at desc limit 100"),
     db.query<{host:string|null;port:number;username:string|null;has_password:boolean;encryption:string;from_name:string;from_email:string|null}>("select host,port,username,(password_ciphertext is not null) has_password,encryption,from_name,from_email from email_settings where singleton=true"),
     db.query<{active_subscribers:number;trial_users:number;expiring_soon:number;pending_payments:number;revenue_month:number;revenue_total:number;popular_plan:string|null;conversion_rate:number}>(`select
       (select count(distinct user_id) from user_subscriptions where kind<>'trial' and status not in('cancelled','revoked') and starts_at<=now() and ends_at>now()) active_subscribers,
@@ -36,6 +36,7 @@ export async function getAdminSubscriptionData(adminId:string){
       (select plan_name_snapshot from payment_requests where status='approved' group by plan_name_snapshot order by count(*) desc limit 1) popular_plan,
       (select case when count(*)=0 then 0 else round(100.0*count(*) filter(where exists(select 1 from user_subscriptions s where s.user_id=t.user_id and s.kind<>'trial'))/count(*),1) end from user_trials t) conversion_rate`),
     db.query<{key:string;value:unknown}>("select key,value from settings where key like 'trial_%' or key like 'payment_grace_%'"),
+    db.query<{status:string;count:number}>("select status,count(*)::int count from email_logs group by status"),
   ]);
-  return {plans:plans.rows,methods:methods.rows,payments:payments.rows,templates:templates.rows,logs:logs.rows,emailSettings:settings.rows[0],stats:stats.rows[0],subscriptionSettings:Object.fromEntries(subscriptionSettings.rows.map(row=>[row.key,row.value]))};
+  return {plans:plans.rows,methods:methods.rows,payments:payments.rows,templates:templates.rows,logs:logs.rows,emailCounts:Object.fromEntries(emailCounts.rows.map(row=>[row.status,Number(row.count)])) as Record<string,number>,emailSettings:settings.rows[0],stats:stats.rows[0],subscriptionSettings:Object.fromEntries(subscriptionSettings.rows.map(row=>[row.key,row.value]))};
 }

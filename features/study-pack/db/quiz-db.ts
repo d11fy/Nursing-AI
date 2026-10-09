@@ -2,7 +2,7 @@ import "server-only";
 import { identityDb, withIdentity } from "@/lib/tutor/db";
 import { normalizeTopicIdentity } from "@/lib/learning-progress/formula";
 import { recalculateStudentTopicProgress } from "@/lib/learning-progress/service";
-import type { QuizDifficulty, QuizItem, QuizQuestionItem, StudentMistakeItem } from "../types";
+import type { QuizAnswerFeedback, QuizDifficulty, QuizItem, QuizQuestionItem, StudentMistakeItem } from "../types";
 
 export async function getLatestQuiz(
   studyPackId: string,
@@ -165,12 +165,7 @@ export async function submitQuizAnswer(params: {
   attemptId: string;
   questionId: string;
   studentAnswer: string;
-}): Promise<{
-  isCorrect: boolean;
-  correctAnswer: string;
-  rationale: string;
-  topic: string;
-}> {
+}): Promise<QuizAnswerFeedback> {
   const { userId, attemptId, questionId, studentAnswer } = params;
 
   return withIdentity(userId, async (client) => {
@@ -196,12 +191,23 @@ export async function submitQuizAnswer(params: {
        JOIN study_pack_quizzes sq ON sq.id = a.quiz_id
        JOIN study_packs sp ON sp.id = sq.study_pack_id
        JOIN study_pack_questions q ON q.quiz_id = sq.id
-       WHERE a.id = $1 AND a.user_id = $2 AND q.id = $3`,
+       WHERE a.id = $1 AND a.user_id = $2 AND q.id = $3
+       FOR UPDATE OF a`,
       [attemptId, userId, questionId]
     );
 
     const info = infoRes.rows[0];
     if (!info) throw new Error("بيانات السؤال أو المحاولة غير صحيحة");
+
+    // One recorded answer per question and attempt. A retried request returns
+    // the first result instead of adding answers, mistakes or learning events.
+    const previous = (await client.query<{ is_correct: boolean }>(
+      "SELECT is_correct FROM student_quiz_answers WHERE attempt_id=$1 AND question_id=$2 ORDER BY answered_at LIMIT 1",
+      [attemptId, questionId]
+    )).rows[0];
+    if (previous) {
+      return { isCorrect: previous.is_correct, correctAnswer: info.correct_answer, rationale: info.rationale, topic: info.topic };
+    }
 
     // Standardize comparison (trim and lowercase for true/false or exact match for mcq)
     const isCorrect =
@@ -293,6 +299,7 @@ export async function completeQuizAttempt(
   correctCount: number;
   score: number;
   missedTopics: string[];
+  review: Array<{ questionId: string; studentAnswer: string | null; isCorrect: boolean | null; correctAnswer: string; rationale: string }>;
 }> {
   return withIdentity(userId, async (client) => {
     // Get all answers for this attempt
@@ -332,12 +339,26 @@ export async function completeQuizAttempt(
         reason: "quiz_completed", recordHistory: true });
     }
 
+    // After completion every question in the quiz may be reviewed.
+    const review = (await client.query<{ id: string; student_answer: string | null; is_correct: boolean | null; correct_answer: string; rationale: string }>(
+      `SELECT q.id,ans.student_answer,ans.is_correct,q.correct_answer,q.rationale
+       FROM student_quiz_attempts a
+       JOIN study_pack_questions q ON q.quiz_id=a.quiz_id
+       LEFT JOIN LATERAL (SELECT student_answer,is_correct FROM student_quiz_answers x
+         WHERE x.attempt_id=a.id AND x.question_id=q.id ORDER BY answered_at LIMIT 1) ans ON true
+       WHERE a.id=$1 AND a.user_id=$2
+       ORDER BY q.sort_order,q.id`,
+      [attemptId, userId]
+    )).rows.map((row) => ({ questionId: row.id, studentAnswer: row.student_answer, isCorrect: row.is_correct,
+      correctAnswer: row.correct_answer, rationale: row.rationale }));
+
     return {
       attemptId,
       totalQuestions,
       correctCount,
       score,
       missedTopics,
+      review,
     };
   });
 }

@@ -3,15 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  FileCheck2,
   RefreshCw,
   Search,
-  ExternalLink,
   ChevronLeft,
-  AlertTriangle,
-  CheckCircle2,
-  Clock,
-  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
