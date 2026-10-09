@@ -50,6 +50,35 @@ export function subscribeNetworkStatus(
   };
 }
 
+/**
+ * Fires when the app comes back to the foreground, the screen is unlocked or the network returns
+ * (Wi-Fi to mobile data included). The chat uses it to re-check the server instead of trusting a stale connection.
+ */
+export function subscribeAppResume(callback: () => void): () => void {
+  let disposed = false;
+  const cleanups: Array<() => void> = [];
+  const onVisible = () => {
+    if (document.visibilityState === "visible") callback();
+  };
+  document.addEventListener("visibilitychange", onVisible);
+  cleanups.push(() => document.removeEventListener("visibilitychange", onVisible));
+  if (isNative) {
+    CapApp.addListener("appStateChange", (state) => {
+      if (state.isActive) callback();
+    }).then((handle) => {
+      if (disposed) handle.remove();
+      else cleanups.push(() => handle.remove());
+    });
+  }
+  cleanups.push(subscribeNetworkStatus((connected) => {
+    if (connected) callback();
+  }));
+  return () => {
+    disposed = true;
+    cleanups.forEach((cleanup) => cleanup());
+  };
+}
+
 export async function openExternalUrl(url: string): Promise<void> {
   try {
     if (isNative) {

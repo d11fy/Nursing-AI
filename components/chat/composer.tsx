@@ -16,6 +16,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { ActiveSourceChips, LibraryPicker } from "@/components/chat/library-picker";
 import type { ActiveLibrarySource } from "@/lib/library-types";
+import { ChatFileError, waitForChatFile, type ChatFileUpload } from "@/lib/chat/attachments";
 
 export interface PendingImage {
   path: string;
@@ -57,6 +58,7 @@ export function Composer({
   activeSources,
   onActiveSourcesChange,
   onConversationCreated,
+  onFileReady,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -73,8 +75,12 @@ export function Composer({
   activeSources: ActiveLibrarySource[];
   onActiveSourcesChange: (sources: ActiveLibrarySource[]) => void;
   onConversationCreated: (conversationId: string) => void;
+  /** The uploaded file finished preparation (the chat refreshes its book/chapter list). */
+  onFileReady?: () => void;
 }) {
   const [uploadingKind, setUploadingKind] = useState<"image" | "file" | null>(null);
+  const [fileStatus, setFileStatus] = useState("");
+  const [fileFailure, setFileFailure] = useState<{ lectureId: string; conversationId: string; message: string; file: File } | null>(null);
   const [subjectPickerOpen, setSubjectPickerOpen] = useState(false);
   const [selectedSubjectId, setSelectedSubjectId] = useState(subjectId ?? "");
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -119,6 +125,56 @@ export function Composer({
     fileInputRef.current?.click();
   }
 
+  /** uploading -> processing -> ready | failed. The file cannot be used with the AI before it is ready. */
+  async function prepareFile(upload: ChatFileUpload, file: File) {
+    try {
+      const ready = await waitForChatFile(
+        upload,
+        async (cid, lectureId) => {
+          const response = await fetch(`/api/chat/files?${new URLSearchParams({ conversationId: cid, lectureId })}`, { cache: "no-store" });
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.error ?? "تعذرت معالجة الملف");
+          return body;
+        },
+        { onStatus: (_status, phase) => setFileStatus(phase === "uploading" ? "جارٍ رفع الملف..." : "جارٍ تجهيز الملف للدراسة...") },
+      );
+      onImageChange({
+        path: "",
+        previewUrl: "",
+        name: file.name,
+        size: file.size,
+        kind: "file",
+        conversationId: ready.conversationId,
+        lectureId: ready.lectureId,
+        attachmentId: ready.attachmentId,
+      });
+      onFileReady?.();
+      if (ready.chapterCount && ready.chapterCount > 1) toast.success(`الملف جاهز للدراسة (${ready.chapterCount} فصول)`);
+    } catch (error) {
+      if (error instanceof ChatFileError && error.retryable && error.code !== "FILE_PROCESSING")
+        setFileFailure({ lectureId: error.lectureId, conversationId: upload.conversationId, message: error.message, file });
+      else toast.error(error instanceof Error ? error.message : "تعذر تجهيز الملف");
+    }
+  }
+
+  async function retryFile() {
+    if (!fileFailure) return;
+    const failure = fileFailure;
+    setFileFailure(null);
+    setUploadingKind("file");
+    setFileStatus("جارٍ تجهيز الملف للدراسة...");
+    try {
+      const response = await fetch(`/api/lectures/${failure.lectureId}/retry`, { method: "POST" });
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error ?? "تعذرت إعادة المحاولة");
+      await prepareFile({ conversationId: failure.conversationId, lectureId: failure.lectureId, status: "processing" }, failure.file);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "تعذرت إعادة المحاولة");
+    } finally {
+      setUploadingKind(null);
+      setFileStatus("");
+    }
+  }
+
   async function handleFileSelect(file: File, kind: "image" | "file") {
     if (kind === "file") {
       const extension = file.name.split(".").pop()?.toLowerCase();
@@ -131,36 +187,22 @@ export function Composer({
         return;
       }
       setUploadingKind("file");
+      setFileFailure(null);
+      setFileStatus("جارٍ رفع الملف...");
       try {
         const form = new FormData();
         form.append("file", file);
         if (conversationId) form.append("conversationId", conversationId);
         if (uploadSubjectRef.current) form.append("subjectId", uploadSubjectRef.current);
         const response = await fetch("/api/chat/files", { method: "POST", body: form });
-        let data = await response.json();
+        const data = await response.json();
         if (!response.ok) throw new Error(data.error ?? "تعذر رفع الملف");
-        const cid = data.conversationId;
-        const lecture = data.lectureId;
-        for (let attempt = 0; data.status !== "ready" && attempt < 300; attempt++) {
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-          const status=await fetch(`/api/chat/files?conversationId=${cid}&lectureId=${lecture}`);data=await status.json();
-          if (!status.ok || data.status === "failed") throw new Error(data.error ?? "تعذرت معالجة الملف");
-        }
-        if (data.status !== "ready") throw new Error("الملف ما زال يعالج؛ افتحه من صفحة المادة بعد قليل");
-        onImageChange({
-          path: "",
-          previewUrl: "",
-          name: file.name,
-          size: file.size,
-          kind: "file",
-          conversationId: cid,
-          lectureId: lecture,
-          attachmentId: data.attachmentId,
-        });
+        await prepareFile({ conversationId: data.conversationId, lectureId: data.lectureId, status: data.status ?? "processing" }, file);
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "تعذر رفع الملف");
       } finally {
         setUploadingKind(null);
+        setFileStatus("");
       }
       return;
     }
@@ -198,6 +240,18 @@ export function Composer({
   return (
     <div className="rounded-2xl border border-border bg-card p-2.5 shadow-[0_10px_30px_rgb(16_42_58/0.08)] sm:p-3">
       <ActiveSourceChips conversationId={conversationId??null} sources={activeSources} onChange={onActiveSourcesChange} disabled={isGenerating}/>
+      {fileStatus && (
+        <p role="status" aria-live="polite" className="mb-2 flex items-center gap-2 text-xs font-medium text-primary">
+          <Loader2 className="size-4 animate-spin" />{fileStatus}
+        </p>
+      )}
+      {fileFailure && (
+        <div role="alert" className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
+          <span>{fileFailure.message}</span>
+          <Button type="button" size="sm" variant="outline" onClick={() => void retryFile()}>إعادة المحاولة</Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setFileFailure(null)}>إغلاق</Button>
+        </div>
+      )}
       {pendingImage && (
         <div className="mb-2 flex items-center gap-3">
           <div className="relative inline-block shrink-0">

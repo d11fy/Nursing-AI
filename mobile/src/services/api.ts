@@ -1,5 +1,6 @@
 import { APP_VERSION_CODE } from "../config/version";
-import { consumeChatResponse } from "../../../lib/chat/stream";
+import type { ChatTransport } from "../../../lib/chat/turn";
+import type { GenerationSnapshot } from "../../../lib/chat/recovery";
 import { Preferences } from "@capacitor/preferences";
 import {
   getSecureItem,
@@ -188,52 +189,39 @@ export async function apiUpload<T = any>(
   return data as T;
 }
 
-export async function apiStream(
-  endpoint: string,
-  body: any,
-  callbacks: {
-    onConversationId?: (id: string) => void;
-    onChunk: (chunk: string) => void;
-    onComplete?: (id: string | null) => void;
-    onMessageIds?: (assistantId: string, userId: string) => void;
-    onError?: (err: Error) => void;
-  },
-  signal?: AbortSignal,
-): Promise<void> {
+async function authHeaders(extra: Record<string, string> = {}) {
   const { sessionToken, deviceToken } = await getTokens();
-  const url = await buildApiUrl(endpoint);
-
-  const headers = new Headers({
-    "Content-Type": "application/json",
-    Accept: "text/event-stream",
-  });
+  const headers = new Headers({ "X-App-Version-Code": String(APP_VERSION_CODE), ...extra });
   if (sessionToken) headers.set("Authorization", `Bearer ${sessionToken}`);
   if (deviceToken) headers.set("X-Device-Token", deviceToken);
-
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal,
-    });
-
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      if (res.status === 401)
-        await expireRejectedSession(Boolean(sessionToken));
-      throw new Error(data.error || "تعذر إكمال المحادثة، جرب ثانية.");
-    }
-
-    await consumeChatResponse(res, {
-      onConversationId: (id) => callbacks.onConversationId?.(id),
-      onChunk: callbacks.onChunk,
-      onMessageIds: callbacks.onMessageIds,
-      onComplete: (id) => callbacks.onComplete?.(id),
-    });
-  } catch (err: any) {
-    if (err.name !== "AbortError" && callbacks.onError) {
-      callbacks.onError(err);
-    }
-  }
+  return { headers, sessionToken };
 }
+
+/**
+ * Chat transport for lib/chat/turn.ts. Every question carries a request id (also sent as Idempotency-Key):
+ * if the connection drops, `status` asks the server what happened and re-sending is safe.
+ */
+export const chatTransport: ChatTransport = {
+  async start(body, signal) {
+    const { headers, sessionToken } = await authHeaders({
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+      "Idempotency-Key": String(body.requestId),
+    });
+    const res = await fetch(await buildApiUrl("/api/chat"), { method: "POST", headers, body: JSON.stringify(body), signal });
+    if (res.status === 401) await expireRejectedSession(Boolean(sessionToken));
+    return res;
+  },
+  async status(requestId, signal) {
+    const { headers, sessionToken } = await authHeaders();
+    const res = await fetch(await buildApiUrl(`/api/chat/generations/${requestId}`), { headers, signal, credentials: "omit" });
+    if (res.status === 401) await expireRejectedSession(Boolean(sessionToken));
+    const data = await res.json().catch(() => null);
+    if (res.status === 404 && data?.status === "not_found") return { status: "not_found" };
+    if (!res.ok || !data) throw new ApiError(data?.error || `خطأ (${res.status})`, res.status, data);
+    return data as GenerationSnapshot;
+  },
+  async cancel(requestId) {
+    await apiFetch(`/api/chat/generations/${requestId}`, { method: "DELETE" }).catch(() => undefined);
+  },
+};

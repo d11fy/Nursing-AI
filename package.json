@@ -14,6 +14,7 @@
     "db:migrate": "node scripts/migrate.mjs",
     "progress:backfill": "node --conditions=react-server --import tsx scripts/backfill-learning-progress.ts",
     "knowledge:reindex": "node --conditions=react-server --import tsx scripts/reindex-knowledge.ts",
+    "knowledge:restructure": "node --conditions=react-server --import tsx scripts/restructure-documents.ts",
     "evaluate:retrieval": "node --conditions=react-server --import tsx scripts/evaluate-retrieval.ts",
     "admin:promote": "node scripts/create-admin.mjs",
     "test": "node --conditions=react-server --experimental-test-module-mocks --no-warnings=ExperimentalWarning --import tsx --test tests/*.test.ts",

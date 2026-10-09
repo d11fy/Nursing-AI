@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { MoreVertical, RefreshCw, Trash2 } from "lucide-react";
+import { ListTree, MoreVertical, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,6 +44,22 @@ export function DocumentRowActions({ documentId }: { documentId: string }) {
     });
   }
 
+  function restructure() {
+    startTransition(async () => {
+      const res = await fetch("/api/knowledge/restructure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentId, force: true }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok) {
+        const chapters = data?.result?.chapterCount;
+        toast.success(typeof chapters === "number" ? `أُعيد بناء بنية الكتاب (${chapters} فصول)` : "أُعيد بناء بنية الكتاب");
+        router.refresh();
+      } else toast.error(data?.error || "تعذرت إعادة بناء بنية الكتاب");
+    });
+  }
+
   function deleteDocument() {
     startTransition(async () => {
       const res = await fetch(`/api/knowledge/${documentId}`, { method: "DELETE" });
@@ -70,6 +86,10 @@ export function DocumentRowActions({ documentId }: { documentId: string }) {
           <DropdownMenuItem onClick={reprocess}>
             <RefreshCw className="size-4" />
             إعادة المعالجة
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={restructure}>
+            <ListTree className="size-4" />
+            إعادة بناء الفصول
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => setConfirmDelete(true)}
