@@ -8,7 +8,7 @@ import { getPool } from "@/lib/db/pool";
 import { getAIConfig } from "@/lib/ai/config.mjs";
 import { needsOcr, transcribePage } from "@/lib/ai/document-ocr";
 import type { PoolClient } from "pg";
-import { slideText, worksheetText, xmlTextNodes } from "@/lib/document-text";
+import { decodeTextFile, slideText, worksheetText, xmlTextNodes } from "@/lib/document-text";
 
 const EMBEDDING_BATCH_SIZE = 32;
 
@@ -16,6 +16,35 @@ export interface ExtractedPage {
   pageNumber: number | null;
   text: string;
   ocr?: boolean;
+}
+
+/** Slide part names in presentation order: ppt/presentation.xml lists them, the file names do not. */
+async function orderedSlideFiles(zip: JSZip): Promise<string[]> {
+  const byNumber = Object.keys(zip.files)
+    .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+    .sort((a, b) => Number(a.match(/slide(\d+)\.xml/)![1]) - Number(b.match(/slide(\d+)\.xml/)![1]));
+  const presentation = await zip.file("ppt/presentation.xml")?.async("text");
+  const relationships = await zip.file("ppt/_rels/presentation.xml.rels")?.async("text");
+  if (!presentation || !relationships) return byNumber;
+  const targets = new Map<string, string>();
+  for (const tag of relationships.matchAll(/<Relationship\b[^>]*>/g)) {
+    const id = tag[0].match(/\bId="([^"]+)"/)?.[1], target = tag[0].match(/\bTarget="([^"]+)"/)?.[1];
+    if (id && target) targets.set(id, target.startsWith("/") ? target.slice(1) : `ppt/${target.replace(/^\.\//, "")}`);
+  }
+  const ordered = [...presentation.matchAll(/<p:sldId\b[^>]*\br:id="([^"]+)"/g)].map((match) => targets.get(match[1])).filter((name): name is string => Boolean(name && zip.file(name)));
+  // Only trust the declared order when it accounts for every slide; otherwise nothing may be skipped.
+  return ordered.length === byNumber.length ? ordered : byNumber;
+}
+
+/** Speaker notes of one slide, found through the slide's own relationships (not by matching numbers). */
+async function slideNotes(zip: JSZip, slideFile: string | undefined): Promise<string> {
+  if (!slideFile) return "";
+  const rels = await zip.file(slideFile.replace("ppt/slides/", "ppt/slides/_rels/") + ".rels")?.async("text");
+  const target = rels?.match(/<Relationship\b[^>]*Type="[^"]*\/notesSlide"[^>]*Target="([^"]+)"/)?.[1]
+    ?? rels?.match(/<Relationship\b[^>]*Target="([^"]+)"[^>]*Type="[^"]*\/notesSlide"/)?.[1];
+  if (!target) return "";
+  const notes = await zip.file(target.replace(/^\.\.\//, "ppt/"))?.async("text");
+  return notes ? slideText(notes) : "";
 }
 
 export async function extractPagesFromFile(
@@ -61,20 +90,22 @@ export async function extractPagesFromFile(
     const xml = await zip.file('word/document.xml')?.async('text');
     if (!xml) throw new Error('DOCX has no document body');
     const { docxText } = await import('@/lib/document-text');
-    return [{ pageNumber:null, text:docxText(xml) }];
+    return [{ pageNumber:null, text:docxText(xml, await zip.file('word/styles.xml')?.async('text')) }];
   }
 
   if (ext === "pptx") {
       const zip = await JSZip.loadAsync(buffer);
-      const slideFiles = Object.keys(zip.files)
-        .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
-        .sort((a, b) => Number(a.match(/slide(\d+)\.xml/)![1]) - Number(b.match(/slide(\d+)\.xml/)![1]));
+      // Slides are read in presentation order (not file-name order) so page numbers match what the student sees.
+      const slideFiles = await orderedSlideFiles(zip);
 
       const {renderSlides}=await import('@/lib/tutor/slide-renderer');
       const rendered=await renderSlides(buffer);
       if(rendered){
         const extracted=await extractPagesFromFile(rendered,'slides.pdf',userId);
-        for(const page of extracted){const notes=await zip.file(`ppt/notesSlides/notesSlide${page.pageNumber}.xml`)?.async('text');if(notes)page.text+='\n\nSpeaker notes:\n'+slideText(notes);}
+        for(const page of extracted){
+          const notes=await slideNotes(zip,slideFiles[(page.pageNumber??0)-1]);
+          if(notes)page.text+='\n\nSpeaker notes:\n'+notes;
+        }
         return extracted;
       }
       const hasVisuals=Object.keys(zip.files).some(name=>/^ppt\/(?:media|charts|diagrams)\//.test(name));
@@ -84,9 +115,9 @@ export async function extractPagesFromFile(
       for (let i = 0; i < slideFiles.length; i++) {
         const xml = await zip.files[slideFiles[i]].async("text");
         let text = slideText(xml);
-        const notes = await zip.file(`ppt/notesSlides/notesSlide${i+1}.xml`)?.async('text');
-        if (notes) text += '\n\nSpeaker notes:\n' + slideText(notes);
-        const rels = await zip.file(`ppt/slides/_rels/slide${i+1}.xml.rels`)?.async('text') ?? '';
+        const notes = await slideNotes(zip, slideFiles[i]);
+        if (notes) text += '\n\nSpeaker notes:\n' + notes;
+        const rels = await zip.file(slideFiles[i].replace('ppt/slides/', 'ppt/slides/_rels/') + '.rels')?.async('text') ?? '';
         for (const relationship of rels.matchAll(/<Relationship\b[^>]*Type="[^"]*\/image"[^>]*Target="([^"]+)"[^>]*\/?\s*>/g)) {
           const target = relationship[1].replace(/^\.\.\//,'ppt/');
           const image = await zip.file(target)?.async('nodebuffer');
@@ -101,7 +132,7 @@ export async function extractPagesFromFile(
   }
 
   if (["txt", "md", "csv", "json"].includes(ext || "")) {
-    return [{ pageNumber: null, text: buffer.toString("utf-8").trim() }];
+    return [{ pageNumber: null, text: decodeTextFile(buffer).trim() }];
   }
 
   if (ext === "xlsx") {

@@ -19,6 +19,15 @@ export interface KnowledgeChunk {
   attachmentOrdinal?: number;
   sectionIndex?: number | null;
   chunkIndex?: number | null;
+  /** Book structure: used for source labels and for scoped retrieval traces. */
+  chapterIndex?: number | null;
+  chapterNumber?: number | null;
+  chapterTitle?: string | null;
+  sectionTitle?: string | null;
+  subsectionTitle?: string | null;
+  pageEnd?: number | null;
+  /** Every stored chunk merged into this evidence item (chapter coverage groups consecutive chunks). */
+  chunkIds?: string[];
 }
 
 export interface GenerateTextParams {
