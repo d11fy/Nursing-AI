@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from "react";
 import { Sparkles, Mail, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { openSupport } from "../services/support";
 import { startGoogleLogin } from "../services/googleAuth";
-import { ApiError, apiFetch, DEFAULT_SERVER_URL, getTokens, saveTokens } from "../services/api";
+import { ApiError, apiFetch } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useNavigation } from "../context/NavigationContext";
 
 export function LoginScreen() {
-  const { login, refreshAuth } = useAuth();
+  const { login } = useAuth();
   const { navigate } = useNavigation();
 
   const [email, setEmail] = useState("");
   const [secondFactor,setSecondFactor]=useState("");
-  const [transferOpen,setTransferOpen]=useState(false),[transferCode,setTransferCode]=useState("");
+  const [deviceConflict,setDeviceConflict]=useState(false);
   const [needsMfa,setNeedsMfa]=useState(false);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -67,6 +68,7 @@ export function LoginScreen() {
       await login(email.trim(), password,secondFactor);
     } catch (err: unknown) {
       if(err instanceof ApiError && err.status===428) setNeedsMfa(true);
+      if(err instanceof ApiError && err.status===409 && err.data?.code==="DEVICE_CONFLICT")setDeviceConflict(true);
       setError(
         err instanceof Error
           ? err.message
@@ -101,7 +103,7 @@ export function LoginScreen() {
           </div>
         )}
 
-        <a href={`${DEFAULT_SERVER_URL}/support`} target="_blank" rel="noreferrer" className="block min-h-11 text-primary underline">مساعدة في تسجيل الدخول</a>
+        <button onClick={()=>void openSupport("مرحبًا، أواجه مشكلة في تسجيل الدخول إلى Nursing AI.")} className="block min-h-11 text-primary underline">طلب مساعدة عبر واتساب</button>
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           {needsMfa&&<label className="block">رمز المصادقة أو الاسترداد<input className="w-full h-12 rounded-xl border p-3" value={secondFactor} onChange={e=>setSecondFactor(e.target.value)} autoComplete="one-time-code" maxLength={32} dir="ltr" required /></label>}
@@ -179,12 +181,8 @@ export function LoginScreen() {
             نسيت كلمة المرور؟
           </button>
         </div>
-        <button className="min-h-12 text-primary underline" onClick={()=>setTransferOpen(!transferOpen)}>نقل حسابي من جهاز آخر</button>
-        {transferOpen&&<section className="surface space-y-3"><p className="text-sm">بعد التأكيد سيخرج الجهاز السابق من الحساب. أدخل البريد وكلمة المرور أعلاه ثم اطلب الرمز.</p>
-          <button className="min-h-12 text-primary" disabled={loading} onClick={async()=>{setLoading(true);try{const result=await apiFetch("/api/auth/device-transfer",{method:"POST",body:JSON.stringify({action:"request",email,password})});setError(result.message);}catch(e){setError(e instanceof Error?e.message:"تعذر إرسال الرمز");}finally{setLoading(false);}}}>إرسال رمز النقل إلى بريدي</button>
-          <label className="block">رمز النقل<input className="w-full min-h-12 rounded-xl border p-3" value={transferCode} onChange={e=>setTransferCode(e.target.value.trim())} dir="ltr" maxLength={64} autoComplete="one-time-code" /></label>
-          <button className="min-h-12 text-primary" disabled={loading||transferCode.length!==64} onClick={async()=>{setLoading(true);try{const {deviceToken}=await getTokens();const result=await apiFetch("/api/auth/device-transfer",{method:"POST",body:JSON.stringify({action:"confirm",token:transferCode,deviceToken:deviceToken||undefined})});await saveTokens(result.sessionToken,result.deviceToken);await refreshAuth();}catch(e){setError(e instanceof Error?e.message:"تعذر نقل الجهاز");}finally{setLoading(false);}}}>تأكيد النقل إلى هذا الهاتف</button>
-        </section>}
+        {deviceConflict&&<div className="surface space-y-3" role="alert"><p className="font-bold">هذا الحساب مستخدم حاليًا على جهاز آخر.</p><button className="block min-h-12 text-primary underline" onClick={()=>navigate('device-transfer',{email})}>نقل الحساب إلى هذا الجهاز</button><button className="block min-h-12 text-primary underline" onClick={()=>void openSupport("مرحبًا، أواجه تعارض جهاز في Nursing AI.")}>طلب مساعدة</button></div>}
+        {!deviceConflict&&<button className="min-h-12 text-primary underline" onClick={()=>navigate('device-transfer',{email})}>نقل حسابي من جهاز آخر</button>}
         {/* Link to Register */}
         <div className="text-center pt-2">
           <p className="text-xs text-slate-500">

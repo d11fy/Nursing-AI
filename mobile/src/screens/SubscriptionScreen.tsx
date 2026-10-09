@@ -1,3 +1,4 @@
+import { openSupport } from "../services/support";
 import React, { useEffect, useState } from "react";
 import { CreditCard, RefreshCw, CheckCircle2 } from "lucide-react";
 import { apiFetch, apiUpload } from "../services/api";
@@ -120,6 +121,7 @@ export function SubscriptionScreen() {
     );
   return (
     <div className="space-y-5 pb-nav">
+      <button className="min-h-12 w-full rounded-2xl border text-primary font-bold" onClick={()=>void openSupport("مرحبًا، أحتاج مساعدة في الاشتراك أو الدفع في Nursing AI.")}>طلب مساعدة بخصوص الاشتراك والدفع</button>
       {error && (
         <div role="alert" className="surface text-red-600 space-y-2">
           <p>{error}</p>

@@ -1,3 +1,4 @@
+import { getSupportWhatsapp,whatsappUrl } from "@/lib/support-contact";
 import Link from "next/link";
 import { BrandMark } from "@/components/brand/brand-mark";
 
@@ -16,7 +17,8 @@ const columns = [
   },
 ] as const;
 
-export function LandingFooter() {
+export async function LandingFooter() {
+  const number=await getSupportWhatsapp();
   return (
     <footer className="border-t border-border bg-card">
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.3fr_2fr]">
@@ -24,6 +26,7 @@ export function LandingFooter() {
         <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
           {columns.map((column) => <div key={column.title}><h2 className="text-sm font-black text-foreground">{column.title}</h2><ul className="mt-4 space-y-3">{column.links.map(([label, href]) => <li key={href}><Link href={href} className="text-sm text-muted-foreground transition-colors hover:text-primary">{label}</Link></li>)}</ul></div>)}
         </div>
+        <a href={whatsappUrl(number)} className="block min-h-11 text-primary underline">واتساب الدعم: {number}</a>
       </div>
       <div className="border-t border-border px-4 py-5 text-center text-xs text-muted-foreground">© {new Date().getFullYear()} Nursing AI. جميع الحقوق محفوظة.</div>
     </footer>

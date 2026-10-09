@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   RotateCw,
   CheckCircle2,
@@ -41,8 +41,13 @@ export function FlashcardsViewer({
   const [isFlipped, setIsFlipped] = useState(false);
   const [error, setError] = useState("");
   const [submittingRating, setSubmittingRating] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
-  const activeCards=dueOnly?cards.filter(c=>!c.next_review_at||new Date(c.next_review_at).getTime()<=Date.now()):cards;
+  const activeCards=dueOnly?cards.filter(c=>!c.next_review_at||new Date(c.next_review_at).getTime()<=now):cards;
   const currentCard = activeCards[currentIndex];
 
   const handleFlip = () => {

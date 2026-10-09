@@ -5,6 +5,7 @@ import { getAcademicYears } from "@/lib/subjects";
 import { StudyPreferences } from "@/components/dashboard/study-preferences";
 import { PageHeader } from "@/components/ui/page-header";
 import { UserRound } from "lucide-react";
+import Link from "next/link";
 
 export default async function ProfilePage() {
   const profile = await requireProfile();
@@ -23,6 +24,7 @@ export default async function ProfilePage() {
         </CardContent>
       </Card>
       <Card><CardHeader><CardTitle className="text-base">تخصيص تجربة الدراسة</CardTitle></CardHeader><CardContent><StudyPreferences /></CardContent></Card>
+      <Link href="/support" className="inline-flex min-h-11 items-center text-primary underline">طلب مساعدة</Link>
     </div>
   );
 }

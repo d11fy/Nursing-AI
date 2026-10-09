@@ -7,7 +7,7 @@ import { answerFeedback, completionReview } from "../mobile/src/services/quiz";
 import { parseProfileSnapshot } from "../mobile/src/services/profileSnapshot";
 
 test("update check accepts only a well-formed release", () => {
-  const good = { latest_version: "1.2.0", latest_version_code: 5, apk_url: "/api/download/apk", release_notes: "n", force_update: true, published_at: "x", available: true };
+  const good = { latest_version: "1.2.0", latest_version_code: 5, minimum_supported_version_code: 5, apk_url: "/api/download/apk", release_notes: "n", force_update: true, published_at: "x", available: true };
   assert.deepEqual(parseVersionResponse(good), { ...good });
   for (const bad of [null, "1.2.0", {}, { ...good, latest_version: "latest" }, { ...good, latest_version_code: "5" },
     { ...good, latest_version_code: 0 }, { ...good, apk_url: "" }, { ...good, latest_version_code: 5.5 }])

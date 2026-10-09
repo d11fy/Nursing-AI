@@ -296,7 +296,7 @@ test("study-pack quiz: generate and reload carry no keys; answering reveals; com
 test("admin reset changes the enforced counter, keeps history and is audited", async () => {
   const { reserveUsage, getRemainingUsage } = await import("../lib/subscriptions/service");
   await setTrialLimit("trial_ai_questions_daily", 10);
-  for (let i = 0; i < 10; i++) await reserveUsage(racer, "ai_questions_daily");
+  for (let i = 0; i < 10; i++) await reserveUsage(racer, "ai_questions_daily",i===0?{idempotencyKey:"reset-old-request-001"}:{});
   await assert.rejects(reserveUsage(racer, "ai_questions_daily"), /استخدمت الحد/);
   await db.query("insert into usage_logs(user_id,type,model,input_tokens,output_tokens,estimated_cost) values($1,'chat','m',1,1,0)", [racer]);
   const historyBefore = await count("usage_logs", "user_id=$1", [racer]);
@@ -311,7 +311,18 @@ test("admin reset changes the enforced counter, keeps history and is audited", a
   assert.equal(result.error, undefined);
 
   assert.deepEqual(await getRemainingUsage(racer, "ai_questions_daily"), { used: 0, limit: 10, remaining: 10, scope: "daily" });
-  await reserveUsage(racer, "ai_questions_daily");
+  const {getStudentUsageAction}=await import("../app/admin/actions");
+  assert.equal((await getStudentUsageAction(racer)).find(row=>row.key==="ai_questions_daily")?.used,0,"admin dialog fetches fresh enforced counter");
+  signInAs(sessions[racer]);
+  const {GET:me}=await import("../app/api/auth/me/route");
+  const meResponse=await me();
+  assert.equal((await meResponse.json()).aiUsage.used,0,"student entitlement endpoint returns reset value");
+  assert.match(meResponse.headers.get("Cache-Control")??"",/no-store/);
+  const {GET:subscription}=await import("../app/api/subscription/route");
+  assert.equal((await (await subscription()).json()).usage.find((row:{key:string})=>row.key==="ai_questions_daily").used,0,"dashboard source returns reset value");
+  const retried=await reserveUsage(racer,"ai_questions_daily",{idempotencyKey:"reset-old-request-001"});
+  assert.equal(retried.replayed,false,"old idempotency keys cannot replay after an admin reset");
+  assert.equal((await me().then(r=>r.json())).aiUsage.used,1,"the next metered request succeeds and counts once");
   assert.equal(await count("usage_logs", "user_id=$1", [racer]), historyBefore, "usage history is not deleted");
   const audit = (await db.query<{ admin_id: string; target_user_id: string; metadata: { reason: string; changes: Array<{ previousValue: number; newValue: number; feature: string }> }; created_at: string }>(
     "select admin_id,target_user_id,metadata,created_at from admin_audit_logs where event_type='USAGE_ADJUSTED' order by created_at desc limit 1")).rows[0];

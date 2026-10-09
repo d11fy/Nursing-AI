@@ -15,6 +15,7 @@ import { z } from "zod";
 export interface AppVersionInfo {
   latest_version: string;
   latest_version_code: number;
+  minimum_supported_version_code: number;
   apk_url: string;
   release_notes: string;
   force_update: boolean;
@@ -47,6 +48,7 @@ export const STABLE_APK_PATH = path.join(process.cwd(), "public", "downloads", "
 export const DEFAULT_APP_VERSION: AppVersionInfo = {
   latest_version: "1.2.0",
   latest_version_code: 5,
+  minimum_supported_version_code: 5,
   apk_url: "/api/download/apk",
   release_notes: "تطبيق Nursing AI الجديد بواجهة مصممة للهاتف: المكتبة وحزم الدراسة والبطاقات والاختبارات والأخطاء والتقدم.",
   force_update: false,
@@ -71,6 +73,7 @@ const officialUrl = z.string().min(1).refine((value) => {
 export const appVersionSchema = z.object({
   latest_version: z.string().regex(/^\d+\.\d+\.\d+$/),
   latest_version_code: z.number().int().positive(),
+  minimum_supported_version_code: z.number().int().positive(),
   apk_url: officialUrl,
   release_notes: z.string().max(4000),
   force_update: z.boolean(),

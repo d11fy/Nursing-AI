@@ -45,7 +45,7 @@ test("a message held by a dead worker is reclaimed after its lease and sent once
   const result = await processEmailQueue(10, { transport: recorder(sent) });
   assert.equal(result.sent, 1);
   assert.deepEqual(sent.map((mail) => mail.to), ["crash@example.test"]);
-  assert.equal(sent[0].messageId, `<${id}@nursing-ai.mail>`, "a stable Message-ID lets servers drop a duplicate");
+  assert.equal(sent[0].messageId, `<${id}@nursing.alisohail.tech>`, "a stable Message-ID lets servers drop a duplicate");
   const final = await row(id);
   assert.equal(final.status, "sent");
   assert.equal(final.retry_count, 2, "the lost attempt is counted");
@@ -109,9 +109,11 @@ test("retries back off and stop after the attempt cap; admin requeue starts a ne
 test("every template is fully rendered by the variables its sender supplies", async () => {
   const SENDERS: Record<string, string[]> = {
     welcome: ["student_name"],
-    device_transfer: ["transfer_code"],
+    device_transfer: ["transfer_code", "student_name"],
     password_reset: ["reset_url"],
     device_reset: ["student_name"],
+    support_received: [],
+    security_alert: [],
     payment_received: ["student_name", "plan_name", "amount", "currency", "payment_reference"],
     payment_approved: ["student_name", "plan_name", "amount", "currency", "payment_reference", "expiry_date", "rejection_reason"],
     payment_rejected: ["student_name", "plan_name", "amount", "currency", "payment_reference", "expiry_date", "rejection_reason"],

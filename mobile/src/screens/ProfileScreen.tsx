@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { User, GraduationCap, ShieldCheck, LogOut, Settings, Edit2, Sparkles } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useNavigation } from "../context/NavigationContext";
+import { openSupport } from "../services/support";
 import { apiFetch } from "../services/api";
 import { BottomSheet } from "../components/common/BottomSheet";
 
@@ -161,6 +162,7 @@ export function ProfileScreen() {
         </button>
       </div>
 
+      <button className="w-full min-h-12 rounded-2xl border text-primary font-bold" onClick={()=>void openSupport()}>طلب مساعدة عبر واتساب</button>
       {/* Edit Profile Bottom Sheet */}
       <BottomSheet
         isOpen={showEditSheet}

@@ -21,6 +21,7 @@ import { Toast } from "./components/common/Toast";
 
 // Screens
 import { LoginScreen } from "./screens/LoginScreen";
+import { DeviceTransferScreen } from "./screens/DeviceTransferScreen";
 import { RegisterScreen } from "./screens/RegisterScreen";
 import { HomeScreen } from "./screens/HomeScreen";
 import { SubjectsScreen } from "./screens/SubjectsScreen";
@@ -89,7 +90,9 @@ function MainContent() {
         <div className="absolute top-0 inset-x-0 pt-safe px-4 flex justify-end z-30">
           <ThemePicker />
         </div>
-        {currentScreen.name === "register" ? (
+        {currentScreen.name === "device-transfer" ? (
+          <DeviceTransferScreen initialEmail={currentScreen.params?.email} />
+        ) : currentScreen.name === "register" ? (
           <RegisterScreen />
         ) : (
           <LoginScreen />

@@ -1,4 +1,4 @@
-import { APP_VERSION_CODE } from "../config/version";
+import { getInstalledVersion } from "./installedVersion";
 import type { ChatTransport } from "../../../lib/chat/turn";
 import type { GenerationSnapshot } from "../../../lib/chat/recovery";
 import { Preferences } from "@capacitor/preferences";
@@ -119,7 +119,7 @@ export async function apiFetch<T = any>(
   const url = await buildApiUrl(endpoint);
 
   const headers = new Headers(options.headers || {});
-  headers.set("X-App-Version-Code",String(APP_VERSION_CODE));
+  headers.set("X-App-Version-Code",String((await getInstalledVersion()).code));
   if (!headers.has("Content-Type") && !(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
@@ -165,7 +165,7 @@ export async function apiUpload<T = any>(
   const url = await buildApiUrl(endpoint);
 
   const headers = new Headers();
-  headers.set("X-App-Version-Code",String(APP_VERSION_CODE));
+  headers.set("X-App-Version-Code",String((await getInstalledVersion()).code));
   if (sessionToken) headers.set("Authorization", `Bearer ${sessionToken}`);
   if (deviceToken) headers.set("X-Device-Token", deviceToken);
 
@@ -191,7 +191,7 @@ export async function apiUpload<T = any>(
 
 async function authHeaders(extra: Record<string, string> = {}) {
   const { sessionToken, deviceToken } = await getTokens();
-  const headers = new Headers({ "X-App-Version-Code": String(APP_VERSION_CODE), ...extra });
+  const headers = new Headers({ ...extra, "X-App-Version-Code": String((await getInstalledVersion()).code) });
   if (sessionToken) headers.set("Authorization", `Bearer ${sessionToken}`);
   if (deviceToken) headers.set("X-Device-Token", deviceToken);
   return { headers, sessionToken };

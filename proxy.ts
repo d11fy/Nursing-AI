@@ -52,7 +52,7 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  const incompatible=mobileCompatibilityError(request);
+  const incompatible=await mobileCompatibilityError(request);
   if(incompatible){const response=NextResponse.json(incompatible,{status:426});const origin=request.headers.get("origin");
     return origin&&isAllowedApiOrigin(origin,request.nextUrl.origin,process.env.APP_URL)?applyCorsHeaders(response,origin):response;}
   const protectedPage = pathname === "/dashboard" || pathname.startsWith("/dashboard/") || pathname === "/admin" || pathname.startsWith("/admin/");

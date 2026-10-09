@@ -3,6 +3,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { workerDb, withIdentity } from "@/lib/tutor/db";
 import { allowAttempt } from "@/lib/auth/accounts";
 import { z } from "zod";
+import { enqueueTemplateEmail } from "@/lib/email-queue";
 const schema=z.object({email:z.string().trim().email().max(254),subject:z.string().trim().min(3).max(120),message:z.string().trim().min(10).max(3000)});
 const hash=(value:string)=>createHash("sha256").update(value).digest("hex");
 export async function createSupportTicket(input:unknown){
@@ -10,6 +11,7 @@ export async function createSupportTicket(input:unknown){
   if(!await allowAttempt(`support:${data.email.toLowerCase()}`,3)||!await allowAttempt("support:global",100))throw new Error("وصلت إلى حد الطلبات؛ حاول لاحقًا");
   const token=randomBytes(24).toString("hex");
   const row=(await workerDb.query<{id:string}>("insert into support_tickets(token_hash,email,subject,message) values($1,$2,$3,$4) returning id",[hash(token),data.email.toLowerCase(),data.subject,data.message])).rows[0];
+  await enqueueTemplateEmail(data.email.toLowerCase(),"support_received",{}).catch(()=>null);
   return {id:row.id,token};
 }
 export async function readSupportTicket(token:string){
