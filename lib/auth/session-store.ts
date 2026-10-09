@@ -54,7 +54,7 @@ export async function establishSession(userId: string, presentedDeviceToken?: st
     const isAdmin = locked.rows[0].role === "admin";
     if(transferToken){
       if(isAdmin)throw new Error("Admin transfer not supported");
-      const consumed=await client.query("delete from device_transfers where token_hash=$1 and user_id=$2 and expires_at>now() returning user_id",[tokenHash(transferToken),userId]);
+      const consumed=await client.query("delete from device_transfers where token_hash=$1 and user_id=$2 and expires_at>now() and attempts<5 returning user_id",[transferToken,userId]);
       if(!consumed.rows.length)throw new Error("Transfer expired or already used");
       await client.query("delete from app_sessions where user_id=$1",[userId]);
     }
@@ -83,7 +83,11 @@ export async function establishSession(userId: string, presentedDeviceToken?: st
        values($1,$2,$3,$4,now()+($5 * interval '1 second'),now(),now())`,
       [tokenHash(sessionToken), userId, deviceHash, isAdmin, isAdmin ? ADMIN_SESSION_IDLE_SECONDS : SESSION_TTL_SECONDS]
     );
-    if (!isAdmin) await client.query("select claim_trial_device($1,$2)", [userId, deviceHash]);
+    if (!isAdmin && transferToken) {
+      // A verified, single-use email transfer is authorised device replacement.
+      // The ordinary trial-device guard would otherwise expire a legitimate trial.
+      await client.query("update user_trials set device_hash=$2,updated_at=now() where user_id=$1",[userId,deviceHash]);
+    } else if (!isAdmin) await client.query("select claim_trial_device($1,$2)", [userId, deviceHash]);
   });
 
   return { sessionToken, deviceToken };

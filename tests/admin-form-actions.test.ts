@@ -9,9 +9,13 @@ test("subscription and SMTP forms use real submit buttons", () => {
   const emailPage = read("app/admin/subscriptions/email/page.tsx");
   const subscriptionsPage = read("app/admin/subscriptions/page.tsx");
 
-  for (const action of ["updateSmtpAction", "testSmtpAction", "saveTemplateAction", "retryEmailAction"]) {
+  for (const action of ["updateSmtpAction", "saveTemplateAction", "retryEmailAction"]) {
     assert.match(emailPage, new RegExp(`form action=\\{${action}\\}[\\s\\S]*?<Button type="submit"`));
   }
+  const smtpTestForm = read("components/admin/smtp-test-form.tsx");
+  assert.match(emailPage, /<SmtpTestForm\s*\/>/);
+  assert.match(smtpTestForm, /useActionState\(testSmtpAction/);
+  assert.match(smtpTestForm, /<button type="submit"/);
   for (const action of ["updateSubscriptionSettingsAction", "reviewPaymentAction", "savePlanAction", "savePaymentMethodAction", "grantSubscriptionAction"]) {
     assert.match(subscriptionsPage, new RegExp(`form action=\\{${action}\\}[\\s\\S]*?<Button type="submit"`));
   }

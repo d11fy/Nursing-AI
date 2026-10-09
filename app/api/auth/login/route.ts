@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       if(err instanceof MfaRequiredError) return NextResponse.json({error:err.message,code:"MFA_REQUIRED"},{status:428});
       if (err instanceof DeviceConflictError) {
         return NextResponse.json(
-          { error: "هذا الحساب مستخدم حاليًا على جهاز آخر." },
+          { error: "هذا الحساب مستخدم حاليًا على جهاز آخر.", code:"DEVICE_CONFLICT" },
           { status: 409 }
         );
       }

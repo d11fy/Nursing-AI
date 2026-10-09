@@ -35,6 +35,11 @@ export function FlashcardsTab({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [filterMode, setFilterMode] = useState<"all" | "review_again" | "due">("all");
   const [submittingProgress, setSubmittingProgress] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   // If initialCards is empty, load existing cards from API
   useEffect(() => {
@@ -106,7 +111,7 @@ export function FlashcardsTab({
   const activeCards =
     filterMode === "review_again"
       ? cards.filter((c) => c.progress_status === "review_again")
-      : filterMode === "due" ? cards.filter(c=>!c.next_review_at || new Date(c.next_review_at).getTime()<=Date.now()) : cards;
+      : filterMode === "due" ? cards.filter(c=>!c.next_review_at || new Date(c.next_review_at).getTime()<=now) : cards;
 
   const knownCount = cards.filter((c) => c.progress_status === "known").length;
   const reviewAgainCount = cards.filter((c) => c.progress_status === "review_again").length;

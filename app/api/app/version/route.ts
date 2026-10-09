@@ -1,4 +1,3 @@
-import { MINIMUM_MOBILE_VERSION_CODE } from "@/lib/version/compatibility";
 import { NextResponse } from "next/server";
 import { getPublicReleaseInfo } from "@/lib/version/app-version";
 
@@ -11,8 +10,8 @@ export async function GET() {
       latest_version_code: release.latest_version_code,
       apk_url: release.apk_url,
       release_notes: release.release_notes,
-      force_update: release.force_update || (release.integrity === "verified" && release.latest_version_code >= MINIMUM_MOBILE_VERSION_CODE),
-      minimum_supported_version_code: MINIMUM_MOBILE_VERSION_CODE,
+      force_update: release.force_update,
+      minimum_supported_version_code: release.minimum_supported_version_code,
       published_at: release.published_at,
       file_size: release.file_size,
       sha256: release.integrity === "verified" ? release.served_sha256 : null,

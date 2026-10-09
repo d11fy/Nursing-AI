@@ -3,6 +3,8 @@ import "server-only";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import nodemailer from "nodemailer";
 import { workerDb, withIdentity } from "@/lib/tutor/db";
+import { brandedEmailHtml, brandedEmailText } from "@/lib/email-design";
+import { getSupportWhatsapp } from "@/lib/support-contact";
 
 function escapeHtml(value:string){return value.replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");}
 function render(template: string, variables: Record<string,string>, html=false) {
@@ -32,21 +34,22 @@ export async function enqueueTemplateEmail(recipient:string,templateKey:string,v
   const template=(await workerDb.query<{subject:string;html_body:string;text_body:string}>(
     "select subject,html_body,text_body from email_templates where template_key=$1 and active=true",[templateKey])).rows[0];
   if(!template) return null;
+  const whatsapp=await getSupportWhatsapp();
   return (await workerDb.query<{id:string}>(`insert into email_logs(recipient,template_key,subject_snapshot,html_snapshot,text_snapshot)
-    values($1,$2,$3,$4,$5) returning id`,[recipient,templateKey,render(template.subject,variables),render(template.html_body,variables,true),render(template.text_body,variables)])).rows[0]?.id??null;
+    values($1,$2,$3,$4,$5) returning id`,[recipient,templateKey,render(template.subject,variables),brandedEmailHtml(render(template.html_body,variables,true),whatsapp),brandedEmailText(render(template.text_body,variables),whatsapp)])).rows[0]?.id??null;
 }
 
-type SmtpTransport = { transport: Pick<ReturnType<typeof nodemailer.createTransport>, "sendMail">; from: string; secrets: string[] };
+type SmtpTransport = { transport: Pick<ReturnType<typeof nodemailer.createTransport>, "sendMail" | "verify">; from: string; fromEmail: string; replyTo?: string; secrets: string[] };
 
 async function smtpTransport(): Promise<SmtpTransport> {
-  const row=(await workerDb.query<{host:string|null;port:number;username:string|null;password_ciphertext:string|null;encryption:string;from_name:string;from_email:string|null}>("select * from email_settings where singleton=true")).rows[0];
+  const row=(await workerDb.query<{host:string|null;port:number;username:string|null;password_ciphertext:string|null;encryption:string;from_name:string;from_email:string|null;reply_to:string|null}>("select * from email_settings where singleton=true")).rows[0];
   if(row?.host&&row.from_email){
     const pass=row.password_ciphertext?decryptSmtpPassword(row.password_ciphertext):undefined;
     return { transport:nodemailer.createTransport({connectionTimeout:10000,greetingTimeout:10000,socketTimeout:30000,host:row.host,port:row.port,secure:row.encryption==='tls',requireTLS:row.encryption==='starttls',
-      auth:row.username?{user:row.username,pass}:undefined}),from:`${row.from_name} <${row.from_email}>`,secrets:[pass,row.username].filter((v):v is string=>Boolean(v)) };
+      auth:row.username?{user:row.username,pass}:undefined}),from:`${row.from_name} <${row.from_email}>`,fromEmail:row.from_email,replyTo:row.reply_to||undefined,secrets:[pass,row.username].filter((v):v is string=>Boolean(v)) };
   }
   if(process.env.SMTP_HOST&&process.env.SMTP_FROM) return {transport:nodemailer.createTransport({connectionTimeout:10000,greetingTimeout:10000,socketTimeout:30000,host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT||587),secure:process.env.SMTP_PORT==='465',
-    auth:process.env.SMTP_USER?{user:process.env.SMTP_USER,pass:process.env.SMTP_PASSWORD}:undefined}),from:process.env.SMTP_FROM,
+    auth:process.env.SMTP_USER?{user:process.env.SMTP_USER,pass:process.env.SMTP_PASSWORD}:undefined}),from:process.env.SMTP_FROM,fromEmail:process.env.SMTP_FROM.match(/<([^<>]+)>/)?.[1]??process.env.SMTP_FROM,replyTo:process.env.SMTP_REPLY_TO,
     secrets:[process.env.SMTP_PASSWORD,process.env.SMTP_USER].filter((v):v is string=>Boolean(v))};
   throw new Error("إعدادات SMTP غير مكتملة");
 }
@@ -112,8 +115,8 @@ async function processOneEmail(deps: { transport?: () => Promise<SmtpTransport> 
     return {processed:jobs.length,sent:0,failed:jobs.length};
   }
   let sent=0,failed=0;
-  for(const job of jobs){try{await smtp.transport.sendMail({from:smtp.from,to:job.recipient,subject:job.subject_snapshot,html:job.html_snapshot,text:job.text_snapshot,
-      messageId:`<${job.id}@nursing-ai.mail>`});
+  for(const job of jobs){try{await smtp.transport.sendMail({from:smtp.from,replyTo:smtp.replyTo,to:job.recipient,subject:job.subject_snapshot,html:job.html_snapshot,text:job.text_snapshot,
+      messageId:`<${job.id}@${(smtp.fromEmail?.split('@')[1]??'nursing.alisohail.tech')}>`,envelope:{from:smtp.fromEmail,to:job.recipient}});
     await workerDb.query("update email_logs set status='sent',sent_at=now(),last_error=null,lease_expires_at=null,next_retry_at=null,updated_at=now() where id=$1 and claim_token=$2",[job.id,job.claim_token]);sent++;
   }catch(error){failed++;await fail(job,safeEmailError(error,smtp.secrets));}}
   return {processed:jobs.length,sent,failed};
@@ -128,16 +131,33 @@ export async function requeueEmail(adminId:string,id:string){
   });
 }
 
-export async function updateSmtpSettings(adminId:string,input:{host:string;port:number;username?:string;password?:string;encryption:string;fromName:string;fromEmail:string}) {
+export async function updateSmtpSettings(adminId:string,input:{host:string;port:number;username?:string;password?:string;encryption:string;fromName:string;fromEmail:string;replyTo?:string}) {
   await withIdentity(adminId,async db=>{
     const password=input.password?encryptSmtpPassword(input.password):null;
-    await db.query(`update email_settings set host=$1,port=$2,username=$3,password_ciphertext=coalesce($4,password_ciphertext),encryption=$5,from_name=$6,from_email=$7,updated_by=$8,updated_at=now() where singleton=true`,
-      [input.host,input.port,input.username||null,password,input.encryption,input.fromName,input.fromEmail,adminId]);
+    await db.query(`update email_settings set host=$1,port=$2,username=$3,password_ciphertext=coalesce($4,password_ciphertext),encryption=$5,from_name=$6,from_email=$7,updated_by=$8,reply_to=$9,updated_at=now() where singleton=true`,
+      [input.host,input.port,input.username||null,password,input.encryption,input.fromName,input.fromEmail,adminId,input.replyTo||null]);
     await db.query("insert into admin_audit_logs(event_type,admin_id,metadata) values('SMTP_UPDATED',$1,$2)",[adminId,JSON.stringify({host:input.host,port:input.port,encryption:input.encryption,fromEmail:input.fromEmail})]);
   });
 }
 
 export async function sendSmtpTest(recipient:string) {
-  const {transport,from}=await smtpTransport();
-  await transport.sendMail({from,to:recipient,subject:"Nursing AI — اختبار SMTP",text:"تم إعداد البريد الإلكتروني بنجاح.",html:'<div dir="rtl"><h2>تم إعداد البريد بنجاح ✅</h2></div>'});
+  const {transport,from,fromEmail,replyTo,secrets}=await smtpTransport();
+  try{
+    await transport.verify();
+    const whatsapp=await getSupportWhatsapp();
+    const result=await transport.sendMail({from,replyTo,to:recipient,subject:"اختبار البريد من Nursing AI",text:brandedEmailText("تم إعداد البريد الإلكتروني بنجاح.",whatsapp),html:brandedEmailHtml('<p>تم إعداد البريد الإلكتروني بنجاح.</p>',whatsapp),envelope:{from:fromEmail,to:recipient}});
+    return {connected:true,accepted:result.accepted.includes(recipient),messageId:result.messageId};
+  }catch(e){throw new Error(safeEmailError(e,secrets));}
+}
+
+/** OTP is sent directly: its six digits are never persisted in email_logs. */
+export async function sendDirectTemplateEmail(recipient:string,templateKey:string,variables:Record<string,string>,deps:{transport?:()=>Promise<SmtpTransport>}={}) {
+  const template=(await workerDb.query<{subject:string;html_body:string;text_body:string}>("select subject,html_body,text_body from email_templates where template_key=$1 and active=true",[templateKey])).rows[0];
+  if(!template)throw new Error('Email template unavailable');
+  const smtp=await (deps.transport??smtpTransport)(),whatsapp=await getSupportWhatsapp();
+  const result=await smtp.transport.sendMail({from:smtp.from,replyTo:smtp.replyTo,to:recipient,
+    subject:render(template.subject,variables),html:brandedEmailHtml(render(template.html_body,variables,true),whatsapp),
+    text:brandedEmailText(render(template.text_body,variables),whatsapp),envelope:{from:smtp.fromEmail,to:recipient}});
+  if(!result.accepted.includes(recipient))throw new Error('SMTP did not accept recipient');
+  return {accepted:true,messageId:result.messageId};
 }

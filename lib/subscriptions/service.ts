@@ -267,6 +267,15 @@ export async function adjustStudentUsage(input: { adminId: string; userId: strin
       await db.query(`insert into subscription_usage(user_id,feature_key,scope_type,scope_key,used) values($1,$2,$3,$4,$5)
         on conflict(user_id,feature_key,scope_type,scope_key) do update set used=excluded.used,updated_at=now()`,
       [input.userId, featureKey, scope.type, scope.key, newValue]);
+      // A prior idempotency key must not replay a paid/failed request after the
+      // admin has reset its scope. Fence unfinished reservations so their later
+      // lease reconciliation cannot subtract fresh usage from this new period.
+      await db.query(`update usage_reservations set
+        status=case when status='reserved' then 'committed' else status end,
+        result_ref=case when status='reserved' then coalesce(result_ref,'{"adminAdjusted":true}'::jsonb) else result_ref end,
+        idempotency_key=null,updated_at=now()
+        where user_id=$1 and feature_key=$2 and scope_type=$3 and scope_key=$4`,
+        [input.userId,featureKey,scope.type,scope.key]);
       changes.push({ feature: featureKey, scopeType: scope.type, scopeKey: scope.key, previousValue: previous, newValue });
     }
     await db.query("insert into admin_audit_logs(event_type,admin_id,target_user_id,metadata) values('USAGE_ADJUSTED',$1,$2,$3::jsonb)",

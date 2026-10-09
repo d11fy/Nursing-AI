@@ -19,7 +19,7 @@ export async function GET() {
       profile,
       access,
       aiUsage,
-    });
+    }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     console.error("Auth me API error:", error);
     return NextResponse.json({ error: "تعذر تحميل بيانات الجلسة" }, { status: 500 });

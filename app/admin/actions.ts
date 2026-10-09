@@ -58,6 +58,8 @@ export async function adjustStudentUsageAction(_prev: UsageAdjustState, formData
     const changes = await adjustStudentUsage({ adminId: admin.user_id, userId: parsed.data.userId, reason: parsed.data.reason,
       features: parsed.data.feature === "all" ? METERED_FEATURES : [parsed.data.feature] });
     revalidatePath("/admin/students");
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/subscription");
     return { success: changes.map((change) => `${change.feature}: ${change.previousValue} ← ${change.newValue}`).join("، ") };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "تعذر تعديل الاستخدام" };
@@ -245,6 +247,7 @@ export async function updateMobileReleaseAction(
   const parsed = z.object({
     latestVersion: z.string().regex(/^\d+\.\d+\.\d+$/, "استخدم صيغة 1.0.0"),
     latestVersionCode: z.coerce.number().int().positive(),
+    minimumSupportedVersionCode: z.coerce.number().int().positive(),
     apkUrl: z.string().min(1),
     releaseNotes: z.string().min(3).max(4000),
     forceUpdate: z.boolean(),
@@ -256,6 +259,7 @@ export async function updateMobileReleaseAction(
   }).safeParse({
     latestVersion: formData.get("latestVersion"),
     latestVersionCode: formData.get("latestVersionCode"),
+    minimumSupportedVersionCode: formData.get("minimumSupportedVersionCode"),
     apkUrl: formData.get("apkUrl"),
     releaseNotes: formData.get("releaseNotes"),
     forceUpdate: formData.get("forceUpdate") === "on",
@@ -266,11 +270,13 @@ export async function updateMobileReleaseAction(
     previewNotes: String(formData.get("previewNotes") ?? ""),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "بيانات الإصدار غير صالحة" };
+  if(parsed.data.minimumSupportedVersionCode>parsed.data.latestVersionCode)return {error:"الحد الأدنى لا يمكن أن يتجاوز الإصدار المنشور"};
 
   try {
     await setAppVersionInfo({
       latest_version: parsed.data.latestVersion,
       latest_version_code: parsed.data.latestVersionCode,
+      minimum_supported_version_code: parsed.data.minimumSupportedVersionCode,
       apk_url: parsed.data.apkUrl,
       release_notes: parsed.data.releaseNotes,
       force_update: parsed.data.forceUpdate,

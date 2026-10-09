@@ -15,6 +15,7 @@ import { z } from "zod";
 export interface AppVersionInfo {
   latest_version: string;
   latest_version_code: number;
+  minimum_supported_version_code: number;
   apk_url: string;
   release_notes: string;
   force_update: boolean;
@@ -43,16 +44,17 @@ export interface PublicReleaseInfo extends AppVersionInfo {
 /** Stable APK served by /api/download/apk. */
 export const STABLE_APK_PATH = path.join(process.cwd(), "public", "downloads", "nursing-ai-latest.apk");
 
-/** Fallback when the database is unreachable; mirrors migration 0029. */
+/** Fallback when the database is unreachable; mirrors the committed stable APK. */
 export const DEFAULT_APP_VERSION: AppVersionInfo = {
-  latest_version: "1.2.0",
-  latest_version_code: 5,
+  latest_version: "1.2.1",
+  latest_version_code: 6,
+  minimum_supported_version_code: 5,
   apk_url: "/api/download/apk",
-  release_notes: "تطبيق Nursing AI الجديد بواجهة مصممة للهاتف: المكتبة وحزم الدراسة والبطاقات والاختبارات والأخطاء والتقدم.",
+  release_notes: "تحسين توافق إصدار Android ونقل الحساب برمز تحقق والدعم وتجربة الاستخدام.",
   force_update: false,
   published_at: "2026-10-09T08:00:00.000Z",
   file_size: "1.39 MB",
-  sha256: "ec87750458c991b9a64b950418dd61daeb12a7cdc58224ff3b5669fe07724974",
+  sha256: "44382188bb690b5df2cb2ce3f53b6f883b1e423404d16b711fbe06215985d1f1",
   preview: null,
 };
 
@@ -71,6 +73,7 @@ const officialUrl = z.string().min(1).refine((value) => {
 export const appVersionSchema = z.object({
   latest_version: z.string().regex(/^\d+\.\d+\.\d+$/),
   latest_version_code: z.number().int().positive(),
+  minimum_supported_version_code: z.number().int().positive(),
   apk_url: officialUrl,
   release_notes: z.string().max(4000),
   force_update: z.boolean(),

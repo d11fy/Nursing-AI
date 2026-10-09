@@ -37,6 +37,11 @@ export function MobileReleaseSettingsForm({ version }: { version: AppVersionInfo
         </div>
       </div>
       <div className="space-y-1.5">
+        <Label htmlFor="minimumSupportedVersionCode">أقل versionCode مدعوم</Label>
+        <Input id="minimumSupportedVersionCode" name="minimumSupportedVersionCode" type="number" min={1} dir="ltr" defaultValue={version.minimum_supported_version_code} required />
+        <p className="text-xs text-muted-foreground">يُقارَن برقم النسخة المثبتة فعليًا؛ اضبطه بعد نشر APK متوافق.</p>
+      </div>
+      <div className="space-y-1.5">
         <Label htmlFor="apkUrl">رابط APK الرسمي</Label>
         <Input id="apkUrl" name="apkUrl" dir="ltr" defaultValue={version.apk_url} required />
         <p className="text-xs text-muted-foreground">استخدم مسارًا محليًا مثل /api/download/apk أو رابط نطاق Nursing AI الرسمي.</p>

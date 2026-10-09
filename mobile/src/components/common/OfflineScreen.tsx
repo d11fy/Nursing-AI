@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { WifiOff, RefreshCw } from "lucide-react";
+import { openSupport } from "../../services/support";
 import { useNetwork } from "../../context/NetworkContext";
 
 export function OfflineScreen({ onRetry }: { onRetry?: () => void }) {
@@ -40,6 +41,7 @@ export function OfflineScreen({ onRetry }: { onRetry?: () => void }) {
         <RefreshCw className={`size-4 ${retrying ? "animate-spin" : ""}`} />
         <span>{retrying ? "جارٍ التحقق..." : "إعادة المحاولة"}</span>
       </button>
+      <button className="min-h-12 mt-4 text-primary underline" onClick={()=>void openSupport("مرحبًا، أحتاج مساعدة في Nursing AI.")}>طلب مساعدة عبر واتساب</button>
     </div>
   );
 }
