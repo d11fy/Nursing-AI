@@ -7,7 +7,10 @@ import { logUsage } from '@/lib/usage';
 export type TutorSource = KnowledgeChunk & { subjectId:string|null; sourcePriority:number; scores:{semantic:number;lexical:number;exact:number;rank:number}; ownerId:string|null; lectureId:string|null };
 type Row = { id:string;document_id:string;subject_id:string|null;owner_id:string|null;lecture_id:string|null;title:string;name_en:string;
   source_type:string;source_priority:number;content:string;chapter:string|null;heading:string|null;page_number:number|null;chunk_index:number;
+  chapter_index:number|null;chapter_number:number|null;chapter_title:string|null;section_title:string|null;subsection_title:string|null;
   semantic_score:number;lexical_score:number;exact_score:number;score:number };
+/** Restricts every retrieval branch to one chapter of one book (the chapter is resolved BEFORE any semantic search). */
+export type ChapterScope = { documentId:string; chapterIndex:number };
 const synonyms:Record<string,string> = { 'فشل القلب':'heart failure','قصور القلب':'heart failure','ضيق التنفس':'dyspnea shortness of breath',
   'ضغط الدم':'blood pressure','المجهر':'microscope','مجهر':'microscope','البوتاسيوم':'potassium','الصوديوم':'sodium',
   'الدورة الدموية':'circulation','التهاب':'inflammation','سكري':'diabetes','الكلية':'kidney','العدسة':'lens','التنفس':'respiration' };
@@ -37,27 +40,30 @@ with eligible as materialized (
  select k.id,row_number() over(order by k.embedding <=> $2::vector) n,1-(k.embedding <=> $2::vector) val
  from knowledge_chunks k join eligible e on e.id=k.document_id
  where cardinality($8::uuid[])>0 and k.document_id=any($8::uuid[]) and k.embedding_model='text-embedding-3-small'
+ and ($10::int is null or (k.document_id=$9::uuid and k.chapter_index=$10))
  order by k.embedding <=> $2::vector limit 25
 ), semantic as (
  select k.id,row_number() over(order by k.embedding <=> $2::vector) n,1-(k.embedding <=> $2::vector) val
  from knowledge_chunks k join eligible e on e.id=k.document_id
- where k.embedding_model='text-embedding-3-small' order by k.embedding <=> $2::vector limit 25
+ where k.embedding_model='text-embedding-3-small' and ($10::int is null or (k.document_id=$9::uuid and k.chapter_index=$10))
+ order by k.embedding <=> $2::vector limit 25
 ), lexical as (
  select k.id,row_number() over(order by ts_rank_cd(k.search_vector,to_tsquery('simple',$3)) desc) n,
  ts_rank_cd(k.search_vector,to_tsquery('simple',$3)) val
  from knowledge_chunks k join eligible e on e.id=k.document_id
- where $3<>'' and k.search_vector @@ to_tsquery('simple',$3)
+ where $3<>'' and k.search_vector @@ to_tsquery('simple',$3) and ($10::int is null or (k.document_id=$9::uuid and k.chapter_index=$10))
  order by val desc limit 25
 ), exact as (
  select k.id,count(*)::float8 val from knowledge_chunks k join eligible e on e.id=k.document_id
  join unnest($6::text[]) term on lower(k.content) like '%' || term || '%'
+ where ($10::int is null or (k.document_id=$9::uuid and k.chapter_index=$10))
  group by k.id order by val desc limit 25
 ), requested_page as (
  select k.id from knowledge_chunks k join eligible e on e.id=k.document_id
- where k.document_id=$4 and k.page_number=$7 limit 10
+ where k.document_id=$4 and k.page_number=$7 and ($10::int is null or (k.document_id=$9::uuid and k.chapter_index=$10)) limit 10
 ), ids as (select id from active_semantic union select id from semantic union select id from lexical union select id from exact union select id from requested_page)
 select k.id,k.document_id,k.subject_id,d.owner_id,d.lecture_id,d.title,s.name_en,k.source_type,d.source_priority,
- k.content,k.chapter,k.heading,k.page_number,k.chunk_index,
+ k.content,k.chapter,k.heading,k.page_number,k.chunk_index,k.chapter_index,k.chapter_number,k.chapter_title,k.section_title,k.subsection_title,
  coalesce(v.val,0) semantic_score,coalesce(l.val,0) lexical_score,coalesce(x.val,0) exact_score,
  (coalesce(1.0/(60+av.n),0)+coalesce(1.0/(60+v.n),0)+coalesce(1.0/(60+l.n),0)+least(coalesce(x.val,0),8)*0.001
  +case when k.subject_id=$5 then 0.005 else 0 end
@@ -69,8 +75,11 @@ from ids join knowledge_chunks k on k.id=ids.id join knowledge_documents d on d.
 left join subjects s on s.id=k.subject_id left join active_semantic av on av.id=k.id left join semantic v on v.id=k.id
 left join lexical l on l.id=k.id left join exact x on x.id=k.id order by score desc limit 25`;
 
-export async function retrieveKnowledge(question:string,scope:{userId:string;subjectId:string|null;documentId?:string|null;activeDocumentIds?:string[];pageNumber?:number|null},limit=8):Promise<{sources:TutorSource[];candidates:TutorSource[];query:ReturnType<typeof understandQuery>}> {
+export async function retrieveKnowledge(question:string,scope:{userId:string;subjectId:string|null;documentId?:string|null;activeDocumentIds?:string[];pageNumber?:number|null;chapter?:ChapterScope|null},limit=8):Promise<{sources:TutorSource[];candidates:TutorSource[];query:ReturnType<typeof understandQuery>}> {
   const query=understandQuery(question),ai=getAIProvider();
+  const chapter=scope.chapter??null;
+  const documentId=chapter?chapter.documentId:scope.documentId??null;
+  const activeDocumentIds=chapter?[...new Set([...(scope.activeDocumentIds??[]),chapter.documentId])]:scope.activeDocumentIds??[];
   const eligible=await withIdentity(scope.userId,db=>db.query(`select 1 from knowledge_documents d where status='ready' and is_active
     and (owner_id=$1 or (owner_id is null and exists(select 1 from profiles p join academic_years y on y.id=p.academic_year_id and y.is_active
       where p.user_id=$1 and p.status='active' and (d.visibility_scope='all_students'
@@ -83,10 +92,11 @@ export async function retrieveKnowledge(question:string,scope:{userId:string;sub
   await logUsage({userId:scope.userId,type:'embedding',feature:'retrieval_embedding',provider:'openai',model:embedded.model,
     inputTokens:embedded.tokens,outputTokens:0,estimatedCost:ai.calculateCost({model:embedded.model,inputTokens:embedded.tokens,outputTokens:0})});
   const rows=await withIdentity(scope.userId,db=>db.query<Row>(RETRIEVAL_SQL,[scope.userId,`[${embedded.embedding.join(',')}]`,query.lexical,
-    scope.documentId??null,scope.subjectId,query.exact,scope.pageNumber??null,scope.activeDocumentIds??[]]));
+    documentId,scope.subjectId,query.exact,scope.pageNumber??null,activeDocumentIds,chapter?.documentId??null,chapter?.chapterIndex??null]));
   const candidates:TutorSource[]=rows.rows.map(row=>({id:row.id,documentId:row.document_id,subjectId:row.subject_id,title:row.title,
     subjectName:row.name_en,sourceType:row.source_type,content:row.content,chapter:row.chapter,pageNumber:row.page_number,
-    chunkIndex:row.chunk_index,similarity:row.semantic_score,sourcePriority:row.source_priority,
+    chunkIndex:row.chunk_index,chapterIndex:row.chapter_index,chapterNumber:row.chapter_number,chapterTitle:row.chapter_title,
+    sectionTitle:row.section_title,subsectionTitle:row.subsection_title,similarity:row.semantic_score,sourcePriority:row.source_priority,
     ownerId:row.owner_id,lectureId:row.lecture_id,evidenceType:row.owner_id?'PRIVATE_LECTURE':'UNIVERSITY_SOURCE',
     scores:{semantic:row.semantic_score,lexical:row.lexical_score,exact:row.exact_score,rank:row.score}}));
   // Diversify redundant chunks while preserving neighbouring sections for the active page.
