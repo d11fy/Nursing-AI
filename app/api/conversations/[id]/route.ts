@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/db/server";
 import { getSignedChatImageUrl } from "@/lib/storage";
 import { getConversationSources } from "@/lib/library";
+import { loadConversationStudyView } from "@/lib/tutor/conversation-state";
 
 export async function GET(
   _request: Request,
@@ -44,13 +45,18 @@ export async function GET(
         }))
     );
 
-    const activeSources = await getConversationSources(user.user_id, conversation.id);
+    const [activeSources, study] = await Promise.all([
+      getConversationSources(user.user_id, conversation.id),
+      loadConversationStudyView(user.user_id, conversation.id),
+    ]);
 
+    // Resynchronising from here restores the book, the chapter position and any unanswered question.
     return NextResponse.json({
       conversation,
       messages,
       activeSources,
-    });
+      ...study,
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("GET /api/conversations/[id] error:", error);
     return NextResponse.json({ error: "تعذر تحميل المحادثة" }, { status: 500 });
