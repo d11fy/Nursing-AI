@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 
 const skipE2e = process.argv.includes("--skip-e2e");
 const steps = [
+  ["Next.js route types", "npx", ["next", "typegen"]],
   ["TypeScript (web)", "npx", ["tsc", "--noEmit"]],
   ["ESLint (errors fail the gate)", "npx", ["eslint", "--quiet", "."]],
   ["Unit, integration, quota, leakage and security tests", "npm", ["test"]],
