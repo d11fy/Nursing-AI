@@ -61,8 +61,8 @@ export function DocumentRowActions({ documentId }: { documentId: string }) {
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
-            <Button variant="ghost" size="icon" className="size-8" disabled={isPending}>
-              <MoreVertical className="size-4" />
+            <Button variant="ghost" size="icon" className="size-11" disabled={isPending} aria-label="إجراءات المستند">
+              <MoreVertical className="size-4" aria-hidden />
             </Button>
           }
         />

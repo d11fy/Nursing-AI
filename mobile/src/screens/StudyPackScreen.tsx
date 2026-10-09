@@ -578,10 +578,10 @@ export function StudyPackScreen({
           </div>
           <div className="grid grid-cols-2 gap-3 pt-2">
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-700">
+              <label htmlFor="studypack-field-1" className="text-[11px] font-bold text-slate-700">
                 عدد الأسئلة
               </label>
-              <select
+              <select id="studypack-field-1"
                 value={quizCount}
                 onChange={(e) => setQuizCount(e.target.value)}
                 className="w-full h-11 rounded-xl border border-slate-200 dark:border-slate-800 px-3 text-xs font-bold"
@@ -594,10 +594,10 @@ export function StudyPackScreen({
             </div>
 
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-700">
+              <label htmlFor="studypack-field-2" className="text-[11px] font-bold text-slate-700">
                 المستوى
               </label>
-              <select
+              <select id="studypack-field-2"
                 value={quizDifficulty}
                 onChange={(e: any) => setQuizDifficulty(e.target.value)}
                 className="w-full h-11 rounded-xl border border-slate-200 dark:border-slate-800 px-3 text-xs font-bold"

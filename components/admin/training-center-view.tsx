@@ -4,19 +4,11 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   Search,
-  BookOpen,
-  FileCheck2,
-  FileQuestion,
-  Sparkles,
-  AlertCircle,
-  CheckCircle2,
-  Clock,
-  ExternalLink,
   ChevronLeft,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { SubjectReadinessMetrics } from "@/lib/exams/analytics-service";

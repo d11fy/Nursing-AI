@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/db/server";
 import { checkRateLimit } from "@/lib/usage";
-import { accessErrorMessage, consumeUsage, refundUsage } from "@/lib/subscriptions/service";
+import { usageErrorResponse, usageMeter } from "@/lib/subscriptions/service";
 import { contentRequestSchema } from "@/features/study-pack/schemas";
 import { getOrGenerateContent } from "@/features/study-pack/services/study-pack-service";
 
@@ -34,21 +34,24 @@ export async function POST(
       { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } }
     );
   }
-  let reservation;
+  // study_pack_limit counts study packs: the first AI generation for a pack
+  // charges one unit and later sections of the same pack reuse it. An explicit
+  // regenerate is new AI work and is charged again.
+  const usage = usageMeter(user.id, "study_pack_limit", regenerate ? null : `study-pack:${studyPackId}`, "proceed");
   try {
-    reservation = await consumeUsage(user.id, "study_pack_limit");
     const result = await getOrGenerateContent({
       studyPackId,
       contentType: type,
       userId: user.id,
       regenerate,
+      meter: usage.meter,
     });
-
-    if (result.fromCache) await refundUsage(reservation);
+    await usage.commit();
     return NextResponse.json(result);
   } catch (err) {
-    if (reservation) await refundUsage(reservation).catch(() => undefined);
-    if (err instanceof Error && (err.message.includes("الحد") || err.message.includes("اشتراك") || err.message.includes("الميزة"))) return NextResponse.json(accessErrorMessage(err,"إنشاء حزمة الدراسة"),{status:403});
+    await usage.release();
+    const denied = usageErrorResponse(err, "إنشاء حزمة الدراسة");
+    if (denied) return denied;
     const message = err instanceof Error ? err.message : "تعذر إنشاء المحتوى";
     return NextResponse.json({ error: message }, { status: 500 });
   }

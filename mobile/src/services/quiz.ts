@@ -35,3 +35,32 @@ export function isCorrectAnswer(
             .toLowerCase()
     : gradePracticeAnswer(answer, questionAnswer(question));
 }
+/** Answer key and rationale returned by the server once an answer is recorded. */
+export interface AnswerFeedback {
+  correctAnswer: unknown;
+  explanation: string | null;
+  isCorrect: boolean | null;
+}
+/**
+ * Reads the per-question feedback from either answer endpoint. Practice exams
+ * in EXAM mode return no review until completion, which yields null here.
+ */
+export function answerFeedback(response: any): AnswerFeedback | null {
+  const source = response?.review ?? response;
+  if (!source || source.correctAnswer === undefined) return null;
+  return {
+    correctAnswer: source.correctAnswer,
+    explanation: source.rationale ?? source.explanation ?? null,
+    isCorrect: typeof source.isCorrect === "boolean" ? source.isCorrect : null,
+  };
+}
+/** Maps the completion review (both quiz kinds) by question id. */
+export function completionReview(summary: any): Map<string, AnswerFeedback> {
+  const items: any[] = Array.isArray(summary?.review) ? summary.review : [];
+  return new Map(
+    items
+      .filter((item) => item && typeof item.questionId === "string")
+      .map((item) => [item.questionId, answerFeedback(item)!] as const)
+      .filter(([, feedback]) => feedback !== null),
+  );
+}

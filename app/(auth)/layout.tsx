@@ -1,5 +1,9 @@
 import Link from "next/link";
 import { BrandMark } from "@/components/brand/brand-mark";
+import type { Metadata } from "next";
+
+// Sign-in, recovery and OAuth hand-off pages are not search landing pages.
+export const metadata: Metadata = { robots: { index: false, follow: true } };
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (

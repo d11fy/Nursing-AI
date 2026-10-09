@@ -9,7 +9,6 @@ export function CapacitorHandler() {
   const pathname = usePathname();
   const router = useRouter();
   const [isOffline, setIsOffline] = useState(false);
-  const [isNative, setIsNative] = useState(false);
 
   useEffect(() => {
     const cleanupFuncs: Array<() => void> = [];
@@ -20,8 +19,6 @@ export function CapacitorHandler() {
         if (!Capacitor.isNativePlatform()) {
           return;
         }
-
-        setIsNative(true);
 
         // 1. Status Bar Setup
         try {

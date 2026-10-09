@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import type { PracticeQuestionView } from "@/lib/exams/practice-service";
+import type { PracticeAnswerReview, StudentPracticeQuestion } from "@/lib/exams/practice-service";
 import { gradePracticeAnswer } from "@/lib/exams/answer-grading";
 
 export function PracticeExamRunner({
@@ -26,12 +26,13 @@ export function PracticeExamRunner({
   attemptId: string;
   mode: "STUDY" | "EXAM";
   practiceType: string;
-  questions: PracticeQuestionView[];
+  questions: StudentPracticeQuestion[];
   onClose: () => void;
 }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [userAnswers, setUserAnswers] = useState<Record<string, unknown>>({});
-  const [isAnswerRevealed, setIsAnswerRevealed] = useState<Record<string, boolean>>({});
+  // Answer keys come only from the server: per question in STUDY mode, after COMPLETE in EXAM mode.
+  const [reviews, setReviews] = useState<Record<string, PracticeAnswerReview>>({});
   const [isCompleted, setIsCompleted] = useState(false);
   const [scoreSummary, setScoreSummary] = useState<{
     totalQuestions: number;
@@ -45,27 +46,36 @@ export function PracticeExamRunner({
 
   const currentQ = questions[currentIndex];
   const selectedAnswer = currentQ ? userAnswers[currentQ.id] : undefined;
-  const revealed = currentQ ? isAnswerRevealed[currentQ.id] : false;
+  const currentReview = currentQ ? reviews[currentQ.id] : undefined;
+  const revealed = Boolean(currentReview);
 
   async function handleSelectOption(option: string) {
-    if (!currentQ || (mode === "STUDY" && revealed)) return;
+    if (!currentQ || (mode === "STUDY" && (revealed || submitting))) return;
 
     setUserAnswers((prev) => ({ ...prev, [currentQ.id]: option }));
 
-    // Check correctness
+    // Study mode records the answer now and receives this question's key and rationale.
     if (mode === "STUDY") {
-      setIsAnswerRevealed((prev) => ({ ...prev, [currentQ.id]: true }));
-      // Save answer immediately in study mode
-      const response = await fetch("/api/practice/submit-answer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          attemptId,
-          questionId: currentQ.id,
-          selectedAnswer: option,
-        }),
-      });
-      if (!response.ok) toast.error("تعذر حفظ إجابتك؛ حاول مرة أخرى");
+      setSubmitting(true);
+      try {
+        const response = await fetch("/api/practice/submit-answer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            attemptId,
+            questionId: currentQ.id,
+            selectedAnswer: option,
+          }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.review) throw new Error(data.error || "تعذر حفظ إجابتك");
+        setReviews((prev) => ({ ...prev, [currentQ.id]: data.review as PracticeAnswerReview }));
+      } catch (err) {
+        setUserAnswers((prev) => ({ ...prev, [currentQ.id]: undefined }));
+        toast.error(err instanceof Error ? err.message : "تعذر حفظ إجابتك؛ حاول مرة أخرى");
+      } finally {
+        setSubmitting(false);
+      }
     }
   }
 
@@ -98,6 +108,7 @@ export function PracticeExamRunner({
       if (!res.ok) throw new Error(data.error || "فشل إنهاء الاختبار");
 
       setScoreSummary(data);
+      setReviews(Object.fromEntries(((data.review ?? []) as PracticeAnswerReview[]).map((item) => [item.questionId, item])));
       setIsCompleted(true);
       toast.success("تم إنهاء الاختبار وحساب النتيجة وتحديث تقدمك!");
     } catch (err) {
@@ -157,7 +168,8 @@ export function PracticeExamRunner({
             <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
               {questions.map((q, idx) => {
                 const ans = userAnswers[q.id];
-                const correctVal = String(q.correctAnswer || "");
+                const review = reviews[q.id];
+                const correctVal = Array.isArray(review?.correctAnswer) ? review.correctAnswer.join("، ") : String(review?.correctAnswer ?? "");
                 return (
                   <div key={q.id} className="p-2.5 rounded-lg border bg-card text-xs space-y-1.5">
                     <p dir="auto" className="font-medium text-foreground [unicode-bidi:plaintext]">{idx + 1}. {q.questionText}</p>
@@ -167,9 +179,9 @@ export function PracticeExamRunner({
                         الصحيحة: {correctVal}
                       </span>
                     </div>
-                    {q.explanation && (
+                    {review?.explanation && (
                       <p dir="auto" className="text-muted-foreground text-[11px] bg-muted/30 p-1.5 rounded [unicode-bidi:plaintext]">
-                        {q.explanation}
+                        {review.explanation}
                       </p>
                     )}
                     {q.sources.length > 0 && (
@@ -187,9 +199,9 @@ export function PracticeExamRunner({
           <Button variant="outline" size="sm" onClick={onClose}>
             إغلاق
           </Button>
-          <Button size="sm" onClick={() => { setIsCompleted(false); setCurrentIndex(0); setUserAnswers({}); setIsAnswerRevealed({}); }}>
+          <Button size="sm" onClick={onClose}>
             <RotateCcw className="size-3.5 ml-1.5" />
-            إعادة الاختبار
+            اختبار جديد
           </Button>
         </CardFooter>
       </Card>
@@ -205,7 +217,7 @@ export function PracticeExamRunner({
   }
 
   const isOptionSelected = (opt: string) => selectedAnswer === opt;
-  const isOptionCorrect = (opt: string) => gradePracticeAnswer(opt, currentQ.correctAnswer);
+  const isOptionCorrect = (opt: string) => currentReview ? gradePracticeAnswer(opt, currentReview.correctAnswer) : false;
 
   return (
     <Card className="max-w-2xl mx-auto border-border shadow-md">
@@ -256,6 +268,8 @@ export function PracticeExamRunner({
                 key={i}
                 type="button"
                 onClick={() => handleSelectOption(opt)}
+                disabled={mode === "STUDY" && (revealed || submitting)}
+                aria-pressed={isSel}
                 dir="auto"
                 className={`w-full text-start p-3 rounded-xl border text-sm transition-all flex items-center justify-between [unicode-bidi:plaintext] ${btnStyle}`}
               >
@@ -278,8 +292,8 @@ export function PracticeExamRunner({
               <BookOpen className="size-3.5 text-primary" />
               <span>الشرح والمصدر المعتمد:</span>
             </div>
-            {currentQ.explanation && (
-              <p dir="auto" className="text-foreground/90 leading-relaxed [unicode-bidi:plaintext]">{currentQ.explanation}</p>
+            {currentReview?.explanation && (
+              <p dir="auto" className="text-foreground/90 leading-relaxed [unicode-bidi:plaintext]">{currentReview.explanation}</p>
             )}
             {currentQ.sources.length > 0 && (
               <div className="text-muted-foreground pt-1 border-t border-border/40 space-y-1">

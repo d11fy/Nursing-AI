@@ -651,7 +651,7 @@ export function ChatScreen({
           {activeSources.map((source) => (
             <span key={source.id} className="chip max-w-[240px]">
               <BookOpen className="size-4 shrink-0" />
-              <span className="truncate">{source.title}</span>
+              <span dir="auto" className="truncate">{source.title}</span>
               <button
                 disabled={isGenerating}
                 aria-label={`إزالة ${source.title}`}
@@ -677,15 +677,18 @@ export function ChatScreen({
             ) : (
               <FileText className="size-6 text-primary" />
             )}
-            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+            <span dir="auto" className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
               {pendingAttachment.file.name}
             </span>
           </div>
           <button
             onClick={() => setPendingAttachment(null)}
-            className="flex size-7 items-center justify-center rounded-full bg-white dark:bg-slate-700 text-slate-500"
+            aria-label="إزالة المرفق"
+            className="flex size-11 shrink-0 items-center justify-center rounded-full text-slate-500"
           >
-            <X className="size-3.5" />
+            <span className="flex size-7 items-center justify-center rounded-full bg-white dark:bg-slate-700">
+              <X className="size-3.5" aria-hidden />
+            </span>
           </button>
         </div>
       )}

@@ -3,17 +3,22 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { withIdentity } from "@/lib/tutor/db";
 import { enqueueTemplateEmail } from "@/lib/email-queue";
+import { verifyUploadContent } from "@/lib/validations/file-content";
 
-const RECEIPT_TYPES = new Set(["image/jpeg", "image/png", "application/pdf"]);
+const RECEIPT_KINDS = ["pdf", "jpeg", "png"] as const;
 export const MAX_RECEIPT_BYTES = 5 * 1024 * 1024;
 
-export function validateReceipt(file: File) {
-  if (!RECEIPT_TYPES.has(file.type)) throw new Error("إثبات الدفع يجب أن يكون JPG أو PNG أو PDF");
+/** Checks size and the real file signature; returns the bytes and verified MIME type. */
+export async function validateReceipt(file: File) {
   if (!file.size || file.size > MAX_RECEIPT_BYTES) throw new Error("حجم إثبات الدفع يجب ألا يتجاوز 5MB");
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const check = verifyUploadContent(bytes, file.type, RECEIPT_KINDS);
+  if (!check.ok) throw new Error("إثبات الدفع يجب أن يكون JPG أو PNG أو PDF صالحًا");
+  return { bytes, mime: check.mime };
 }
 
 export async function createPaymentRequest(userId: string, planId: string, methodId: string, file: File) {
-  validateReceipt(file);
+  const receipt = await validateReceipt(file);
   const result = await withIdentity(userId, async (db) => {
     const plan = (await db.query<{ id:string;name:string;price:number;currency:string;duration_days:number }>(
       "select id,name,price,currency,duration_days from subscription_plans where id=$1 and active=true", [planId]
@@ -27,7 +32,7 @@ export async function createPaymentRequest(userId: string, planId: string, metho
     const reference = (await db.query<{ ref: string }>("select 'PAY-'||to_char(now(),'YYYY')||'-'||lpad(nextval('payment_reference_seq')::text,5,'0') ref")).rows[0].ref;
     const path = `payments/${userId}/${randomUUID()}`;
     await db.query("insert into stored_files(path,bucket,owner_id,mime_type,content) values($1,'payment-receipts',$2,$3,$4)",
-      [path, userId, file.type, Buffer.from(await file.arrayBuffer())]);
+      [path, userId, receipt.mime, receipt.bytes]);
     const request = (await db.query<{ id:string;payment_reference:string }>(`insert into payment_requests(
       payment_reference,user_id,plan_id,payment_method_id,amount,currency,plan_name_snapshot,price_snapshot,
       duration_days_snapshot,payment_method_snapshot,receipt_path)

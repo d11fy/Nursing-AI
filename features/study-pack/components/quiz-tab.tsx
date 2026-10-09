@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { QuizItem, QuizDifficulty, StudentMistakeItem } from "../types";
+import type { QuizAnswerFeedback, QuizDifficulty, StudentMistakeItem, StudentQuizItem } from "../types";
 
 const difficultyLabels: Record<QuizDifficulty, string> = {
   easy: "سهل",
@@ -39,9 +39,9 @@ export function QuizTab({
   initialQuiz,
 }: {
   studyPackId: string;
-  initialQuiz?: QuizItem | null;
+  initialQuiz?: StudentQuizItem | null;
 }) {
-  const [quiz, setQuiz] = useState<QuizItem | null>(initialQuiz ?? null);
+  const [quiz, setQuiz] = useState<StudentQuizItem | null>(initialQuiz ?? null);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(!initialQuiz);
 
@@ -54,7 +54,9 @@ export function QuizTab({
   // Active Runner State
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-  const [revealed, setRevealed] = useState(false);
+  // The answer key arrives from the server only after the answer is recorded.
+  const [feedback, setFeedback] = useState<QuizAnswerFeedback | null>(null);
+  const revealed = feedback !== null;
   const [attemptId, setAttemptId] = useState<string | null>(null);
   const [submittingAnswer, setSubmittingAnswer] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
@@ -127,14 +129,16 @@ export function QuizTab({
       const data = await res.json();
       if (res.ok && data.id) {
         setAttemptId(data.id);
+      } else {
+        toast.error(data.error || "تعذر بدء محاولة الاختبار؛ أعد المحاولة");
       }
     } catch {
-      // Continue anyway with local attempt
+      toast.error("تعذر بدء محاولة الاختبار؛ تحقق من الاتصال");
     }
 
     setCurrentQuestionIndex(0);
     setSelectedAnswer(null);
-    setRevealed(false);
+    setFeedback(null);
     setIsCompleted(false);
     setCompletionSummary(null);
     setMistakesMode(false);
@@ -144,28 +148,30 @@ export function QuizTab({
   async function handleSelectOption(option: string) {
     if (revealed || submittingAnswer) return;
 
-    setSelectedAnswer(option);
-    setRevealed(true);
-    setSubmittingAnswer(true);
-
     const activeQuestion = quiz?.questions[currentQuestionIndex];
-    if (activeQuestion && attemptId) {
-      try {
-        await fetch(`/api/study-packs/${studyPackId}/quiz/attempt?action=answer`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            attemptId,
-            questionId: activeQuestion.id,
-            studentAnswer: option,
-          }),
-        });
-      } catch {
-        // Ignored
-      } finally {
-        setSubmittingAnswer(false);
-      }
-    } else {
+    if (!activeQuestion || !attemptId) {
+      toast.error("لم تبدأ محاولة الاختبار بعد؛ أعد فتح الاختبار");
+      return;
+    }
+    setSelectedAnswer(option);
+    setSubmittingAnswer(true);
+    try {
+      const res = await fetch(`/api/study-packs/${studyPackId}/quiz/attempt?action=answer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          attemptId,
+          questionId: activeQuestion.id,
+          studentAnswer: option,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || typeof data.correctAnswer !== "string") throw new Error(data.error || "تعذر حفظ إجابتك");
+      setFeedback(data as QuizAnswerFeedback);
+    } catch (err) {
+      setSelectedAnswer(null);
+      toast.error(err instanceof Error ? err.message : "تعذر حفظ إجابتك؛ حاول مرة أخرى");
+    } finally {
       setSubmittingAnswer(false);
     }
   }
@@ -177,7 +183,7 @@ export function QuizTab({
     if (currentQuestionIndex < quiz.questions.length - 1) {
       setCurrentQuestionIndex((prev) => prev + 1);
       setSelectedAnswer(null);
-      setRevealed(false);
+      setFeedback(null);
     } else {
       // Complete attempt
       if (attemptId) {
@@ -265,14 +271,14 @@ export function QuizTab({
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             {/* Question Count */}
             <div className="min-w-0 space-y-1.5">
-              <label className="block text-sm font-semibold text-foreground">
+              <label id="quiz-label-1" className="block text-sm font-semibold text-foreground">
                 عدد الأسئلة
               </label>
               <Select
                 value={String(questionCount)}
                 onValueChange={(val) => setQuestionCount(Number(val))}
               >
-                <SelectTrigger className="w-full text-sm">
+                <SelectTrigger aria-labelledby="quiz-label-1" className="w-full text-sm">
                   <SelectValue>{(value: string) => value}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
@@ -286,14 +292,14 @@ export function QuizTab({
 
             {/* Difficulty */}
             <div className="min-w-0 space-y-1.5">
-              <label className="block text-sm font-semibold text-foreground">
+              <label id="quiz-label-2" className="block text-sm font-semibold text-foreground">
                 مستوى الصعوبة
               </label>
               <Select
                 value={difficulty}
                 onValueChange={(val) => setDifficulty(val as QuizDifficulty)}
               >
-                <SelectTrigger className="w-full text-sm">
+                <SelectTrigger aria-labelledby="quiz-label-2" className="w-full text-sm">
                   <SelectValue>{(value: QuizDifficulty) => difficultyLabels[value]}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
@@ -307,14 +313,14 @@ export function QuizTab({
 
             {/* Question Type */}
             <div className="min-w-0 space-y-1.5">
-              <label className="block text-sm font-semibold text-foreground">
+              <label id="quiz-label-3" className="block text-sm font-semibold text-foreground">
                 نوع الأسئلة
               </label>
               <Select
                 value={questionType}
                 onValueChange={(val) => setQuestionType(val as "mcq" | "true_false" | "mixed")}
               >
-                <SelectTrigger className="w-full text-sm">
+                <SelectTrigger aria-labelledby="quiz-label-3" className="w-full text-sm">
                   <SelectValue>{(value: keyof typeof questionTypeLabels) => questionTypeLabels[value]}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
@@ -533,7 +539,7 @@ export function QuizTab({
 
   // 5. Active Single-Question Runner State
   const currentQ = quiz.questions[currentQuestionIndex];
-  const isCorrect = selectedAnswer?.trim().toLowerCase() === currentQ.correct_answer.trim().toLowerCase();
+  const isCorrect = feedback?.isCorrect ?? false;
 
   return (
     <Card className="mx-auto w-full max-w-2xl border-border shadow-xs">
@@ -565,7 +571,7 @@ export function QuizTab({
         <div className="space-y-2">
           {currentQ.options.map((option, idx) => {
             const isThisSelected = selectedAnswer === option;
-            const isThisCorrect = option.trim().toLowerCase() === currentQ.correct_answer.trim().toLowerCase();
+            const isThisCorrect = feedback !== null && option.trim().toLowerCase() === feedback.correctAnswer.trim().toLowerCase();
 
             let optionStyle = "border-border hover:bg-muted/60 text-foreground";
             if (revealed) {
@@ -581,7 +587,8 @@ export function QuizTab({
             return (
               <button
                 key={idx}
-                disabled={revealed}
+                disabled={revealed || submittingAnswer}
+                aria-pressed={isThisSelected}
                 onClick={() => handleSelectOption(option)}
                 dir="auto"
                 className={`flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border p-3.5 text-start text-sm leading-6 transition-all ${optionStyle}`}
@@ -624,7 +631,7 @@ export function QuizTab({
             <div className="space-y-1 text-foreground/90">
               <span className="font-semibold text-primary block">التفسير السريري (Rationale):</span>
               <p dir="auto" className="[unicode-bidi:plaintext] leading-relaxed">
-                {currentQ.rationale}
+                {feedback?.rationale}
               </p>
             </div>
           </div>

@@ -16,4 +16,10 @@ export async function register() {
   let running=false;
   const processJobs=async()=>{if(running)return;running=true;try{await runKnowledgeJobs();await runExamJobs();}catch{console.error('Knowledge worker unavailable');}finally{running=false;}};
   const timer=setInterval(()=>void processJobs(),15_000);timer.unref();
+  // Email delivery also recovers messages whose lease expired after a crash.
+  // Claims use FOR UPDATE SKIP LOCKED, so several replicas can run this safely.
+  const { processEmailQueue }=await import('@/lib/email-queue');
+  let mailing=false;
+  const processEmail=async()=>{if(mailing)return;mailing=true;try{await processEmailQueue(20);}catch{console.error('Email worker unavailable');}finally{mailing=false;}};
+  const mailTimer=setInterval(()=>void processEmail(),60_000);mailTimer.unref();
 }

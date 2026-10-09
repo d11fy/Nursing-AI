@@ -5,6 +5,8 @@ import { newToken, tokenHash } from "./password";
 import type { Profile } from "@/types/database";
 
 export const SESSION_TTL_SECONDS = 365 * 24 * 60 * 60;
+/** Admin sessions expire after 12 hours without activity (students stay signed in on their one device). */
+export const ADMIN_SESSION_IDLE_SECONDS = 12 * 60 * 60;
 export const DEVICE_TTL_SECONDS = 400 * 24 * 60 * 60;
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/;
 
@@ -72,7 +74,7 @@ export async function establishSession(userId: string, presentedDeviceToken?: st
     await client.query(
       `insert into app_sessions(token_hash,user_id,device_hash,is_admin_session,expires_at,created_at,last_seen_at)
        values($1,$2,$3,$4,now()+($5 * interval '1 second'),now(),now())`,
-      [tokenHash(sessionToken), userId, deviceHash, isAdmin, SESSION_TTL_SECONDS]
+      [tokenHash(sessionToken), userId, deviceHash, isAdmin, isAdmin ? ADMIN_SESSION_IDLE_SECONDS : SESSION_TTL_SECONDS]
     );
     if (!isAdmin) await client.query("select claim_trial_device($1,$2)", [userId, deviceHash]);
   });
@@ -88,13 +90,13 @@ export async function renewSession(sessionToken?: string, deviceToken?: string) 
     `update app_sessions
         set device_hash=coalesce(device_hash,$2),
             last_seen_at=now(),
-            expires_at=now()+($3 * interval '1 second')
+            expires_at=now()+((case when is_admin_session then $4::integer else $3::integer end) * interval '1 second')
       where token_hash=$1
         and expires_at>now()
         and revoked_at is null
         and (device_hash is null or device_hash=$2)
       returning device_hash`,
-    [tokenHash(sessionToken), resolvedDeviceHash, SESSION_TTL_SECONDS]
+    [tokenHash(sessionToken), resolvedDeviceHash, SESSION_TTL_SECONDS, ADMIN_SESSION_IDLE_SECONDS]
   );
   return rows[0] ? { deviceToken: resolvedDeviceToken } : null;
 }

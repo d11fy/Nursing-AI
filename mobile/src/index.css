@@ -35,7 +35,8 @@ body {
   overflow-x: hidden;
   user-select: none;
   -webkit-user-select: none;
-  min-width: 320px;
+  /* No minimum width: at 200% zoom or the largest Android display size the
+     layout must reflow instead of pushing actions off-screen. */
 }
 
 button,
@@ -55,6 +56,26 @@ select {
 .selectable-text {
   user-select: text;
   -webkit-user-select: text;
+}
+
+/* Mixed Arabic / English medical text: each paragraph takes its direction
+   from its first strong character, inline code and links are isolated so
+   numbers, doses and URLs keep their order, and long tokens (URLs, file
+   names, drug names) wrap instead of widening the screen. */
+.markdown,
+.selectable-text,
+.bidi-text {
+  overflow-wrap: anywhere;
+}
+.markdown :is(p, h1, h2, h3, h4, li, blockquote, th, td),
+.selectable-text,
+.bidi-text {
+  unicode-bidi: plaintext;
+  text-align: start;
+}
+.markdown :is(code, a),
+.bidi-isolate {
+  unicode-bidi: isolate;
 }
 
 /* Safe areas */

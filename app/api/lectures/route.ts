@@ -1,26 +1,18 @@
 import { NextResponse } from "next/server";
-import { createHash } from "node:crypto";
 import { limitedFormData } from "@/lib/request-body";
 import { createClient } from "@/lib/db/server";
 import { identityDb } from "@/lib/tutor/db";
 import { getSettings } from "@/lib/usage";
 import { canStudentAccessSubject } from "@/lib/subjects";
-import { uploadLectureFile } from "@/lib/storage";
-import {
-  lectureUploadMetaSchema,
-  LECTURE_EXTENSION_MIME_MAP,
-} from "@/lib/validations/lectures";
-import { registerDocument, enqueueDocument } from "@/lib/tutor/ingestion";
+import { lectureUploadMetaSchema } from "@/lib/validations/lectures";
 import { logEvent } from "@/lib/log";
+import { readIdempotencyKey, usageErrorResponse } from "@/lib/subscriptions/service";
 import {
-  accessErrorMessage,
-  consumeUsage,
-  refundUsage,
-} from "@/lib/subscriptions/service";
-
-function sanitizeFileName(name: string): string {
-  return name.replace(/[/\\\x00-\x1f]/g, "_").slice(0, 200) || "lecture";
-}
+  lectureRetention,
+  storeStudentLecture,
+  UploadRejectedError,
+  verifiedLectureFile,
+} from "@/lib/lectures/student-upload";
 
 export async function POST(request: Request) {
   const db = await createClient();
@@ -43,7 +35,7 @@ export async function POST(request: Request) {
     );
   }
 
-  let file = formData.get("file");
+  const file = formData.get("file");
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "لم يتم إرفاق ملف" }, { status: 400 });
   }
@@ -80,13 +72,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-  const expectedMime = LECTURE_EXTENSION_MIME_MAP[ext];
-  if (expectedMime && (!file.type || file.type === "application/octet-stream"))
-    file = new File([file], file.name, { type: expectedMime });
-  if (!expectedMime || expectedMime !== file.type) {
-    return NextResponse.json({ error: "نوع الملف غير مدعوم" }, { status: 400 });
-  }
   if (file.size > maxBytes) {
     return NextResponse.json(
       {
@@ -96,7 +81,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const isLarge = file.size > settings.lectureLargeFileMb * 1024 * 1024;
+  let verified: Awaited<ReturnType<typeof verifiedLectureFile>>;
+  try {
+    verified = await verifiedLectureFile(file);
+  } catch (err) {
+    if (err instanceof UploadRejectedError)
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    throw err;
+  }
+
+  const { isLarge } = lectureRetention(settings, file.size);
   if (isLarge && !largeFileAcknowledged) {
     return NextResponse.json(
       {
@@ -106,9 +100,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const fileHash = createHash("sha256")
-    .update(Buffer.from(await file.arrayBuffer()))
-    .digest("hex");
+  const fileHash = verified.hash;
 
   if (!forceDuplicate) {
     const { rows: duplicates } = await identityDb(user.id).query<{
@@ -134,27 +126,33 @@ export async function POST(request: Request) {
   logEvent("FILE_UPLOAD_STARTED", {
     userId: user.id,
     fileSize: file.size,
-    mimeType: file.type,
+    mimeType: verified.file.type,
   });
 
-  let storagePath: string;
-  let reservation;
+  const now = new Date().toISOString();
+  const bothConsentsGiven =
+    contributionConsent && contributionOwnershipConfirmed;
+
+  let stored: Awaited<ReturnType<typeof storeStudentLecture>>;
   try {
-    reservation = await consumeUsage(user.id, "files_limit");
-    const result = await uploadLectureFile(db, user.id, file, maxBytes);
-    storagePath = result.path;
+    stored = await storeStudentLecture({
+      db,
+      userId: user.id,
+      file: verified.file,
+      hash: fileHash,
+      subjectId,
+      title,
+      maxBytes,
+      settings,
+      idempotencyKey: readIdempotencyKey(request, "lecture"),
+      extra: {
+        contribution_consent_at: bothConsentsGiven ? now : null,
+        contribution_ownership_confirmed_at: bothConsentsGiven ? now : null,
+      },
+    });
   } catch (err) {
-    if (reservation) await refundUsage(reservation).catch(() => undefined);
-    if (
-      err instanceof Error &&
-      (err.message.includes("الحد") ||
-        err.message.includes("اشتراك") ||
-        err.message.includes("الميزة"))
-    ) {
-      return NextResponse.json(accessErrorMessage(err, "الملفات"), {
-        status: 403,
-      });
-    }
+    const usage = usageErrorResponse(err, "الملفات");
+    if (usage) return usage;
     logEvent("FILE_UPLOAD_FAILED", {
       userId: user.id,
       error: err instanceof Error ? err.message : "unknown",
@@ -164,49 +162,15 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
-
-  const now = Date.now();
-  const bothConsentsGiven =
-    contributionConsent && contributionOwnershipConfirmed;
-
-  const { data: lecture, error } = await db
-    .from("lectures")
-    .insert({
-      user_id: user.id,
-      subject_id: subjectId,
-      title,
-      file_name: sanitizeFileName(file.name),
-      original_file_name: file.name,
-      storage_path: storagePath,
-      mime_type: file.type,
-      file_size_bytes: file.size,
-      file_hash: fileHash,
-      status: "uploaded",
-      delete_after: isLarge
-        ? new Date(
-            now + settings.lectureRetentionDays * 24 * 60 * 60 * 1000,
-          ).toISOString()
-        : null,
-      contribution_consent_at: bothConsentsGiven
-        ? new Date(now).toISOString()
-        : null,
-      contribution_ownership_confirmed_at: bothConsentsGiven
-        ? new Date(now).toISOString()
-        : null,
-    })
-    .select("id, status, delete_after")
-    .single();
-
-  if (error || !lecture) {
+  if (!stored.lectureId) {
     return NextResponse.json(
-      { error: "تعذر إنشاء سجل المحاضرة" },
-      { status: 500 },
+      { error: "طلب الرفع السابق ما زال قيد التنفيذ" },
+      { status: 409 },
     );
   }
+  const lecture = { id: stored.lectureId, status: "uploaded", delete_after: stored.deleteAfter };
 
   logEvent("FILE_UPLOAD_COMPLETED", { userId: user.id, lectureId: lecture.id });
-
-  await enqueueDocument(await registerDocument(lecture.id, true));
 
   return NextResponse.json({
     id: lecture.id,

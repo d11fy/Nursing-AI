@@ -100,11 +100,11 @@ export function LoginScreen() {
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+            <label htmlFor="login-field-1" className="block text-xs font-bold text-slate-700 dark:text-slate-300">
               البريد الإلكتروني
             </label>
             <div className="relative">
-              <input
+              <input id="login-field-1"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -118,11 +118,11 @@ export function LoginScreen() {
           </div>
 
           <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+            <label htmlFor="login-field-2" className="block text-xs font-bold text-slate-700 dark:text-slate-300">
               كلمة المرور
             </label>
             <div className="relative">
-              <input
+              <input id="login-field-2"
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -134,12 +134,15 @@ export function LoginScreen() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute left-3.5 top-3.5 text-slate-400 hover:text-slate-600"
+                aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+                aria-pressed={showPassword}
+                aria-controls="login-field-2"
+                className="absolute left-0.5 top-0.5 flex size-11 items-center justify-center rounded-2xl text-slate-500 hover:text-slate-700"
               >
                 {showPassword ? (
-                  <EyeOff className="size-5" />
+                  <EyeOff className="size-5" aria-hidden />
                 ) : (
-                  <Eye className="size-5" />
+                  <Eye className="size-5" aria-hidden />
                 )}
               </button>
             </div>

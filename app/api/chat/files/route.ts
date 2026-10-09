@@ -1,13 +1,13 @@
-import { createHash } from "node:crypto";
 import { z } from "zod";
 import { createClient } from "@/lib/db/server";
 import { identityDb } from "@/lib/tutor/db";
 import { registerDocument, enqueueDocument } from "@/lib/tutor/ingestion";
 import { canStudentAccessSubject } from "@/lib/subjects";
 import { limitedFormData } from "@/lib/request-body";
-import { uploadLectureFile } from "@/lib/storage";
-import { LECTURE_EXTENSION_MIME_MAP } from "@/lib/validations/lectures";
+import { getSettings } from "@/lib/usage";
 import { attachProcessedLecture } from "@/lib/tutor/file-attachment";
+import { readIdempotencyKey, usageErrorResponse } from "@/lib/subscriptions/service";
+import { storeStudentLecture, UploadRejectedError, verifiedLectureFile } from "@/lib/lectures/student-upload";
 const CHAT_FILE_MAX_SIZE_MB = 10;
 const CHAT_FILE_MAX_SIZE_BYTES = CHAT_FILE_MAX_SIZE_MB * 1024 * 1024;
 const schema = z.object({
@@ -28,14 +28,14 @@ export async function POST(request: Request) {
       { status: 413 },
     );
   }
-  let file = form.get("file");
+  const upload = form.get("file");
   const meta = schema.safeParse({
     conversationId: form.get("conversationId") || null,
     subjectId: form.get("subjectId") || null,
   });
-  if (!(file instanceof File) || !meta.success)
+  if (!(upload instanceof File) || !meta.success)
     return Response.json({ error: "بيانات الملف غير صالحة" }, { status: 400 });
-  if (file.size > CHAT_FILE_MAX_SIZE_BYTES)
+  if (upload.size > CHAT_FILE_MAX_SIZE_BYTES)
     return Response.json(
       { error: `الحد الأقصى لملف المحادثة ${CHAT_FILE_MAX_SIZE_MB}MB` },
       { status: 413 },
@@ -60,82 +60,79 @@ export async function POST(request: Request) {
     );
   if (!(await canStudentAccessSubject(user.user_id, subject)))
     return Response.json({ error: "المادة غير متاحة لك" }, { status: 403 });
-  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-  const expectedType = LECTURE_EXTENSION_MIME_MAP[extension];
-  if (expectedType && (!file.type || file.type === "application/octet-stream"))
-    file = new File([file], file.name, { type: expectedType });
-  if (!expectedType || expectedType !== file.type)
-    return Response.json(
-      { error: "استخدم PDF أو DOCX أو PPTX أو TXT" },
-      { status: 400 },
-    );
-  const buffer = Buffer.from(await file.arrayBuffer()),
-    hash = createHash("sha256").update(buffer).digest("hex");
-  if (!cid) {
+  let verified: Awaited<ReturnType<typeof verifiedLectureFile>>;
+  try {
+    verified = await verifiedLectureFile(upload);
+  } catch (error) {
+    if (error instanceof UploadRejectedError)
+      return Response.json({ error: error.message }, { status: error.status });
+    throw error;
+  }
+  // Re-sending a file already in this subject reuses it: no new storage,
+  // processing or quota. A failed earlier copy is re-queued like the retry route.
+  const duplicate = (
+    await identityDb(user.user_id).query<{ id: string; status: string }>(
+      "select id,status from lectures where user_id=$1 and file_hash=$2 and subject_id=$3 and deleted_at is null order by created_at desc limit 1",
+      [user.user_id, verified.hash, subject],
+    )
+  ).rows[0];
+  const ensureConversation = async () => {
+    if (cid) return cid;
     const created = await db
       .from("conversations")
       .insert({
         user_id: user.user_id,
-        title: file.name.slice(0, 60),
+        title: upload.name.slice(0, 60),
         subject_id: subject,
       })
       .select("id")
       .single();
-    if (!created.data)
-      return Response.json({ error: "تعذر إنشاء المحادثة" }, { status: 503 });
-    cid = created.data.id;
-  }
-  const duplicate = (
-    await identityDb(user.user_id).query<{ id: string; status: string }>(
-      "select id,status from lectures where user_id=$1 and file_hash=$2 and subject_id=$3 and deleted_at is null limit 1",
-      [user.user_id, hash, subject],
-    )
-  ).rows[0];
-  if (duplicate?.status === "ready") {
-    const attachmentId = await attachProcessedLecture(
-      user.user_id,
-      cid,
-      duplicate.id,
+    if (!created.data) throw new Error("تعذر إنشاء المحادثة");
+    return (cid = created.data.id as string);
+  };
+  if (duplicate) {
+    const conversationId = await ensureConversation();
+    if (duplicate.status === "ready")
+      return Response.json({
+        conversationId,
+        lectureId: duplicate.id,
+        attachmentId: await attachProcessedLecture(user.user_id, conversationId, duplicate.id),
+        status: "ready",
+      });
+    if (duplicate.status === "failed") {
+      await identityDb(user.user_id).query("update lectures set status='uploaded',error_message=null where id=$1 and user_id=$2", [duplicate.id, user.user_id]);
+      await enqueueDocument(await registerDocument(duplicate.id, true));
+    }
+    return Response.json(
+      { conversationId, lectureId: duplicate.id, status: "processing", deleteAfter: null },
+      { status: 202 },
     );
-    return Response.json({
-      conversationId: cid,
-      lectureId: duplicate.id,
-      attachmentId,
-      status: "ready",
-    });
   }
-  const { path } = await uploadLectureFile(
-    db,
-    user.user_id,
-    file,
-    CHAT_FILE_MAX_SIZE_BYTES,
-  );
-  const lecture = await db
-    .from("lectures")
-    .insert({
-      user_id: user.user_id,
-      subject_id: subject,
-      title: file.name.slice(0, 180),
-      file_name: file.name.replace(/[/\\\x00-\x1f]/g, "_"),
-      original_file_name: file.name,
-      storage_path: path,
-      mime_type: file.type,
-      file_size_bytes: file.size,
-      file_hash: hash,
-      status: "uploaded",
-      delete_after: null,
-    })
-    .select("id")
-    .single();
-  if (!lecture.data)
+  try {
+    const stored = await storeStudentLecture({
+      db,
+      userId: user.user_id,
+      file: verified.file,
+      hash: verified.hash,
+      subjectId: subject,
+      title: upload.name.slice(0, 180),
+      maxBytes: CHAT_FILE_MAX_SIZE_BYTES,
+      settings: await getSettings(db),
+      idempotencyKey: readIdempotencyKey(request, "chat-file"),
+    });
+    if (!stored.lectureId)
+      return Response.json({ error: "طلب الرفع السابق ما زال قيد التنفيذ" }, { status: 409 });
+    const conversationId = await ensureConversation();
+    return Response.json(
+      { conversationId, lectureId: stored.lectureId, status: "processing", deleteAfter: stored.deleteAfter },
+      { status: 202 },
+    );
+  } catch (error) {
+    const usage = usageErrorResponse(error, "الملفات");
+    if (usage) return usage;
+    console.error("[ChatFiles] upload failed", error instanceof Error ? error.message : "unknown");
     return Response.json({ error: "تعذر حفظ الملف" }, { status: 503 });
-  const lectureId = lecture.data.id,
-    conversationId = cid;
-  await enqueueDocument(await registerDocument(lectureId, true));
-  return Response.json(
-    { conversationId, lectureId, status: "processing", deleteAfter: null },
-    { status: 202 },
-  );
+  }
 }
 export async function GET(request: Request) {
   const db = await createClient(),

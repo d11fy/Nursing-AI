@@ -5,9 +5,9 @@ import { Loader2, Target } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PracticeExamRunner } from "@/components/dashboard/practice-exam-runner";
-import type { PracticeQuestionView } from "@/lib/exams/practice-service";
+import type { StudentPracticeQuestion } from "@/lib/exams/practice-service";
 
-type Session = { attemptId: string; mode: "STUDY" | "EXAM"; practiceType: string; questions: PracticeQuestionView[]; targetedTopic: string };
+type Session = { attemptId: string; mode: "STUDY" | "EXAM"; practiceType: string; questions: StudentPracticeQuestion[]; targetedTopic: string };
 
 export function TargetedReviewLauncher({ subjectId, topicKey, compact = false }: { subjectId?: string; topicKey?: string; compact?: boolean }) {
   const [loading, setLoading] = useState(false);

@@ -57,7 +57,8 @@ export function RegisterScreen() {
         <div>
           <button
             onClick={() => goBack()}
-            className="flex size-10 items-center justify-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 shadow-xs active:scale-95 transition-all"
+            aria-label="رجوع"
+            className="flex size-11 items-center justify-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 shadow-xs active:scale-95 transition-all"
           >
             <ArrowRight className="size-5" />
           </button>
@@ -84,11 +85,11 @@ export function RegisterScreen() {
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-3.5">
           <div className="space-y-1">
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+            <label htmlFor="register-field-1" className="block text-xs font-bold text-slate-700 dark:text-slate-300">
               الاسم الكامل
             </label>
             <div className="relative">
-              <input
+              <input id="register-field-1"
                 type="text"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
@@ -101,11 +102,11 @@ export function RegisterScreen() {
           </div>
 
           <div className="space-y-1">
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+            <label htmlFor="register-field-2" className="block text-xs font-bold text-slate-700 dark:text-slate-300">
               البريد الإلكتروني
             </label>
             <div className="relative">
-              <input
+              <input id="register-field-2"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -119,11 +120,11 @@ export function RegisterScreen() {
           </div>
 
           <div className="space-y-1">
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+            <label htmlFor="register-field-3" className="block text-xs font-bold text-slate-700 dark:text-slate-300">
               كلمة المرور
             </label>
             <div className="relative">
-              <input
+              <input id="register-field-3"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -138,11 +139,11 @@ export function RegisterScreen() {
           </div>
 
           <div className="space-y-1">
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+            <label htmlFor="register-field-4" className="block text-xs font-bold text-slate-700 dark:text-slate-300">
               الجامعة
             </label>
             <div className="relative">
-              <input
+              <input id="register-field-4"
                 type="text"
                 value={university}
                 onChange={(e) => setUniversity(e.target.value)}
@@ -155,10 +156,10 @@ export function RegisterScreen() {
           </div>
 
           <div className="space-y-1">
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+            <label htmlFor="register-field-5" className="block text-xs font-bold text-slate-700 dark:text-slate-300">
               السنة الدراسية
             </label>
-            <select
+            <select id="register-field-5"
               value={nursingYear}
               onChange={(e) => setNursingYear(e.target.value)}
               className="w-full h-11 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs text-slate-900 dark:text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-hidden"

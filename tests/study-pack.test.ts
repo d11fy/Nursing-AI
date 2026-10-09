@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
 import { vector } from "@electric-sql/pglite-pgvector";
 import { migrate } from "../scripts/migrate.mjs";
-import { identityDb, withIdentity } from "../lib/tutor/db";
+import { withIdentity } from "../lib/tutor/db";
 import {
   getOrCreateStudyPack,
   getStudyPackById,
@@ -12,11 +12,9 @@ import {
 import {
   getStudyPackFlashcards,
   updateFlashcardProgress,
-  saveStudyPackFlashcards,
 } from "../features/study-pack/db/flashcards-db";
 import {
   getLatestQuiz,
-  saveQuiz,
   startQuizAttempt,
   submitQuizAnswer,
   completeQuizAttempt,

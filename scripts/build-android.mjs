@@ -1,4 +1,5 @@
 import { execSync } from "child_process";
+import { createHash } from "crypto";
 import fs from "fs";
 import path from "path";
 
@@ -30,6 +31,39 @@ function findApkSigner() {
     if (fs.existsSync(candidate)) return candidate;
   }
   return null;
+}
+
+function findBuildTool(name) {
+  const buildToolsDir = path.join(androidHome, "build-tools");
+  if (!fs.existsSync(buildToolsDir)) return null;
+  const versions = fs.readdirSync(buildToolsDir).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+  for (const version of versions) {
+    for (const candidate of [name, `${name}.exe`, `${name}.bat`]) {
+      const file = path.join(buildToolsDir, version, candidate);
+      if (fs.existsSync(file)) return file;
+    }
+  }
+  return null;
+}
+
+/** Release gate: production identity, expected version, never debuggable. */
+function verifyReleaseManifest(apkPath, expected, env) {
+  const aapt2 = findBuildTool("aapt2");
+  if (!aapt2) throw new Error("aapt2 was not found in ANDROID_HOME/build-tools");
+  const badging = execSync(`"${aapt2}" dump badging "${apkPath}"`, { encoding: "utf8", env });
+  const pkg = badging.match(/package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'/);
+  if (!pkg) throw new Error("Could not read the APK package information");
+  const [, packageName, versionCode, versionName] = pkg;
+  if (packageName !== "com.nursingai.app") throw new Error(`Unexpected application id ${packageName}`);
+  if (Number(versionCode) !== expected.code || versionName !== expected.name)
+    throw new Error(`APK version ${versionName} (${versionCode}) does not match mobile/app-version.json ${expected.name} (${expected.code})`);
+  if (/application-debuggable/.test(badging)) throw new Error("Release APK is debuggable");
+  return { packageName, versionCode: Number(versionCode), versionName };
+}
+
+/** Certificate digest from apksigner output; build-tools print "Signer #1" or "V2 Signer". */
+function signerCertificate(output) {
+  return output.match(/(?:Signer #1|V\d+ Signer):? certificate SHA-256 digest:\s*([a-f0-9]{64})/i)?.[1]?.toLowerCase();
 }
 
 function verifyReleaseSignature(apkPath, env) {
@@ -65,8 +99,11 @@ const env = {
 };
 
 try {
-  console.log("\n[1/4] Building local Mobile Frontend into mobile/dist...");
   const isRelease = process.argv.includes("--release");
+  // Re-run only verification and publishing for an APK Gradle already built.
+  const finalizeOnly = isRelease && process.argv.includes("--finalize-only");
+  if (!finalizeOnly) {
+  console.log("\n[1/4] Building local Mobile Frontend into mobile/dist...");
   execSync("npm run build", {
     cwd: path.join(root, "mobile"),
     stdio: "inherit",
@@ -98,6 +135,7 @@ try {
     stdio: "inherit",
     env,
   });
+  }
 
   console.log("\n[4/4] Finalizing APK artifacts...");
   if (isRelease) {
@@ -117,7 +155,10 @@ try {
     }
 
     const srcPath = path.join(releaseDir, releaseApk);
+    const expectedVersion = JSON.parse(fs.readFileSync(path.join(root, "mobile", "app-version.json"), "utf8"));
+    const identity = verifyReleaseManifest(srcPath, expectedVersion, env);
     const signature = verifyReleaseSignature(srcPath, env);
+    if (/CN=Android Debug/i.test(signature)) throw new Error("Release APK is signed with the Android debug certificate");
     const previousApk = path.join(
       root,
       "public",
@@ -126,10 +167,7 @@ try {
     );
     if (fs.existsSync(previousApk)) {
       const previousSignature = verifyReleaseSignature(previousApk, env);
-      const certificate = (output) =>
-        output
-          .match(/Signer #1 certificate SHA-256 digest:\s*([a-f0-9]+)/i)?.[1]
-          ?.toLowerCase();
+      const certificate = signerCertificate;
       if (
         !certificate(signature) ||
         certificate(signature) !== certificate(previousSignature)
@@ -142,7 +180,8 @@ try {
     const destDir = path.join(root, "public", "downloads");
     if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
 
-    const destNamed = path.join(destDir, releaseApk);
+    const publishedName = `nursing-ai-v${identity.versionName}.apk`;
+    const destNamed = path.join(destDir, publishedName);
     const destLatest = path.join(destDir, "nursing-ai-latest.apk");
 
     fs.copyFileSync(srcPath, destNamed);
@@ -150,13 +189,18 @@ try {
 
     const stats = fs.statSync(srcPath);
     const sizeMb = (stats.size / (1024 * 1024)).toFixed(2);
+    const sha256 = createHash("sha256").update(fs.readFileSync(srcPath)).digest("hex");
+    const certificate = signerCertificate(signature);
 
     console.log(`\n========================================`);
     console.log(`Signed Production Release APK Ready:`);
-    console.log(`File: ${releaseApk} (${sizeMb} MB)`);
-    console.log(`Location: ${srcPath}`);
-    console.log(`Web Download: public/downloads/${releaseApk}`);
-    console.log(`Latest URL: /downloads/nursing-ai-latest.apk`);
+    console.log(`Package: ${identity.packageName} ${identity.versionName} (${identity.versionCode}), not debuggable`);
+    console.log(`File: ${publishedName} (${sizeMb} MB)`);
+    console.log(`APK SHA-256: ${sha256}`);
+    console.log(`Signing certificate SHA-256: ${certificate}`);
+    console.log(`Web Download: public/downloads/${publishedName}`);
+    console.log(`Latest URL: /api/download/apk (public/downloads/nursing-ai-latest.apk)`);
+    console.log(`Publish: set version ${identity.versionName}, code ${identity.versionCode} and this SHA-256 in Admin -> Settings.`);
     console.log(`========================================\n`);
   } else {
     console.log(

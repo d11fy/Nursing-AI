@@ -1,19 +1,10 @@
 "use client";
 
-import { useState,type ComponentProps } from "react";
-import Link from "next/link";
+import { useState, type ComponentProps } from "react";
 import {
-  BookOpen,
-  FileCheck2,
   Sparkles,
-  Award,
-  Clock,
   Play,
-  CheckCircle2,
-  AlertTriangle,
-  RotateCcw,
   BarChart3,
-  Layers,
   ChevronLeft,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -25,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { LectureUploadDialog } from "@/components/dashboard/lecture-upload-dialog";
 import { LectureCard } from "@/components/dashboard/lecture-card";
 import { PracticeExamRunner } from "@/components/dashboard/practice-exam-runner";
-import type { PracticeQuestionView } from "@/lib/exams/practice-service";
+import type { StudentPracticeQuestion } from "@/lib/exams/practice-service";
 import type { TopicRecurrenceStat } from "@/lib/exams/analytics-service";
 
 const practiceTypeLabels = {
@@ -78,7 +69,7 @@ export function SubjectTrainingTabs({
     attemptId: string;
     mode: "STUDY" | "EXAM";
     practiceType: string;
-    questions: PracticeQuestionView[];
+    questions: StudentPracticeQuestion[];
   } | null>(null);
 
   const [loadingExam, setLoadingExam] = useState(false);
@@ -196,9 +187,9 @@ export function SubjectTrainingTabs({
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="text-xs font-semibold text-foreground block mb-1.5">نمط توليد الأسئلة</label>
+                <label id="training-label-1" className="text-xs font-semibold text-foreground block mb-1.5">نمط توليد الأسئلة</label>
                 <Select value={practiceType} onValueChange={(val) => {if(val==="PAST_EXAM"||val==="UNIVERSITY_STYLE"||val==="MIXED")setPracticeType(val); }}>
-                  <SelectTrigger className="h-9 text-xs">
+                  <SelectTrigger aria-labelledby="training-label-1" className="h-9 text-xs">
                     <SelectValue>{(value: keyof typeof practiceTypeLabels) => practiceTypeLabels[value]}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
@@ -210,9 +201,9 @@ export function SubjectTrainingTabs({
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-foreground block mb-1.5">طريقة الاختبار</label>
+                <label id="training-label-2" className="text-xs font-semibold text-foreground block mb-1.5">طريقة الاختبار</label>
                 <Select value={examMode} onValueChange={(val) => {if(val==="STUDY"||val==="EXAM")setExamMode(val); }}>
-                  <SelectTrigger className="h-9 text-xs">
+                  <SelectTrigger aria-labelledby="training-label-2" className="h-9 text-xs">
                     <SelectValue>{(value: keyof typeof examModeLabels) => examModeLabels[value]}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
@@ -223,9 +214,9 @@ export function SubjectTrainingTabs({
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-foreground block mb-1.5">عدد الأسئلة</label>
+                <label id="training-label-3" className="text-xs font-semibold text-foreground block mb-1.5">عدد الأسئلة</label>
                 <Select value={questionCount} onValueChange={(val) => { if (val) setQuestionCount(val); }}>
-                  <SelectTrigger className="h-9 text-xs">
+                  <SelectTrigger aria-labelledby="training-label-3" className="h-9 text-xs">
                     <SelectValue>{(value: string) => value}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
@@ -238,9 +229,9 @@ export function SubjectTrainingTabs({
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-foreground block mb-1.5">مستوى الصعوبة</label>
+                <label id="training-label-4" className="text-xs font-semibold text-foreground block mb-1.5">مستوى الصعوبة</label>
                 <Select value={difficulty} onValueChange={(val) => { if (val==="EASY"||val==="MEDIUM"||val==="HARD") setDifficulty(val); }}>
-                  <SelectTrigger className="h-9 text-xs">
+                  <SelectTrigger aria-labelledby="training-label-4" className="h-9 text-xs">
                     <SelectValue>{(value: keyof typeof practiceDifficultyLabels) => practiceDifficultyLabels[value]}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
@@ -254,9 +245,9 @@ export function SubjectTrainingTabs({
 
             {repeatedTopics.length > 0 && (
               <div>
-                <label className="text-xs font-semibold text-foreground block mb-1.5">تحديد موضوع معين (اختياري)</label>
+                <label id="training-label-5" className="text-xs font-semibold text-foreground block mb-1.5">تحديد موضوع معين (اختياري)</label>
                 <Select value={selectedTopic} onValueChange={(val) => { if (val) setSelectedTopic(val); }}>
-                  <SelectTrigger className="h-9 text-xs">
+                  <SelectTrigger aria-labelledby="training-label-5" className="h-9 text-xs">
                     <SelectValue placeholder="كافة موضوعات المادة" />
                   </SelectTrigger>
                   <SelectContent>

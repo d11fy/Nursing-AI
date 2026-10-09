@@ -1,13 +1,22 @@
 import { NextResponse } from "next/server";
 import fs from "fs";
-import path from "path";
-import { getAppVersionInfo } from "@/lib/version/app-version";
+import { getPublicReleaseInfo, STABLE_APK_PATH } from "@/lib/version/app-version";
 
 export async function GET() {
   try {
-    const versionInfo = await getAppVersionInfo();
+    const versionInfo = await getPublicReleaseInfo();
     const apkFileName = `nursing-ai-v${versionInfo.latest_version}.apk`;
-    const apkFilePath = path.join(process.cwd(), "public", "downloads", "nursing-ai-latest.apk");
+    const apkFilePath = STABLE_APK_PATH;
+
+    // Never serve a file that differs from the published checksum: it would
+    // install something other than the announced, signed release.
+    if (versionInfo.integrity === "mismatch") {
+      console.error("APK checksum does not match the published release");
+      return NextResponse.json(
+        { error: "ملف التحديث قيد التجهيز، حاول بعد قليل" },
+        { status: 503 }
+      );
+    }
 
     if (!fs.existsSync(apkFilePath)) {
       return NextResponse.json(
@@ -40,6 +49,8 @@ export async function GET() {
         "Content-Disposition": `attachment; filename="${apkFileName}"`,
         "Content-Length": stat.size.toString(),
         "Cache-Control": "no-store, max-age=0",
+        "X-Content-Type-Options": "nosniff",
+        ...(versionInfo.served_sha256 ? { "X-Checksum-SHA256": versionInfo.served_sha256 } : {}),
       },
     });
   } catch {

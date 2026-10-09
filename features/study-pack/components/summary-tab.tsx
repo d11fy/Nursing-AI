@@ -4,7 +4,6 @@ import { useState } from "react";
 import {
   FileText,
   Sparkles,
-  Loader2,
   RotateCcw,
   BookOpen,
   CheckCircle2,
@@ -30,6 +29,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import type { SummaryContent, GenerationStatus } from "../types";
+import { coverageLabel } from "../services/coverage";
 
 export function SummaryTab({
   studyPackId,
@@ -153,7 +153,7 @@ export function SummaryTab({
             الملخص جاهز
           </Badge>
           <span className="text-xs text-muted-foreground">
-            مبني وموثق بالكامل من ملف المحاضرة
+            {coverageLabel(content.coverage)}
           </span>
         </div>
 

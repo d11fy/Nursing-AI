@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { getAIProvider } from "@/lib/ai";
 import { getNursingTutorInstructions } from "@/lib/ai/prompts/nursing-tutor";
@@ -13,8 +14,8 @@ import type {
   SummaryContent,
   KeyPointsContent,
   QuizDifficulty,
-  QuizQuestionType,
 } from "../types";
+import { describeCoverage, evenExcerpt, mapLimited, pageLabel, planSections, type SourceCoverage, type SourceSection } from "./coverage";
 
 export interface GenerateContext {
   lectureId: string;
@@ -23,41 +24,107 @@ export interface GenerateContext {
   materials: Array<{ pageNumber: number | null; text: string }>;
 }
 
+const sectionDigestSchema = z.object({
+  heading: z.string(),
+  summary: z.string(),
+  key_concepts: z.array(z.object({ concept: z.string(), explanation: z.string() })),
+  definitions: z.array(z.object({ term: z.string(), definition: z.string() })),
+  clinical_notes: z.array(z.string()),
+  must_remember: z.array(z.string()),
+});
+type SectionDigest = z.infer<typeof sectionDigestSchema>;
+
+/** Above this size a document is digested section by section before synthesis. */
+const DIRECT_BUDGET = 28000;
+const SECTION_CHARS = 16000;
+const DIGEST_CONCURRENCY = 3;
+const digestCache = new Map<string, { expires: number; digests: Promise<string[]> }>();
+
+function formatDigest(section: SourceSection, digest: SectionDigest) {
+  const lines = [`### Section ${section.index + 1} of the document (${pageLabel(section)}): ${digest.heading || section.heading || "Untitled"}`, digest.summary];
+  if (digest.key_concepts.length) lines.push("Key concepts:", ...digest.key_concepts.map((c) => `- ${c.concept}: ${c.explanation}`));
+  if (digest.definitions.length) lines.push("Definitions:", ...digest.definitions.map((d) => `- ${d.term}: ${d.definition}`));
+  if (digest.clinical_notes.length) lines.push("Clinical notes:", ...digest.clinical_notes.map((n) => `- ${n}`));
+  if (digest.must_remember.length) lines.push("Must remember:", ...digest.must_remember.map((m) => `- ${m}`));
+  return lines.join("\n");
+}
+
+async function digestSection(context: GenerateContext, section: SourceSection, total: number) {
+  const ai = getAIProvider();
+  const result = await ai.generateText({
+    taskPrompt: `${getNursingTutorInstructions({ purpose: "study_summary" })}
+
+TASK: You are reading section ${section.index + 1} of ${total} (${pageLabel(section)}) of the lecture "${context.lectureTitle}".
+Write a faithful study digest of THIS section only. Keep every distinct concept, definition, clinical point and number
+that appears here, including topics mentioned only once. Do not add facts that are not in the text.
+Keep English medical terminology. Return JSON matching the schema.`,
+    messages: [{ role: "user", content: section.text }],
+    jsonSchema: { name: "study_pack_section_digest", schema: z.toJSONSchema(sectionDigestSchema) },
+    reasoningEffort: "low",
+    feature: "study_pack_section_digest",
+    maxOutputTokens: 2500,
+  });
+  await logUsage({
+    userId: context.userId, type: "summary", feature: "study_pack_section_digest", provider: "openai", model: result.model,
+    inputTokens: result.inputTokens, cachedInputTokens: result.cachedInputTokens, outputTokens: result.outputTokens,
+    reasoningEffort: "low", estimatedCost: ai.calculateCost(result), lectureId: context.lectureId,
+  });
+  return formatDigest(section, sectionDigestSchema.parse(JSON.parse(result.content)));
+}
+
 /**
- * Reduce materials into bounded chunks if the document is very large,
- * ensuring complete coverage across all sections.
+ * Digests every section (cached briefly so summary and key points share the
+ * work), then merges digests in ordered groups until they fit one request.
  */
-function prepareSourceText(materials: Array<{ pageNumber: number | null; text: string }>, maxChars = 24000): string {
-  const sections = materials.map((m) =>
-    `[${m.pageNumber ? `Page / Slide ${m.pageNumber}` : "Section"}]\n${m.text.trim()}`
-  );
-
-  const fullText = sections.join("\n\n");
-  if (fullText.length <= maxChars) {
-    return fullText;
+async function hierarchicalSource(context: GenerateContext, sections: SourceSection[], budget: number) {
+  const key = `${context.lectureId}:${createHash("sha256").update(sections.map((section) => section.text).join("\u0000")).digest("hex")}`;
+  const cached = digestCache.get(key);
+  let digests: Promise<string[]>;
+  if (cached && cached.expires > Date.now()) digests = cached.digests;
+  else {
+    digests = mapLimited(sections, DIGEST_CONCURRENCY, (section) => digestSection(context, section, sections.length));
+    digestCache.set(key, { expires: Date.now() + 15 * 60_000, digests });
+    digests.catch(() => digestCache.delete(key));
   }
-
-  // If long, take evenly distributed excerpts across the entire document
-  const step = Math.ceil(fullText.length / maxChars);
-  const sampledSections: string[] = [];
-  let currentLength = 0;
-
-  for (let i = 0; i < sections.length; i++) {
-    const sec = sections[i];
-    // Keep headings and first portion of each section
-    const snippet = sec.length > 1500 ? sec.slice(0, 1500) + "\n...[continued]" : sec;
-    if (currentLength + snippet.length > maxChars) break;
-    sampledSections.push(snippet);
-    currentLength += snippet.length + 2;
+  let level = await digests;
+  while (level.join("\n\n").length > budget && level.length > 1) {
+    const groups: string[][] = [];
+    for (const digest of level) {
+      const group = groups.at(-1);
+      if (group && group.join("\n\n").length + digest.length <= Math.floor(budget / 2)) group.push(digest);
+      else groups.push([digest]);
+    }
+    if (groups.length === level.length) {
+      // Digests are individually large: trim each evenly instead of dropping later ones.
+      const share = Math.floor(budget / level.length) - 20;
+      level = level.map((digest) => digest.slice(0, share));
+      break;
+    }
+    level = groups.map((group) => group.join("\n\n"));
   }
+  return level.join("\n\n");
+}
 
-  return sampledSections.join("\n\n");
+/**
+ * Source text for whole-document generators. Short material is sent as is;
+ * long material is covered section by section so the end of the document is
+ * not lost to a character budget.
+ */
+async function coveredSource(context: GenerateContext, budget: number): Promise<{ text: string; coverage: SourceCoverage }> {
+  const sections = planSections(context.materials, SECTION_CHARS);
+  const direct = sections.map((section) => section.text).join("\n\n");
+  if (direct.length <= budget) return { text: direct, coverage: describeCoverage("direct", sections, sections.length) };
+  const text = await hierarchicalSource(context, sections, budget);
+  return {
+    text: `The following are ordered digests of ALL ${sections.length} sections of the document, from the first page to the last.\n\n${text}`,
+    coverage: describeCoverage("hierarchical", sections, sections.length),
+  };
 }
 
 export async function generateSummary(context: GenerateContext): Promise<SummaryContent> {
-  const { lectureId, userId, lectureTitle, materials } = context;
+  const { lectureId, userId, lectureTitle } = context;
   const ai = getAIProvider();
-  const sourceText = prepareSourceText(materials, 30000);
+  const { text: sourceText, coverage } = await coveredSource(context, DIRECT_BUDGET);
 
   const taskPrompt = `${getNursingTutorInstructions({ purpose: "study_summary" })}
 
@@ -67,6 +134,8 @@ GUIDELINES:
 - Primary language: Academic English.
 - Provide natural, concise Arabic clarification for all difficult medical & nursing terms (e.g. "Dyspnea — ضيق التنفس", "Preload — الامتلاء/التمدد قبل الانقباض").
 - Include Overview, Main Concepts, Important Definitions, Clinical Notes, and What to Remember.
+- Cover every section from the first page to the last; a topic that appears only near the end is as important as the opening topics.
+- In source_references, cite the page ranges your points come from.
 - Do NOT fabricate clinical drug dosages or unsupported facts.
 - Return output strictly matching the JSON schema.`;
 
@@ -102,13 +171,13 @@ GUIDELINES:
   });
 
   const parsedJson = JSON.parse(result.content);
-  return summaryResponseSchema.parse(parsedJson);
+  return { ...summaryResponseSchema.parse(parsedJson), coverage };
 }
 
 export async function generateKeyPoints(context: GenerateContext): Promise<KeyPointsContent> {
-  const { lectureId, userId, lectureTitle, materials } = context;
+  const { lectureId, userId, lectureTitle } = context;
   const ai = getAIProvider();
-  const sourceText = prepareSourceText(materials, 26000);
+  const { text: sourceText, coverage } = await coveredSource(context, DIRECT_BUDGET);
 
   const taskPrompt = `${getNursingTutorInstructions({ purpose: "study_key_points" })}
 
@@ -152,7 +221,7 @@ GUIDELINES:
   });
 
   const parsedJson = JSON.parse(result.content);
-  return keyPointsResponseSchema.parse(parsedJson);
+  return { ...keyPointsResponseSchema.parse(parsedJson), coverage };
 }
 
 export async function generateFlashcards(context: GenerateContext): Promise<Array<{
@@ -165,7 +234,7 @@ export async function generateFlashcards(context: GenerateContext): Promise<Arra
 }>> {
   const { lectureId, userId, lectureTitle, materials } = context;
   const ai = getAIProvider();
-  const sourceText = prepareSourceText(materials, 24000);
+  const sourceText = evenExcerpt(materials, 24000);
 
   const taskPrompt = `${getNursingTutorInstructions({ purpose: "study_flashcards" })}
 
@@ -246,7 +315,7 @@ export async function generateQuiz(
   const { lectureId, userId, lectureTitle, materials } = context;
   const { questionCount, difficulty, questionType } = config;
   const ai = getAIProvider();
-  const sourceText = prepareSourceText(materials, 28000);
+  const sourceText = evenExcerpt(materials, 28000);
 
   const taskPrompt = `${getNursingTutorInstructions({ purpose: "study_quiz" })}
 

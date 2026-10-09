@@ -352,10 +352,10 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
                     <BookOpen className="size-5" />
                   </div>
                   <div className="min-w-0">
-                    <h4 className="text-xs font-black text-slate-900 dark:text-white truncate">
+                    <h4 dir="auto" className="text-xs font-black text-slate-900 dark:text-white truncate">
                       {lec.title}
                     </h4>
-                    <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                    <p dir="auto" className="text-[11px] text-slate-500 truncate mt-0.5">
                       {lec.file_name} ·{" "}
                       {lec.status === "ready"
                         ? "جاهزة للدراسة"
@@ -394,10 +394,10 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
             <div className="space-y-3">
               {/* Practice Type */}
               <div className="space-y-1">
-                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                <label htmlFor="subjectdetail-field-1" className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
                   نمط الأسئلة
                 </label>
-                <select
+                <select id="subjectdetail-field-1"
                   value={practiceType}
                   onChange={(e: any) => setPracticeType(e.target.value)}
                   className="w-full h-11 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 text-xs font-bold"
@@ -414,10 +414,10 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
 
               {/* Mode */}
               <div className="space-y-1">
-                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                <label htmlFor="subjectdetail-field-2" className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
                   طريقة الاختبار
                 </label>
-                <select
+                <select id="subjectdetail-field-2"
                   value={examMode}
                   onChange={(e: any) => setExamMode(e.target.value)}
                   className="w-full h-11 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 text-xs font-bold"
@@ -434,10 +434,10 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
               {/* Question Count & Difficulty */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                  <label htmlFor="subjectdetail-field-3" className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
                     عدد الأسئلة
                   </label>
-                  <select
+                  <select id="subjectdetail-field-3"
                     value={questionCount}
                     onChange={(e) => setQuestionCount(e.target.value)}
                     className="w-full h-11 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 text-xs font-bold"
@@ -450,10 +450,10 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                  <label htmlFor="subjectdetail-field-4" className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
                     الصعوبة
                   </label>
-                  <select
+                  <select id="subjectdetail-field-4"
                     value={difficulty}
                     onChange={(e: any) => setDifficulty(e.target.value)}
                     className="w-full h-11 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 text-xs font-bold"
@@ -497,7 +497,7 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
+                    <h4 dir="auto" className="text-xs font-black text-slate-900 dark:text-white">
                       {exam.title}
                     </h4>
                     {exam.doctor_name && (
@@ -635,10 +635,10 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
           )}
 
           <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700">
+            <label htmlFor="subjectdetail-field-5" className="text-xs font-bold text-slate-700">
               عنوان المحاضرة
             </label>
-            <input
+            <input id="subjectdetail-field-5"
               type="text"
               value={uploadTitle}
               onChange={(e) => setUploadTitle(e.target.value)}
@@ -648,10 +648,10 @@ export function SubjectDetailScreen({ subjectId }: { subjectId: string }) {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700">
+            <label htmlFor="subjectdetail-field-6" className="text-xs font-bold text-slate-700">
               الملف (PDF, DOCX, PPTX, TXT)
             </label>
-            <input
+            <input id="subjectdetail-field-6"
               type="file"
               accept=".pdf,.docx,.pptx,.txt"
               onChange={(e) => setUploadFile(e.target.files?.[0] || null)}

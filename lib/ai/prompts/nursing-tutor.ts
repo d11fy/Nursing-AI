@@ -113,7 +113,7 @@ export function getNursingTutorInstructions(
 }
 
 export function requiresVerifiedClinicalEvidence(question: string): boolean {
-  return /\b(?:dos(?:e|age)|mg\b|mcg\b|units?\b|infusion\s+rate|administ(?:er|ration)|contraindicat(?:ion|ed)|normal(?:\s+[\w-]+){0,3}\s+(?:range|levels?|values?)|reference\s+range|hospital\s+policy|clinical\s+policy|protocol|patient-specific)\b|جرع|معدل.*تسريب|اعطاء.*دواء|إعطاء.*دواء|موانع.*استعمال|المعدل الطبيعي|القيم.*الطبيعية|بروتوكول|سياسة.*مستشفى|لهذا المريض/i.test(question);
+  return /\b(?:dos(?:e|age)|mg\b|mcg\b|units?\b|infusion\s+rate|administ(?:er|ration)|contraindicat(?:ion|ed)|normal(?:\s+[\w-]+){0,3}\s+(?:range|levels?|values?)|reference\s+range|hospital\s+policy|clinical\s+policy|protocol|patient-specific)\b|\bml\s*\/\s*(?:h|hr|hour|min)\b|\b(?:should|can|do|must)\s+(?:i|we)\s+(?:give|hold|withhold|stop|administer|increase|decrease|titrate)\b|\b(?:this|my|the)\s+patient\b[^.?!]{0,60}\b(?:give|hold|withhold|stop|start|should)\b|جرع|ملغ|ملغم|ميلي\s?غرام|معدل.*تسريب|اعطاء.*دواء|إعطاء.*دواء|(?:هل|متى|كيف)\s+(?:أعطي|اعطي|نعطي|أوقف|اوقف)|موانع.*استعمال|المعدل الطبيعي|القيم.*الطبيعية|بروتوكول|سياسة.*مستشفى|لهذا المريض/i.test(question);
 }
 
 export function buildTutorContext(input: {

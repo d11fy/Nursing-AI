@@ -15,6 +15,12 @@ export interface SubscriptionAccess {
 }
 
 export interface UsageReservation {
+  id: string;
+  amount: number;
+  status: "reserved" | "committed" | "released";
+  /** True when an idempotency key matched an earlier request; nothing new was consumed. */
+  replayed: boolean;
+  resultRef: Record<string, unknown> | null;
   userId: string;
   featureKey: string;
   scopeType: "daily" | "trial" | "subscription";

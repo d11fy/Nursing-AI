@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { securityHeaderRules } from "./lib/http/security-headers.mjs";
 
 const nextConfig: NextConfig = {
   // Keep page-generation concurrency low on the shared 4 GB VPS.
@@ -12,6 +13,10 @@ const nextConfig: NextConfig = {
   },
   // Parse documents at runtime instead of bundling their Node.js parsers.
   serverExternalPackages: ["pdf-parse", "mammoth"],
+  poweredByHeader: false,
+  async headers() {
+    return securityHeaderRules({ production: process.env.NODE_ENV === "production" });
+  },
 };
 
 export default nextConfig;

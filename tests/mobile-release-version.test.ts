@@ -48,8 +48,8 @@ test("Android and in-app update UI share one version source", () => {
     "utf8",
   );
 
-  assert.equal(source.name, "1.1.1");
-  assert.equal(source.code, 4);
+  assert.equal(source.name, "1.2.0");
+  assert.equal(source.code, 5);
   assert.match(gradle, /mobile\/app-version\.json/);
   assert.match(gradle, /versionCode appVersion\.code/);
   assert.match(gradle, /versionName appVersion\.name/);
@@ -176,4 +176,27 @@ test("version comparison logic detects newer releases and force update flag", ()
   const checkForced = checkShouldUpdate(1, 2, true);
   assert.equal(checkForced.hasUpdate, true);
   assert.equal(checkForced.mustForce, true);
+});
+
+test("1.2.0 release keeps the production signing identity and is not debuggable", () => {
+  const root = process.cwd();
+  const androidHome = process.env.ANDROID_HOME || path.join("C:", "Users", "Alosh2", "AppData", "Local", "Android", "Sdk");
+  const buildToolsRoot = path.join(androidHome, "build-tools");
+  const versions = fs.existsSync(buildToolsRoot)
+    ? fs.readdirSync(buildToolsRoot).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+    : [];
+  const tool = (name: string) => versions.flatMap((version) => [name, `${name}.exe`, `${name}.bat`]
+    .map((file) => path.join(buildToolsRoot, version, file))).find((candidate) => fs.existsSync(candidate));
+  const apksigner = tool("apksigner"), aapt2 = tool("aapt2");
+  const release = path.join(root, "public", "downloads", "nursing-ai-v1.2.0.apk");
+  const official = path.join(root, "public", "downloads", "nursing-ai-v1.0.1.apk");
+  assert.ok(fs.existsSync(release), "the signed 1.2.0 APK is published");
+  if (!apksigner || !aapt2) return; // Verified on machines with the Android SDK.
+  const certificate = (file: string) => execSync(`"${apksigner}" verify --print-certs "${file}"`, { encoding: "utf-8" })
+    .match(/certificate SHA-256 digest:\s*([a-f0-9]{64})/i)?.[1];
+  assert.equal(certificate(release), certificate(official), "same certificate: installs as an update over 1.0.x");
+  assert.equal(certificate(release), "abe0a4ab3f70a62fe44132b9b49694f40a139e7c95c9b9a0861e0ef67bfe2fc8");
+  const badging = execSync(`"${aapt2}" dump badging "${release}"`, { encoding: "utf-8" });
+  assert.match(badging, /package: name='com\.nursingai\.app' versionCode='5' versionName='1\.2\.0'/);
+  assert.doesNotMatch(badging, /application-debuggable/);
 });
