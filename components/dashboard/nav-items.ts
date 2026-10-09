@@ -29,6 +29,7 @@ export interface NavItem {
 }
 
 export const studentNavItems: NavItem[] = [
+  { href: "/support", label: "المساعدة", icon: HelpCircle },
   { href: "/dashboard", label: "الرئيسية", icon: Home },
   { href: "/dashboard/chat", label: "المحادثة", icon: MessageSquare },
   { href: "/dashboard/history", label: "المحادثات السابقة", icon: History },
@@ -40,6 +41,8 @@ export const studentNavItems: NavItem[] = [
 ];
 
 export const adminNavItems: NavItem[] = [
+  { href: "/security", label: "المصادقة الثنائية", icon: ShieldCheck },
+  { href: "/admin/support", label: "طلبات الدعم", icon: MessageSquare },
   { href: "/admin", label: "لوحة التحكم", icon: LayoutDashboard },
   { href: "/admin/training-center", label: "مركز التدريب والجاهزية", icon: BrainCircuit },
   { href: "/admin/exams", label: "نماذج الامتحانات", icon: FileCheck2 },

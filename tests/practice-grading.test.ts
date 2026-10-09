@@ -59,9 +59,10 @@ test("server grades the assigned question once and owns the attempt", async () =
   const progress = (await db.query<{ questions_answered: number }>(
     "SELECT questions_answered FROM student_topic_progress WHERE user_id=$1", [userId]
   )).rows;
-  assert.deepEqual(progress.map((row) => row.questions_answered), [1]);
+  assert.deepEqual(progress, [], "EXAM evidence is not published before completion");
   await assert.rejects(completePracticeExam(attemptId, strangerId));
   const score = await completePracticeExam(attemptId, userId);
+  assert.equal((await db.query<{questions_answered:number}>("select questions_answered from student_topic_progress where user_id=$1",[userId])).rows[0].questions_answered,1);
   assert.equal(score.scorePercentage, 100);
   assert.equal(score.correctAnswers, 1);
   assert.equal(score.unansweredQuestions, 0);

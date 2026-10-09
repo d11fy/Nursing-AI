@@ -69,9 +69,7 @@ export async function setSecureItem(key: string, value: string): Promise<void> {
   }
 
   // Fallback for Web/Dev browser preview
-  try {
-    sessionStorage.setItem(key, value);
-  } catch {}
+  sessionStorage.setItem(key, value);
 }
 
 /**

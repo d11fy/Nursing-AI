@@ -3,7 +3,7 @@ import { createClient } from "@/lib/db/server";
 import { flashcardProgressRequestSchema } from "@/features/study-pack/schemas";
 import { updateFlashcardProgress } from "@/features/study-pack/db/flashcards-db";
 
-export async function POST(request: Request) {
+export async function POST(request: Request, context: {params: Promise<{id:string}>}) {
   const db = await createClient();
   const {
     data: { user },
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     const updated = await updateFlashcardProgress(
       user.id,
       parsed.data.flashcardId,
-      parsed.data.status
+      parsed.data.status, parsed.data.eventId, (await context.params).id
     );
     return NextResponse.json(updated);
   } catch (err) {

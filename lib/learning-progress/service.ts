@@ -27,7 +27,7 @@ export async function recalculateStudentTopicProgress(input: {
       client.query<{ is_correct: boolean; answered_at: string }>(
         `select a.is_correct,a.created_at::text as answered_at from student_exam_attempt_answers a
          join student_exam_attempts ea on ea.id=a.attempt_id
-         where ea.user_id=$1 and ea.subject_id=$2 and a.topic_key=$3 order by a.created_at desc`,
+         where ea.user_id=$1 and ea.subject_id=$2 and a.topic_key=$3 and (ea.mode='STUDY' or ea.completed_at is not null) order by a.created_at desc`,
         [input.userId, input.subjectId, identity.topicKey]
       ),
       client.query<{ is_correct: boolean; answered_at: string }>(
@@ -160,7 +160,7 @@ export async function getSubjectProgress(userId: string, subjectId: string) {
 export async function getMistakes(userId: string, filters: { subjectId?: string; topicKey?: string; status?: MistakeStatus } = {}) {
   const db = identityDb(userId);
   const values: unknown[] = [userId];
-  const clauses = ["m.user_id=$1", "m.mistake_key is not null"];
+  const clauses = ["m.user_id=$1", "m.mistake_key is not null", "not exists(select 1 from student_exam_attempts a where a.id=m.exam_attempt_id and a.mode='EXAM' and a.completed_at is null)"];
   if (filters.subjectId) { values.push(filters.subjectId); clauses.push(`m.subject_id=$${values.length}`); }
   if (filters.topicKey) { values.push(filters.topicKey); clauses.push(`m.topic_key=$${values.length}`); }
   if (filters.status) { values.push(filters.status); clauses.push(`m.review_status=$${values.length}`); }
@@ -187,7 +187,7 @@ export async function getMistakes(userId: string, filters: { subjectId?: string;
 export async function reviewMistake(userId: string, mistakeId: string, studentAnswer: string) {
   return withIdentity(userId, async (client) => {
     const result = await client.query<{ subject_id: string; topic: string; topic_key: string; correct_answer: string; review_status: MistakeStatus }>(
-      `select subject_id,topic,topic_key,correct_answer,review_status from student_mistakes where id=$1 and user_id=$2 and mistake_key is not null for update`,
+      `select subject_id,topic,topic_key,correct_answer,review_status from student_mistakes m where id=$1 and user_id=$2 and mistake_key is not null and not exists(select 1 from student_exam_attempts a where a.id=m.exam_attempt_id and a.mode='EXAM' and a.completed_at is null) for update`,
       [mistakeId, userId]);
     const mistake = result.rows[0];
     if (!mistake) throw new Error("الخطأ غير موجود");

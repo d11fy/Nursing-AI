@@ -1,5 +1,6 @@
 "use server";
 
+import { MfaRequiredError } from "@/lib/auth/mfa";
 import { redirect } from "next/navigation";
 import {
   AccountAlreadyExistsError,
@@ -70,10 +71,11 @@ export async function loginAction(
   }
 
   try {
-    if (!(await loginAccount(parsed.data.email, parsed.data.password))) {
+    if (!(await loginAccount(parsed.data.email, parsed.data.password, undefined, String(formData.get("secondFactor")??"")))) {
       return { error: "تعذر تسجيل الدخول؛ تحقق من البيانات أو حاول لاحقًا" };
     }
   } catch (error) {
+    if (error instanceof MfaRequiredError) return {error:error.message};
     if (error instanceof DeviceConflictError) {
       return { error: "هذا الحساب مستخدم حاليًا على جهاز آخر." };
     }

@@ -7,6 +7,9 @@ import {
   ChevronLeft,
   Sparkles,
 } from "lucide-react";
+import { useAuth } from "../../context/AuthContext";
+import { useNetwork } from "../../context/NetworkContext";
+import { queueFlashcardReview, syncFlashcardReviews } from "../../services/offlineStudy";
 import { apiFetch } from "../../services/api";
 
 interface Flashcard {
@@ -19,6 +22,8 @@ interface Flashcard {
   progress_status?: string;
   clinical_pearl?: string | null;
   mastery_level?: number;
+  next_review_at?:string|null;
+  interval_days?:number;
 }
 
 export function FlashcardsViewer({
@@ -28,13 +33,17 @@ export function FlashcardsViewer({
   studyPackId: string;
   cards: Flashcard[];
 }) {
+  const {profile,sessionUnverified}=useAuth();
+  const {isOnline}=useNetwork();
+  const [dueOnly,setDueOnly]=useState(false);
   const [cards, setCards] = useState<Flashcard[]>(initialCards);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [error, setError] = useState("");
   const [submittingRating, setSubmittingRating] = useState(false);
 
-  const currentCard = cards[currentIndex];
+  const activeCards=dueOnly?cards.filter(c=>!c.next_review_at||new Date(c.next_review_at).getTime()<=Date.now()):cards;
+  const currentCard = activeCards[currentIndex];
 
   const handleFlip = () => {
     setIsFlipped(!isFlipped);
@@ -42,7 +51,7 @@ export function FlashcardsViewer({
 
   const handleNext = () => {
     setIsFlipped(false);
-    if (currentIndex < cards.length - 1) {
+    if (currentIndex < activeCards.length - 1) {
       setCurrentIndex(currentIndex + 1);
     }
   };
@@ -59,24 +68,25 @@ export function FlashcardsViewer({
     setSubmittingRating(true);
     setError("");
     try {
-      await apiFetch(`/api/study-packs/${studyPackId}/flashcards/progress`, {
-        method: "POST",
-        body: JSON.stringify({
-          flashcardId: currentCard.id,
-          status: rating === "again" ? "review_again" : "known",
-        }),
-      });
+      if(!profile)throw new Error("يجب تسجيل الدخول");
+      await queueFlashcardReview(profile.user_id,{eventId:crypto.randomUUID(),packId:studyPackId,flashcardId:currentCard.id,status:rating==='again'?'review_again':'known'});
+      if(isOnline&&!sessionUnverified) {
+        try{await syncFlashcardReviews(profile.user_id,r=>apiFetch(`/api/study-packs/${r.packId}/flashcards/progress`,{method:'POST',body:JSON.stringify(r)}));}
+        catch{setError("حُفظت المراجعة محليًا؛ أعد المزامنة من قائمة الدراسة المحفوظة");}
+      } else setError("حُفظت المراجعة على الجهاز وستُزامن عند عودة الاتصال");
       setCards((prev) =>
         prev.map((card) =>
           card.id === currentCard.id
             ? {
                 ...card,
+                interval_days:rating === "again"?0:Math.min(60,Math.max(1,(card.interval_days??0)*2)),
+                next_review_at:new Date(Date.now()+(rating === "again"?600000:Math.min(60,Math.max(1,(card.interval_days??0)*2))*86400000)).toISOString(),
                 progress_status: rating === "again" ? "review_again" : "known",
               }
             : card,
         ),
       );
-      handleNext();
+      if(dueOnly){setCurrentIndex(0);setIsFlipped(false);}else handleNext();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "تعذر حفظ المراجعة؛ حاول مجددًا",
@@ -89,13 +99,16 @@ export function FlashcardsViewer({
   if (!currentCard) {
     return (
       <div className="rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 p-8 text-center text-xs text-slate-400">
-        لا توجد بطاقات متاحة.
+        لا توجد مراجعات مستحقة الآن.
+        <button className="block min-h-12 text-primary" onClick={()=>{setDueOnly(false);setCurrentIndex(0);}}>عرض جميع البطاقات</button>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
+      <button className="min-h-12 px-3 rounded-xl border text-primary" onClick={()=>{setDueOnly(!dueOnly);setCurrentIndex(0);setIsFlipped(false);}}>{dueOnly?"عرض الجميع":"المراجعات المستحقة الآن"}</button>
+      {currentCard.next_review_at&&<p className="text-xs">المراجعة التالية: {new Date(currentCard.next_review_at).toLocaleString("ar")}</p>}
       {error && (
         <p role="alert" className="surface text-red-600 text-sm">
           {error}
@@ -104,7 +117,7 @@ export function FlashcardsViewer({
       {/* Progress & Counter */}
       <div className="flex items-center justify-between text-xs font-bold text-slate-500 px-1">
         <span>
-          البطاقة {currentIndex + 1} من {cards.length}
+          البطاقة {currentIndex + 1} من {activeCards.length}
         </span>
         {currentCard.topic && (
           <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-[10px] text-slate-600 dark:text-slate-300">
@@ -116,7 +129,7 @@ export function FlashcardsViewer({
       <div className="h-1.5 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
         <div
           className="h-full bg-primary rounded-full transition-all duration-300"
-          style={{ width: `${((currentIndex + 1) / cards.length) * 100}%` }}
+          style={{ width: `${((currentIndex + 1) / activeCards.length) * 100}%` }}
         />
       </div>
 
@@ -223,7 +236,7 @@ export function FlashcardsViewer({
 
         <button
           onClick={handleNext}
-          disabled={currentIndex === cards.length - 1}
+          disabled={currentIndex === activeCards.length - 1}
           className="flex items-center gap-1 px-4 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold disabled:opacity-30 active:scale-95"
         >
           <span>التالي</span>

@@ -1,4 +1,5 @@
 import "server-only";
+import { mfaEnabled, verifyMfa, markSessionMfa, MfaRequiredError } from "./mfa";
 import { getPool, transaction } from "@/lib/db/pool";
 import { hashPassword, verifyPassword, newToken, tokenHash } from "./password";
 import { startSession, endSession } from "./session";
@@ -21,7 +22,7 @@ const academicYearCodeByLegacyValue = {
 } as const;
 
 // Database-backed throttles survive restarts and work across app replicas.
-async function allowAttempt(key: string, maximum: number) {
+export async function allowAttempt(key: string, maximum: number) {
   const { rows } = await getPool().query(
     `INSERT INTO auth_attempts(key,attempts,expires_at) VALUES($1,1,now()+interval '15 minutes')
      ON CONFLICT(key) DO UPDATE SET
@@ -60,7 +61,7 @@ export async function registerAccount(input: RegisterInput, customDeviceToken?: 
   void sendWelcomeEmail(input.fullName, email).catch((error) => console.error("Welcome email failed", error instanceof Error ? error.message : "unknown"));
   return session;
 }
-export async function loginAccount(emailInput: string, password: string, customDeviceToken?: string) {
+export async function loginAccount(emailInput: string, password: string, customDeviceToken?: string, secondFactor?: string) {
   const email = emailInput.toLowerCase();
   if (!await allowAttempt(`login:${email}`, 10) || !await allowAttempt("login:global", 500)) return false;
   const { rows } = await getPool().query("SELECT u.id,u.password_hash,p.status FROM app_users u JOIN profiles p ON p.user_id=u.id WHERE u.email=$1", [email]);
@@ -68,8 +69,11 @@ export async function loginAccount(emailInput: string, password: string, customD
   const dummy = `scrypt$${"0".repeat(32)}$${"0".repeat(128)}`;
   const valid = await verifyPassword(password, user?.password_hash ?? dummy);
   if (!user || !valid || user.status !== "active") return false;
+  const needsMfa=await mfaEnabled(user.id);
+  if(needsMfa && (!secondFactor || !await verifyMfa(user.id,secondFactor))) throw new MfaRequiredError();
   await getPool().query("DELETE FROM auth_attempts WHERE key=$1", [tokenHash(`login:${email}`)]);
   const session = await startSession(user.id, customDeviceToken);
+  if(needsMfa)await markSessionMfa(session.sessionToken);
   return session;
 }
 export async function requestPasswordReset(emailInput: string) {

@@ -13,9 +13,9 @@ export function LandingHeader({ dashboardHref }: { dashboardHref: string | null 
         </Link>
 
         <nav className="hidden items-center gap-7 text-sm font-semibold text-muted-foreground md:flex" aria-label="روابط الصفحة">
-          <a href="#platform" className="transition-colors hover:text-primary">المميزات</a>
-          <a href="#pricing" className="transition-colors hover:text-primary">الباقات</a>
-          <a href="#faq" className="transition-colors hover:text-primary">FAQ</a>
+          <a href="/#platform" className="transition-colors hover:text-primary">المميزات</a>
+          <a href="/#pricing" className="transition-colors hover:text-primary">الباقات</a>
+          <a href="/#faq" className="transition-colors hover:text-primary">FAQ</a>
           <Link href="/download" className="flex items-center gap-1.5 font-bold text-primary transition-colors hover:text-primary/80">
             <Smartphone className="size-4" />
             تطبيق الأندرويد

@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import type { Metadata } from "next";
 import { Cairo } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -30,7 +31,8 @@ export const metadata: Metadata = {
   icons: { icon: "/icon.svg" },
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  await connection();
   return (
     <html lang="ar" dir="rtl" className={`${cairo.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">

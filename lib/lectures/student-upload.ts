@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import type { DatabaseClient } from "@/lib/db/server";
 import { uploadLectureFile } from "@/lib/storage";
 import { registerDocument, enqueueDocument } from "@/lib/tutor/ingestion";
-import { commitUsage, releaseUsage, reserveUsage } from "@/lib/subscriptions/service";
+import { commitUsage, markUsageStarted, releaseUsage, reserveUsage } from "@/lib/subscriptions/service";
 import type { AppSettings } from "@/lib/usage";
 import { LECTURE_KINDS, UPLOAD_REJECTION_MESSAGE, verifyUploadContent } from "@/lib/validations/file-content";
 import { LECTURE_EXTENSION_MIME_MAP } from "@/lib/validations/lectures";
@@ -83,6 +83,7 @@ export async function storeStudentLecture(params: {
       ...params.extra,
     }).select("id, delete_after").single();
     if (error || !lecture) throw new Error("تعذر حفظ سجل الملف");
+    await markUsageStarted(reservation, { lectureId: lecture.id });
     await enqueueDocument(await registerDocument(lecture.id, true));
     await commitUsage(reservation, { lectureId: lecture.id });
     return { lectureId: lecture.id as string, deleteAfter: lecture.delete_after as string | null, replayed: false, inProgress: false };

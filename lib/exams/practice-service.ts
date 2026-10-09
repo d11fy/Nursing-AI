@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import {identityDb} from "@/lib/tutor/db";
+import {identityDb, withIdentity} from "@/lib/tutor/db";
 import {logUsage} from "@/lib/usage";
 import { getPool } from "@/lib/db/pool";
 import { routeAIRequest, getProviderByName } from "@/lib/ai/router";
@@ -528,7 +528,7 @@ export async function submitQuestionAnswer(input: {
        VALUES($1,$2,$3::jsonb,$4,$5,$6)`,
       [input.attemptId,input.questionId,JSON.stringify(input.selectedAnswer ?? null),isCorrect,question.topic,topicIdentity.topicKey]
     );
-    if (!isCorrect) {
+    if (!isCorrect && question.mode === "STUDY") {
       await client.query(
         `insert into student_mistakes(user_id,subject_id,exam_question_id,exam_attempt_id,topic,topic_key,question_type,
           question_snapshot,options_snapshot,student_answer,correct_answer,rationale_snapshot,source_document_id,
@@ -547,9 +547,11 @@ export async function submitQuestionAnswer(input: {
           `practice:${input.questionId}`]
       );
     }
+    if (question.mode === "STUDY") {
     await recalculateStudentTopicProgress({ userId: input.userId, subjectId: question.subject_id,
       topic: question.topic, client });
     await client.query(`insert into learning_events(user_id,subject_id,topic,event_type,result,metadata) values($1,$2,$3,$4,$5,$6::jsonb)`,[input.userId,question.subject_id,question.topic,isCorrect?'quiz_correct':'quiz_incorrect',isCorrect,JSON.stringify({attemptId:input.attemptId,questionId:input.questionId})]);
+    }
     await client.query("COMMIT");
     return { recorded: true, review: feedback(isCorrect, input.selectedAnswer ?? null) };
   } catch (error) {
@@ -572,76 +574,49 @@ export async function completePracticeExam(attemptId: string, userId: string): P
   weakTopicsRecommendation: string[];
   review: PracticeAnswerReview[];
 }> {
-  const pool = getPool();
-  const attempt = await pool.query<{id:string;total_questions:number;subject_id:string}>(
-    "SELECT id,total_questions,subject_id FROM public.student_exam_attempts WHERE id=$1 AND user_id=$2",
-    [attemptId,userId]
-  );
-  if (!attempt.rows.length) throw new Error("محاولة التدريب غير متاحة");
-
-  const { rows: stats } = await pool.query<{
-    total: number;
-    correct: number;
-    wrong: number;
-  }>(
-    `SELECT
-       count(*)::int AS total,
-       count(*) filter (where is_correct = true)::int AS correct,
-       count(*) filter (where is_correct = false)::int AS wrong
-     FROM public.student_exam_attempt_answers aa
-     JOIN public.student_exam_attempt_questions aq
-       ON aq.attempt_id=aa.attempt_id AND aq.question_id=aa.question_id
-     WHERE aa.attempt_id = $1`,
-    [attemptId]
-  );
-
-  const row = stats[0] ?? { total: 0, correct: 0, wrong: 0 };
-  const score = attempt.rows[0].total_questions > 0
-    ? Math.round((row.correct / attempt.rows[0].total_questions) * 100) : 0;
-
-  await pool.query(
-    `UPDATE public.student_exam_attempts
-     SET answered_questions = $2,
-         correct_answers = $3,
-         wrong_answers = $4,
-         score_percentage = $5,
-         completed_at = now()
-     WHERE id = $1 AND user_id=$6`,
-    [attemptId, row.total, row.correct, row.wrong, score, userId]
-  );
-
-  // Identify weak topics in this exam
-  const { rows: weakRows } = await pool.query<{ topic: string; wrong_count: number }>(
-    `SELECT topic, count(*)::int AS wrong_count
-     FROM public.student_exam_attempt_answers aa
-     JOIN public.student_exam_attempt_questions aq
-       ON aq.attempt_id=aa.attempt_id AND aq.question_id=aa.question_id
-     WHERE aa.attempt_id = $1 AND aa.is_correct = false
-     GROUP BY topic
-     ORDER BY wrong_count DESC
-     LIMIT 3`,
-    [attemptId]
-  );
-
-  const { rows: attemptedTopics } = await pool.query<{ topic: string }>(
-    `select distinct aa.topic from student_exam_attempt_answers aa
-     join student_exam_attempts a on a.id=aa.attempt_id
-     where aa.attempt_id=$1 and a.user_id=$2 and aa.topic is not null`, [attemptId, userId]
-  );
-  for (const item of attemptedTopics) {
-    await recalculateStudentTopicProgress({ userId, subjectId: attempt.rows[0].subject_id,
-      topic: item.topic, reason: "quiz_completed", recordHistory: true });
-  }
-
-  return {
-    totalQuestions: attempt.rows[0].total_questions,
-    correctAnswers: row.correct,
-    wrongAnswers: row.wrong,
-    unansweredQuestions: Math.max(0, attempt.rows[0].total_questions - row.total),
-    scorePercentage: score,
-    weakTopicsRecommendation: weakRows.map((r) => r.topic),
-    review: await loadAttemptReview(attemptId, userId, false),
-  };
+  const summary = await withIdentity(userId, async (client) => {
+    // This lock serializes completion with answer submission and duplicate COMPLETE.
+    const attempt = (await client.query<{id:string;subject_id:string;mode:string;total_questions:number;completed_at:string|null}>(
+      "select id,subject_id,mode,total_questions,completed_at from student_exam_attempts where id=$1 and user_id=$2 for update",
+      [attemptId,userId])).rows[0];
+    if (!attempt) throw new Error("محاولة التدريب غير متاحة");
+    const stats = (await client.query<{total:number;correct:number;wrong:number}>(
+      `select count(*)::int total,count(*) filter(where is_correct)::int correct,
+        count(*) filter(where not is_correct)::int wrong from student_exam_attempt_answers where attempt_id=$1`,[attemptId])).rows[0];
+    const score = attempt.total_questions ? Math.round(stats.correct / attempt.total_questions * 100) : 0;
+    if (!attempt.completed_at) {
+      await client.query(`update student_exam_attempts set answered_questions=$2,correct_answers=$3,wrong_answers=$4,
+        score_percentage=$5,completed_at=now() where id=$1`,[attemptId,stats.total,stats.correct,stats.wrong,score]);
+      if (attempt.mode === "EXAM") {
+        // Only publish exam learning evidence after completion, in this transaction.
+        await client.query(`insert into student_mistakes(user_id,subject_id,exam_question_id,exam_attempt_id,topic,topic_key,
+          question_type,question_snapshot,options_snapshot,student_answer,correct_answer,rationale_snapshot,
+          source_document_id,source_reference,mistake_key,first_wrong_at,last_wrong_at,wrong_count,review_status)
+          select $2::uuid,$3::uuid,q.id,$1::uuid,aa.topic,aa.topic_key,q.question_type,q.question_text,coalesce(q.options_json,'[]'::jsonb),
+          coalesce(aa.selected_answer #>> '{}',''),coalesce(q.correct_answer_json #>> '{}',''),q.explanation,
+          q.source_document_id,case when q.page_number is null then null else 'Page '||q.page_number end,
+          'practice:'||q.id,now(),now(),1,'new'
+          from student_exam_attempt_answers aa join exam_questions q on q.id=aa.question_id
+          where aa.attempt_id=$1 and not aa.is_correct
+          on conflict(user_id,mistake_key) where mistake_key is not null do update set
+            exam_attempt_id=excluded.exam_attempt_id,student_answer=excluded.student_answer,
+            last_wrong_at=now(),wrong_count=student_mistakes.wrong_count+1,resolved=false,
+            review_status=case when student_mistakes.review_status='mastered' then 'reviewing' else student_mistakes.review_status end,
+            updated_at=now()`,[attemptId,userId,attempt.subject_id]);
+        await client.query(`insert into learning_events(user_id,subject_id,topic,event_type,result,metadata)
+          select $2::uuid,$3::uuid,topic,case when is_correct then 'quiz_correct' else 'quiz_incorrect' end,is_correct,
+          jsonb_build_object('attemptId',$1::text,'questionId',question_id::text)
+          from student_exam_attempt_answers where attempt_id=$1::uuid`,[attemptId,userId,attempt.subject_id]);
+      }
+      const topics = (await client.query<{topic:string}>("select distinct topic from student_exam_attempt_answers where attempt_id=$1 and topic is not null",[attemptId])).rows;
+      for (const {topic} of topics) await recalculateStudentTopicProgress({userId,subjectId:attempt.subject_id,topic,client,reason:"quiz_completed",recordHistory:true});
+    }
+    const weak = (await client.query<{topic:string}>(`select topic from student_exam_attempt_answers where attempt_id=$1 and not is_correct group by topic order by count(*) desc limit 3`,[attemptId])).rows;
+    return {totalQuestions:attempt.total_questions,correctAnswers:stats.correct,wrongAnswers:stats.wrong,
+      unansweredQuestions:Math.max(0,attempt.total_questions-stats.total),scorePercentage:score,
+      weakTopicsRecommendation:weak.map(row=>row.topic)};
+  });
+  return {...summary,review:await loadAttemptReview(attemptId,userId,false)};
 }
 
 /**

@@ -1,3 +1,4 @@
+import { APP_VERSION_CODE } from "../config/version";
 import { consumeChatResponse } from "../../../lib/chat/stream";
 import { Preferences } from "@capacitor/preferences";
 import {
@@ -117,6 +118,7 @@ export async function apiFetch<T = any>(
   const url = await buildApiUrl(endpoint);
 
   const headers = new Headers(options.headers || {});
+  headers.set("X-App-Version-Code",String(APP_VERSION_CODE));
   if (!headers.has("Content-Type") && !(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
@@ -162,6 +164,7 @@ export async function apiUpload<T = any>(
   const url = await buildApiUrl(endpoint);
 
   const headers = new Headers();
+  headers.set("X-App-Version-Code",String(APP_VERSION_CODE));
   if (sessionToken) headers.set("Authorization", `Bearer ${sessionToken}`);
   if (deviceToken) headers.set("X-Device-Token", deviceToken);
 

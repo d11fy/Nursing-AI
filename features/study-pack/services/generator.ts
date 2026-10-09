@@ -87,20 +87,34 @@ async function hierarchicalSource(context: GenerateContext, sections: SourceSect
     digests.catch(() => digestCache.delete(key));
   }
   let level = await digests;
-  while (level.join("\n\n").length > budget && level.length > 1) {
+  let depth = 0;
+  while (level.join("\n\n").length > budget) {
+    if (++depth > 8) throw new Error("تعذر اختصار جميع الأقسام دون فقد التغطية؛ أعد المحاولة أو قسّم الملف");
     const groups: string[][] = [];
     for (const digest of level) {
       const group = groups.at(-1);
       if (group && group.join("\n\n").length + digest.length <= Math.floor(budget / 2)) group.push(digest);
       else groups.push([digest]);
     }
-    if (groups.length === level.length) {
-      // Digests are individually large: trim each evenly instead of dropping later ones.
-      const share = Math.floor(budget / level.length) - 20;
-      level = level.map((digest) => digest.slice(0, share));
-      break;
-    }
-    level = groups.map((group) => group.join("\n\n"));
+    const previousLength = level.join("\n\n").length;
+    // Every complete child digest enters a semantic merge. Never cut a string:
+    // a group can contain several sections, including an entire final chapter.
+    level = await mapLimited(groups, DIGEST_CONCURRENCY, async (group, index) => {
+      const ai = getAIProvider();
+      const result = await ai.generateText({
+        taskPrompt: `${getNursingTutorInstructions({ purpose: "study_summary" })}\nMerge ALL supplied study digests into a concise digest. Preserve distinct concepts, numbers, safety caveats and page references from the beginning, middle and end. Remove repetition, not sections. Aim for at most half the input length. Return the requested JSON.`,
+        messages: [{ role: "user", content: group.join("\n\n") }],
+        jsonSchema: { name: "study_pack_digest_merge", schema: z.toJSONSchema(sectionDigestSchema) },
+        reasoningEffort: "low", feature: "study_pack_digest_merge", maxOutputTokens: 2500,
+      });
+      await logUsage({ userId: context.userId, type: "summary", feature: "study_pack_digest_merge", provider: "openai",
+        model: result.model, inputTokens: result.inputTokens, cachedInputTokens: result.cachedInputTokens,
+        outputTokens: result.outputTokens, reasoningEffort: "low", estimatedCost: ai.calculateCost(result), lectureId: context.lectureId });
+      const digest = sectionDigestSchema.parse(JSON.parse(result.content));
+      return formatDigest({ index, heading: `Merged group ${index + 1}`, pageStart: null, pageEnd: null, text: "" }, digest);
+    });
+    if (level.join("\n\n").length >= previousLength)
+      throw new Error("تعذر ضغط الملخص مع الحفاظ على الأقسام؛ حاول مجددًا");
   }
   return level.join("\n\n");
 }

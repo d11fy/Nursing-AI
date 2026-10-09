@@ -21,5 +21,7 @@ export async function register() {
   const { processEmailQueue }=await import('@/lib/email-queue');
   let mailing=false;
   const processEmail=async()=>{if(mailing)return;mailing=true;try{await processEmailQueue(20);}catch{console.error('Email worker unavailable');}finally{mailing=false;}};
+  const { reconcileExpiredUsage } = await import('@/lib/subscriptions/service');
+  const usageTimer=setInterval(()=>void reconcileExpiredUsage().catch(()=>console.error('Usage recovery unavailable')),60_000);usageTimer.unref();
   const mailTimer=setInterval(()=>void processEmail(),60_000);mailTimer.unref();
 }

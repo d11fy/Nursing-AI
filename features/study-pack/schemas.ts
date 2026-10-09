@@ -96,6 +96,7 @@ export const quizGenerateRequestSchema = z.object({
 
 export const flashcardProgressRequestSchema = z.object({
   flashcardId: z.string().uuid("معرف بطاقة غير صالح"),
+  eventId: z.string().uuid().optional(),
   status: z.enum(["known", "review_again"]),
 });
 

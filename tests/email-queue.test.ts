@@ -109,6 +109,7 @@ test("retries back off and stop after the attempt cap; admin requeue starts a ne
 test("every template is fully rendered by the variables its sender supplies", async () => {
   const SENDERS: Record<string, string[]> = {
     welcome: ["student_name"],
+    device_transfer: ["transfer_code"],
     password_reset: ["reset_url"],
     device_reset: ["student_name"],
     payment_received: ["student_name", "plan_name", "amount", "currency", "payment_reference"],

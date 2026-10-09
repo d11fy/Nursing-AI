@@ -70,9 +70,9 @@ export async function checkHealth(): Promise<HealthReport> {
   // that can still serve students their existing data.
   const aiStatus: HealthLevel = !configured || (a.calls >= 5 && a.failures / a.calls > 0.5) ? "degraded" : "ok";
   const oldestPending = m.oldest == null ? null : Math.round(Number(m.oldest));
-  const mailStatus: HealthLevel = m.stuck > 0 || (oldestPending ?? 0) > 30 ? "degraded" : "ok";
+  const mailStatus: HealthLevel = m.final > 0 || m.stuck > 0 || (oldestPending ?? 0) > 30 ? "degraded" : "ok";
   const oldestJob = j.oldest == null ? null : Math.round(Number(j.oldest));
-  const jobStatus: HealthLevel = j.stale > 0 || (oldestJob ?? 0) > 30 ? "degraded" : "ok";
+  const jobStatus: HealthLevel = j.failed > 0 || j.stale > 0 || (oldestJob ?? 0) > 30 ? "degraded" : "ok";
   const databaseStatus: HealthLevel = (latencyMs ?? 0) > 1500 ? "degraded" : "ok";
 
   return {

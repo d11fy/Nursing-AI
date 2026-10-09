@@ -67,6 +67,8 @@ export interface FlashcardItem {
   progress_status?: FlashcardStatus;
   review_count?: number;
   last_reviewed_at?: string | null;
+  next_review_at?: string | null;
+  interval_days?: number;
 }
 
 export interface QuizQuestionItem {

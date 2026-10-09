@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { PoolClient } from "pg";
-import { withIdentity, identityDb } from "@/lib/tutor/db";
+import { withIdentity, identityDb, workerDb } from "@/lib/tutor/db";
 import type { EntitlementValue, SubscriptionAccess, UsageItem, UsageReservation } from "./types";
 
 const TRIAL_DEFAULTS: Record<string, EntitlementValue> = {
@@ -144,6 +144,7 @@ export async function reserveUsage(userId: string, featureKey: string,
   if (!Number.isInteger(amount) || amount < 1) throw new Error("قيمة الاستخدام غير صالحة");
   const key = options.idempotencyKey ?? null;
   const attempt = () => withIdentity(userId, async (db) => {
+    await reconcileUserReservations(db, userId);
     const access = await resolveAccess(db, userId);
     if (!access.active) throw new UsageError("SUBSCRIPTION_EXPIRED", "انتهى اشتراكك");
     const rawLimit = access.entitlements[featureKey];
@@ -166,10 +167,10 @@ export async function reserveUsage(userId: string, featureKey: string,
       returning used`, [userId, featureKey, scope.type, scope.key, amount, limit])).rows[0];
     if (!counter) throw new UsageError("USAGE_LIMIT_REACHED", `استخدمت الحد المتاح (${limit} من ${limit})`);
     const row = previous
-      ? (await db.query<ReservationRow>(`update usage_reservations set status='reserved',scope_type=$2,scope_key=$3,amount=$4,result_ref=null,updated_at=now()
+      ? (await db.query<ReservationRow>(`update usage_reservations set id=gen_random_uuid(),status='reserved',lease_expires_at=now()+interval '30 minutes',work_started_at=null,scope_type=$2,scope_key=$3,amount=$4,result_ref=null,updated_at=now()
           where id=$1 returning id,feature_key,scope_type,scope_key,amount,status,result_ref`, [previous.id, scope.type, scope.key, amount])).rows[0]
-      : (await db.query<ReservationRow>(`insert into usage_reservations(user_id,feature_key,scope_type,scope_key,amount,idempotency_key)
-          values($1,$2,$3,$4,$5,$6) returning id,feature_key,scope_type,scope_key,amount,status,result_ref`,
+      : (await db.query<ReservationRow>(`insert into usage_reservations(user_id,feature_key,scope_type,scope_key,amount,idempotency_key,lease_expires_at)
+          values($1,$2,$3,$4,$5,$6,now()+interval '30 minutes') returning id,feature_key,scope_type,scope_key,amount,status,result_ref`,
           [userId, featureKey, scope.type, scope.key, amount, key])).rows[0];
     return toReservation(userId, row, Number(counter.used), limit, false);
   });
@@ -226,7 +227,11 @@ export function usageMeter(userId: string, featureKey: string, idempotencyKey?: 
   return {
     meter: async () => {
       reservation ??= await reserveUsage(userId, featureKey, { idempotencyKey });
-      if (reservation.replayed && replay === "stop") throw new ReplayedUsage(reservation);
+      if (reservation.replayed && replay === "stop") {
+        if (reservation.resultRef?.interrupted) throw new UsageError("REQUEST_IN_PROGRESS", "انقطع الطلب السابق؛ تواصل مع الدعم لتسوية الحصة قبل إعادة التوليد");
+        throw new ReplayedUsage(reservation);
+      }
+      if (!reservation.replayed) await markUsageStarted(reservation);
     },
     commit: async (resultRef?: Record<string, unknown>) => { if (reservation) await commitUsage(reservation, resultRef); },
     release: async () => { if (reservation) await releaseUsage(reservation).catch(() => undefined); },
@@ -302,7 +307,7 @@ export async function getUsageSummary(userId: string): Promise<UsageItem[]> {
 export function accessErrorMessage(error: unknown, label: string) {
   const upgradeUrl = "/dashboard/subscription";
   if (error instanceof UsageError && error.code === "REQUEST_IN_PROGRESS")
-    return { error: "طلبك السابق ما زال قيد التنفيذ؛ انتظر لحظات ثم حدّث الصفحة.", code: error.code };
+    return { error: error.message, code: error.code };
   const message = error instanceof Error ? error.message : "انتهى اشتراكك";
   if (message.includes("انتهى")) return { error: "انتهى اشتراكك. يمكنك رؤية بياناتك السابقة وتجديد الوصول في أي وقت.", code: "SUBSCRIPTION_EXPIRED", upgradeUrl };
   if (message.includes("الحد") || message.includes("استخدمت")) return { error: `${message} لـ ${label}.`, code: "USAGE_LIMIT_REACHED", upgradeUrl };
@@ -321,4 +326,33 @@ export async function requireFeature(userId: string, featureKey: string) {
   if (!access.allowed) throw new UsageError(access.reason === "subscription_expired" ? "SUBSCRIPTION_EXPIRED" : "FEATURE_NOT_AVAILABLE",
     access.reason === "subscription_expired" ? "انتهى اشتراكك" : "هذه الميزة غير متاحة ضمن باقتك");
   return access.access;
+}
+
+/** Fence the start of costly work; expired reservations cannot start new work. */
+export async function markUsageStarted(reservation: UsageReservation, resultRef?: Record<string,unknown>) {
+  if (reservation.replayed) return;
+  const row=await identityDb(reservation.userId).query(`update usage_reservations set work_started_at=now(),
+    lease_expires_at=now()+interval '2 hours',result_ref=coalesce($2::jsonb,result_ref)
+    where id=$1 and status='reserved' and lease_expires_at>now() returning id`,[reservation.id,resultRef?JSON.stringify(resultRef):null]);
+  if (!row.rows.length) throw new Error("انتهت مهلة الطلب قبل بدء المعالجة؛ أعد المحاولة");
+}
+async function reconcileUserReservations(db: PoolClient, userId: string) {
+  const rows=(await db.query<{id:string;feature_key:string;scope_type:string;scope_key:string;amount:number;work_started_at:string|null;result_ref:Record<string,unknown>|null}>(
+    "select * from usage_reservations where user_id=$1 and status='reserved' and lease_expires_at<now() for update",[userId])).rows;
+  for (const row of rows) {
+    if (row.work_started_at) {
+      // Unknown provider outcome is never refunded blindly. A retained result
+      // can be replayed; an uncertain result is flagged for a staff adjustment.
+      await db.query("update usage_reservations set status='committed',result_ref=coalesce(result_ref,'{\"interrupted\":true}'::jsonb),updated_at=now() where id=$1",[row.id]);
+    } else {
+      await db.query("update usage_reservations set status='released',updated_at=now() where id=$1",[row.id]);
+      await db.query(`update subscription_usage set used=greatest(0,used-$5) where user_id=$1 and feature_key=$2 and scope_type=$3 and scope_key=$4`,
+        [userId,row.feature_key,row.scope_type,row.scope_key,row.amount]);
+    }
+  }
+}
+export async function reconcileExpiredUsage() {
+  const users=(await workerDb.query<{user_id:string}>("select distinct user_id from usage_reservations where status='reserved' and lease_expires_at<now() limit 100")).rows;
+  for (const user of users) await withIdentity(user.user_id,db=>reconcileUserReservations(db,user.user_id));
+  return users.length;
 }
