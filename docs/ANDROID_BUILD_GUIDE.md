@@ -108,3 +108,15 @@ cd android
 $env:CAPACITOR_SERVER_URL="https://your-nursing-ai-domain.com"
 npm run cap:build:debug
 ```
+
+---
+
+## 6. بناء إصدار للاختبار اليدوي دون نشره (Staging)
+
+```bash
+npm run cap:build:release -- --stage
+```
+
+يبني ويوقّع بالمفتاح الأصلي ويتحقق من الإصدار والشهادة وعدم قابلية التنقيح، ثم يضع الملف في `release-staging/nursing-ai-v<الإصدار>.apk` مع سجل SHA-256 (`.json`). **لا يلمس** `public/downloads` فيبقى `/download` و`latest_version` على النسخة المنشورة. المجلد خارج `public/` ومتجاهَل في git.
+
+بعد نجاح الفحص اليدوي فقط: `node scripts/build-android.mjs --release --publish-staged` يتأكد أن الملف هو نفسه الذي اختُبر (SHA-256) ثم ينسخه للنشر. تحديث إعداد `mobile_app_version` يتم في الوقت نفسه (انظر `docs/qa-book-study-1.2.1-manual-checklist.md`).

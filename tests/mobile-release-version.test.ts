@@ -48,8 +48,8 @@ test("Android and in-app update UI share one version source", () => {
     "utf8",
   );
 
-  assert.equal(source.name, "1.2.0");
-  assert.equal(source.code, 5);
+  assert.equal(source.name, "1.2.1");
+  assert.equal(source.code, 6);
   assert.match(gradle, /mobile\/app-version\.json/);
   assert.match(gradle, /versionCode appVersion\.code/);
   assert.match(gradle, /versionName appVersion\.name/);
