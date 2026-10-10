@@ -28,7 +28,14 @@ export const metadata: Metadata = {
   },
   twitter: { card: "summary_large_image", title: SITE_NAME, description: SITE_DESCRIPTION },
   robots: { index: true, follow: true },
-  icons: { icon: "/icon.svg" },
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "48x48" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {

@@ -1,6 +1,7 @@
 import React from "react";
 import { ThemePicker } from "../common/ThemePicker";
-import { ArrowRight, Sparkles } from "lucide-react";
+import { ArrowRight } from "lucide-react";
+import { AppIcon } from "../common/BrandLogo";
 import { useNavigation } from "../../context/NavigationContext";
 
 interface MobileHeaderProps {
@@ -35,9 +36,7 @@ export function MobileHeader({
               <ArrowRight className="size-5" />
             </button>
           ) : (
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-white shadow-xs">
-              <Sparkles className="size-5" />
-            </div>
+            <AppIcon className="size-10 rounded-xl shadow-xs" />
           )}
 
           <div className="min-w-0">
