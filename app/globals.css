@@ -201,30 +201,6 @@
     color: var(--primary);
     background: var(--accent);
   }
-  .brand-symbol {
-    position: relative;
-    display: inline-flex;
-    width: 2.5rem;
-    height: 2.5rem;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    border-radius: .875rem;
-    color: white;
-    background: var(--primary);
-    box-shadow: 0 8px 20px color-mix(in srgb, var(--primary) 20%, transparent);
-  }
-  .brand-symbol::after {
-    content: "";
-    position: absolute;
-    inset-inline-end: -.15rem;
-    inset-block-end: -.15rem;
-    width: .6rem;
-    height: .6rem;
-    border: 2px solid var(--card);
-    border-radius: 999px;
-    background: var(--success);
-  }
   .interactive-card {
     transition: border-color 200ms ease, box-shadow 200ms ease, background-color 200ms ease;
   }

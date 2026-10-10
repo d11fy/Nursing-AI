@@ -14,7 +14,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           href="/"
           className="mb-8 flex justify-center rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <BrandMark />
+          <BrandMark stacked />
         </Link>
         <div className="section-surface p-5 shadow-[0_20px_60px_rgb(16_42_58/0.08)] sm:p-8">
           {children}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Sparkles, Mail, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { Mail, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { BrandSymbol } from "../components/common/BrandLogo";
 import { openSupport } from "../services/support";
 import { startGoogleLogin } from "../services/googleAuth";
 import { ApiError, apiFetch } from "../services/api";
@@ -84,9 +85,7 @@ export function LoginScreen() {
       <div className="w-full max-w-sm mx-auto my-auto space-y-8">
         {/* Logo and Header */}
         <div className="text-center space-y-3">
-          <div className="inline-flex size-16 items-center justify-center rounded-3xl bg-primary text-white shadow-xl shadow-primary/25">
-            <Sparkles className="size-8" />
-          </div>
+          <BrandSymbol className="mx-auto h-24" />
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
             Nursing AI
           </h1>

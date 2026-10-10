@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useNavigation } from "../context/NavigationContext";
+import { BrandSymbol } from "../components/common/BrandLogo";
 
 export function RegisterScreen() {
   const { register } = useAuth();
@@ -54,7 +55,7 @@ export function RegisterScreen() {
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col px-6 py-6 pt-safe pb-safe">
       <div className="w-full max-w-sm mx-auto my-auto space-y-6">
         {/* Top Back Button */}
-        <div>
+        <div className="flex items-center justify-between">
           <button
             onClick={() => goBack()}
             aria-label="رجوع"
@@ -62,6 +63,7 @@ export function RegisterScreen() {
           >
             <ArrowRight className="size-5" />
           </button>
+          <BrandSymbol className="h-11" />
         </div>
 
         {/* Title */}

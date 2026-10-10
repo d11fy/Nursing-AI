@@ -41,7 +41,8 @@ import { ProgressScreen } from "./screens/ProgressScreen";
 import { ProfileScreen } from "./screens/ProfileScreen";
 import { SubscriptionScreen } from "./screens/SubscriptionScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
-import { Sparkles, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
+import { AppIcon } from "./components/common/BrandLogo";
 
 function MainContent() {
   const { profile, loading, sessionUnverified, refreshAuth } = useAuth();
@@ -72,9 +73,7 @@ function MainContent() {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center space-y-4">
-        <div className="flex size-16 items-center justify-center rounded-3xl bg-primary text-white shadow-xl shadow-primary/25">
-          <Sparkles className="size-8" />
-        </div>
+        <AppIcon className="size-20 rounded-3xl shadow-xl shadow-primary/25" />
         <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
           <RefreshCw className="size-4 animate-spin text-primary" />
           <span>جارٍ التحقق من الجلسة...</span>

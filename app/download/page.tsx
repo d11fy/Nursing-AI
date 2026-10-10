@@ -9,6 +9,7 @@ import {
   FileCheck2,
   AlertTriangle,
 } from "lucide-react";
+import Image from "next/image";
 import { LandingHeader } from "@/components/landing/header";
 import { LandingFooter } from "@/components/landing/footer";
 import { currentProfile } from "@/lib/auth/session";
@@ -86,9 +87,7 @@ export default async function DownloadPage() {
             <div className="mx-auto mt-12 max-w-xl">
               <div className="relative overflow-hidden rounded-3xl border border-border bg-card p-6 shadow-2xl sm:p-8">
                 <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start sm:gap-6">
-                  <div className="flex size-20 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/80 text-white shadow-lg shadow-primary/25">
-                    <Smartphone className="size-10" />
-                  </div>
+                  <Image src="/brand/app-icon.svg" alt="أيقونة تطبيق Nursing AI" width={80} height={80} className="size-20 shrink-0 rounded-2xl shadow-lg shadow-primary/25" />
 
                   <div className="flex-1 text-center sm:text-start">
                     <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
